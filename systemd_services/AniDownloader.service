@@ -1,0 +1,7 @@
+[Unit]
+Description=Servizio per il download automatico delle serie
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/lorenzo/Video/Simulcast/.AniDownloader/
+ExecStart=/home/lorenzo/Video/Simulcast/.AniDownloader/AniDownloader.sh
