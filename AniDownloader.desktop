@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=AniDownloader
+Comment=Scarica tutti gli anime in simulcast configurati
+Path=/home/lorenzo/.local/share/myScript/downloadAnime/
+Exec=sh -c './downloadAnime.sh'
+Icon=/home/lorenzo/.local/share/myScript/downloadAnime/logo.png
+Terminal=true
+Categories=Network;

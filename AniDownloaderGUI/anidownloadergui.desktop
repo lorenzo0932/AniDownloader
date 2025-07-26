@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AniDownloader GUI
+Exec=/usr/bin/python3 /home/lorenzo/.local/share/myScript/downloadAnime/AniDownloaderGUI/main.py
+Icon=/home/lorenzo/.local/share/myScript/downloadAnime/AniDownloaderGUI/assets/logo.png
+Terminal=false
+Categories=Utility;
+Path=/home/lorenzo/.local/share/myScript/downloadAnime/AniDownloaderGUI/

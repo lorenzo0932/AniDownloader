@@ -1,0 +1,12 @@
+# Build artifacts
+build/
+dist/
+*.spec
+*.log
+
+# Python artifacts
+__pycache__/
+*.pyc
+
+# Ignore the series_data.json file
+series_data.json
