@@ -11,10 +11,11 @@ import multiprocessing as mp
 import json
 import logging
 from pathlib import Path
+from AniDownloaderGUI.config.defaults import DEFAULT_LOG_FILE, DEFAULT_OUTPUT_DIR, DEFAULT_CONFIG_DIR, DEFAULT_SERIES_JSON_PATH, DEFAULT_APP_CONFIG_PATH
 
 # --- CONFIGURAZIONE ---
-JSON_FILE_PATH = 'series_data.json'
-LOG_FILE = 'serie_critical_errors.log'
+JSON_FILE_PATH = DEFAULT_SERIES_JSON_PATH
+LOG_FILE = DEFAULT_LOG_FILE
 
 def check_dependencies():
     missing_dependencies = []
@@ -156,7 +157,7 @@ def download_episode(task, status_dict):
     return str(final_file_path), end_time - start_time
 
 def convert_and_verify(file_path, status_dict, name, max_retries=3):
-    output_dir = "/home/lorenzo/Video/Convertiti"
+    output_dir = DEFAULT_OUTPUT_DIR
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, os.path.basename(file_path))
     log_path = f"{output_path}.log"
