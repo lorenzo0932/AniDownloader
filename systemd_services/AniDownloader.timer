@@ -1,0 +1,10 @@
+[Unit]
+Description=Timer per il servizio downloadAnime, esegue ogni 15 minuti
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

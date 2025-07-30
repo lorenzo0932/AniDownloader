@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AniDownloader GUI
+Exec=/usr/bin/python3 "/home/lorenzo/Video/Simulcast/.AniDownloader/AniDownloaderGUI/main.py"
+Icon=/home/lorenzo/Video/Simulcast/.AniDownloader/AniDownloaderGUI/assets/logo.png
+Terminal=false
+Categories=Utility;
+Path=/home/lorenzo/Video/Simulcast/.AniDownloader/AniDownloaderGUI/
