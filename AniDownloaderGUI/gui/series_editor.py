@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QFileDialog, QWidget
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from utils.image_loader import load_poster_image
 
 class SeriesEditorDialog(QDialog):
     def __init__(self, series_data, is_new=False, parent=None):
@@ -61,12 +61,12 @@ class SeriesEditorDialog(QDialog):
         if self._is_new:
             self._delete_button.hide()
         
+        cancel_button = QPushButton("Annulla");
+        cancel_button.clicked.connect(self.reject)
+        
         save_button = QPushButton("Salva Modifiche");
         save_button.setDefault(True)
         save_button.clicked.connect(self._save_changes)
-
-        cancel_button = QPushButton("Annulla");
-        cancel_button.clicked.connect(self.reject)
         
         button_layout.addWidget(self._delete_button)
         button_layout.addStretch(1)
@@ -84,15 +84,7 @@ class SeriesEditorDialog(QDialog):
 
     def _load_poster(self):
         path = self._path_input.text()
-        if path and os.path.exists(os.path.dirname(path)):
-            # **RIPRISTINATO:** Logica per la locandina corretta
-            image_path = os.path.join(os.path.dirname(path), "folder.jpg")
-            if os.path.exists(image_path) and (pixmap := QPixmap(image_path)) and not pixmap.isNull():
-                self._image_label.setPixmap(pixmap.scaled(self._image_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            else:
-                self._image_label.setText("folder.jpg non trovato")
-        else:
-            self._image_label.setText("Specificare un percorso valido")
+        load_poster_image(self._image_label, path)
             
     def _browse_series_path(self):
         start_dir = self._path_input.text() if os.path.isdir(self._path_input.text()) else ""
@@ -116,8 +108,11 @@ class SeriesEditorDialog(QDialog):
             if self._continue_checkbox.isChecked():
                 self._result_data["continue"] = True
                 self._result_data["passed_episodes"] = self._passed_episodes_input.value()
+            else:
+                self._result_data["continue"] = False
+                self._result_data["passed_episodes"] = 0
             
-            self.accept()
+            super().accept() # Call the original accept method
 
     def _delete_series(self):
         reply = QMessageBox.question(self, "Conferma Eliminazione", "Sei sicuro di voler eliminare definitivamente questa serie?",

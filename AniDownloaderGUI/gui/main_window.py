@@ -1,5 +1,4 @@
 import os
-import json
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
@@ -7,9 +6,12 @@ from PyQt6.QtWidgets import (
     QLineEdit, QMessageBox, QTextEdit, QStyle, QMenuBar, QSplitter, QTableWidgetItem, QApplication
 )
 from PyQt6.QtCore import QThread, Qt, QSettings
-from PyQt6.QtGui import QIcon, QFont, QPixmap, QColor, QAction
+from PyQt6.QtGui import QIcon, QFont, QColor, QAction
 from core.download_worker import DownloadWorker
-from config.defaults import DEFAULT_LOG_FILE, DEFAULT_OUTPUT_DIR, DEFAULT_CONFIG_DIR, DEFAULT_SERIES_JSON_PATH, DEFAULT_APP_CONFIG_PATH
+from core.series_repository import SeriesRepository
+from config.app_config_manager import AppConfigManager
+from config.defaults import DEFAULT_CONFIG_DIR, DEFAULT_SERIES_JSON_PATH
+from utils.image_loader import load_poster_image
 from .widgets import StatusTableWidgetItem, StopConfirmationDialog
 from .series_manager import SeriesManagerDialog
 
@@ -28,23 +30,26 @@ class AniDownloaderGUI(QMainWindow):
         
         self.setWindowIcon(QIcon('assets/logo.png'))
         
+        # Inizializzazione del gestore di configurazione
+        self.app_config_manager = AppConfigManager()
+        
         # Assicurati che la directory di configurazione esista per QSettings
         DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         qsettings_path = str(DEFAULT_CONFIG_DIR / "AniDownloader.conf")
         self.settings = QSettings(qsettings_path, QSettings.Format.IniFormat) # Per le impostazioni dell'applicazione (es. avvisi)
 
-        # Carica o crea il file di configurazione dell'applicazione
-        self._app_config = self._load_app_config()
-
         # Inizializza tutti i percorsi dai valori di configurazione o dai default
-        self.json_file_path = self._app_config.get("json_file_path", str(DEFAULT_SERIES_JSON_PATH))
-        self.output_dir = self._app_config.get("output_dir", DEFAULT_OUTPUT_DIR)
-        self.log_file_path = self._app_config.get("log_file_path", DEFAULT_LOG_FILE)
+        self.json_file_path = Path(self.app_config_manager.get("json_file_path"))
+        self.output_dir = Path(self.app_config_manager.get("output_dir"))
+        self.log_file_path = Path(self.app_config_manager.get("log_file_path"))
         
-        is_json_path_customized = self._app_config.get("is_json_path_customized", False)
+        is_json_path_customized = self.app_config_manager.get("is_json_path_customized", False)
+
+        # Inizializzazione del repository delle serie
+        self.series_repository = SeriesRepository(self.json_file_path)
 
         # Verifica se il file series_data.json esiste al percorso configurato
-        if not Path(self.json_file_path).exists():
+        if not self.json_file_path.exists():
             # Se il percorso era personalizzato e il file non esiste più, notifica l'utente
             if is_json_path_customized:
                 QMessageBox.information(self, "File Serie Non Trovato", 
@@ -53,15 +58,12 @@ class AniDownloaderGUI(QMainWindow):
                                         f"È stato ripristinato il percorso di default e creato un nuovo file vuoto in: {DEFAULT_SERIES_JSON_PATH}")
             
             # Reimposta al percorso di default e aggiorna la configurazione
-            self.json_file_path = str(DEFAULT_SERIES_JSON_PATH)
-            self._app_config["json_file_path"] = self.json_file_path
-            self._app_config["is_json_path_customized"] = False
-            self._save_app_config()
+            self.json_file_path = DEFAULT_SERIES_JSON_PATH
+            self.app_config_manager.set("json_file_path", str(self.json_file_path))
+            self.app_config_manager.set("is_json_path_customized", False)
             
             # Assicurati che il file series_data.json di default esista
-            DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-            with open(DEFAULT_SERIES_JSON_PATH, 'w', encoding='utf-8') as f:
-                json.dump([], f, indent=4)
+            self.series_repository.save_series_data([]) # Crea un file vuoto
 
         self._download_thread = None
         self._download_worker = None
@@ -69,122 +71,106 @@ class AniDownloaderGUI(QMainWindow):
         self._init_ui()
         self._load_series_data_into_table()
 
-    def _load_app_config(self):
-        DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        default_config = {
-            "json_file_path": str(DEFAULT_SERIES_JSON_PATH),
-            "output_dir": str(DEFAULT_OUTPUT_DIR), # Convert to string
-            "log_file_path": str(DEFAULT_LOG_FILE), # Convert to string
-            "is_json_path_customized": False # Nuovo flag
-        }
-        
-        config_path = DEFAULT_APP_CONFIG_PATH
-        
-        if config_path.exists():
-            try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                # Unisci la configurazione caricata con i default per garantire tutte le chiavi
-                for key, value in default_config.items():
-                    if key not in config:
-                        config[key] = value
-                return config
-            except json.JSONDecodeError:
-                # File corrotto o vuoto, ricrea con i default
-                QMessageBox.warning(self, "File di Configurazione Corrotto", 
-                                    f"Il file di configurazione '{config_path}' è corrotto o vuoto. Verrà ricreato con le impostazioni di default.")
-                self._save_app_config(default_config)
-                return default_config
-        else:
-            # Primo avvio o file non trovato, crea con i default
-            self._save_app_config(default_config)
-            return default_config
-
-    def _save_app_config(self, config_data=None):
-        if config_data is None:
-            config_data = {
-                "json_file_path": str(self.json_file_path), # Ensure it's a string
-                "output_dir": str(self.output_dir), # Ensure it's a string
-                "log_file_path": str(self.log_file_path), # Ensure it's a string
-                "is_json_path_customized": self._app_config.get("is_json_path_customized", False) # Salva il flag
-            }
-        
-        DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        with open(DEFAULT_APP_CONFIG_PATH, 'w', encoding='utf-8') as f:
-            json.dump(config_data, f, indent=4, ensure_ascii=False)
-
     def _init_ui(self):
+        self._create_menu_bar()
+        self._create_main_layout()
+        self._create_config_section()
+        self._create_control_buttons()
+        self._create_series_table()
+        self._create_log_output()
+        self._setup_main_splitter()
+        self._create_overall_status_label()
+
+    def _create_menu_bar(self):
         menu_bar = self.menuBar()
         settings_menu = menu_bar.addMenu("Impostazioni")
         reset_warning_action = QAction("Ripristina avviso 'Ferma Download'", self)
         reset_warning_action.triggered.connect(self._reset_stop_warning_setting)
         settings_menu.addAction(reset_warning_action)
 
-    def _init_ui(self):
-        menu_bar = self.menuBar()
-        settings_menu = menu_bar.addMenu("Impostazioni")
-        reset_warning_action = QAction("Ripristina avviso 'Ferma Download'", self)
-        reset_warning_action.triggered.connect(self._reset_stop_warning_setting)
-        settings_menu.addAction(reset_warning_action)
-
+    def _create_main_layout(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
+        self.main_layout = QVBoxLayout(central_widget)
 
-        top_container = QWidget()
-        top_layout = QVBoxLayout(top_container)
-        top_layout.setContentsMargins(0,0,0,0)
+        self.top_container = QWidget()
+        self.top_layout = QVBoxLayout(self.top_container)
+        self.top_layout.setContentsMargins(0,0,0,0)
 
+    def _create_config_section(self):
         config_group_layout = QVBoxLayout()
+        
         json_layout = QHBoxLayout()
         json_label = QLabel("File JSON Serie:")
-        self.json_path_input = QLineEdit(self.json_file_path)
+        self.json_path_input = QLineEdit(str(self.json_file_path))
         self.json_path_input.setReadOnly(True)
         json_button = QPushButton("Sfoglia...")
         json_button.clicked.connect(self._browse_json_file)
-        json_layout.addWidget(json_label); json_layout.addWidget(self.json_path_input); json_layout.addWidget(json_button)
+        json_layout.addWidget(json_label)
+        json_layout.addWidget(self.json_path_input)
+        json_layout.addWidget(json_button)
         config_group_layout.addLayout(json_layout)
+
         output_layout = QHBoxLayout()
         output_label = QLabel("Cartella Output:")
-        self.output_dir_input = QLineEdit(self.output_dir)
+        self.output_dir_input = QLineEdit(str(self.output_dir))
         self.output_dir_input.setReadOnly(True)
         output_button = QPushButton("Sfoglia...")
         output_button.clicked.connect(self._browse_output_dir)
-        output_layout.addWidget(output_label); output_layout.addWidget(self.output_dir_input); output_layout.addWidget(output_button)
+        output_layout.addWidget(output_label)
+        output_layout.addWidget(self.output_dir_input)
+        output_layout.addWidget(output_button)
         config_group_layout.addLayout(output_layout)
-        top_layout.addLayout(config_group_layout)
-        top_layout.addSpacing(10)
+        
+        self.top_layout.addLayout(config_group_layout)
+        self.top_layout.addSpacing(10)
 
+    def _create_control_buttons(self):
         button_layout = QHBoxLayout()
-        self.start_button = QPushButton("Avvia Download"); self.start_button.clicked.connect(self.start_download)
-        self.start_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;"); self.start_button.setFixedSize(150, 40)
-        self.stop_button = QPushButton("Ferma Download"); self.stop_button.clicked.connect(self.stop_download)
-        self.stop_button.setEnabled(False); self.stop_button.setStyleSheet("background-color: #f44336; color: white; font-weight: bold;"); self.stop_button.setFixedSize(150, 40)
+        self.start_button = QPushButton("Avvia Download")
+        self.start_button.clicked.connect(self.start_download)
+        self.start_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        self.start_button.setFixedSize(150, 40)
+        
+        self.stop_button = QPushButton("Ferma Download")
+        self.stop_button.clicked.connect(self.stop_download)
+        self.stop_button.setEnabled(False)
+        self.stop_button.setStyleSheet("background-color: #f44336; color: white; font-weight: bold;")
+        self.stop_button.setFixedSize(150, 40)
         danger_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning)
         self.stop_button.setIcon(danger_icon)
-        self.refresh_button = QPushButton("Aggiorna Serie"); self.refresh_button.clicked.connect(self._load_series_data_into_table); self.refresh_button.setFixedSize(150, 40)
-        self.manage_series_button = QPushButton("Gestisci Serie"); self.manage_series_button.clicked.connect(self._open_series_manager); self.manage_series_button.setFixedSize(150, 40)
-        self.reset_sort_button = QPushButton("Ripristina Ordine"); self.reset_sort_button.clicked.connect(self._reset_table_sort); self.reset_sort_button.setFixedSize(150, 40)
-        button_layout.addWidget(self.start_button); button_layout.addWidget(self.stop_button); button_layout.addStretch(1)
-        button_layout.addWidget(self.refresh_button); button_layout.addWidget(self.manage_series_button); button_layout.addWidget(self.reset_sort_button)
-        top_layout.addLayout(button_layout)
-        top_layout.addSpacing(10)
+        
+        self.refresh_button = QPushButton("Aggiorna Serie")
+        self.refresh_button.clicked.connect(self._load_series_data_into_table)
+        self.refresh_button.setFixedSize(150, 40)
+        
+        self.manage_series_button = QPushButton("Gestisci Serie")
+        self.manage_series_button.clicked.connect(self._open_series_manager)
+        self.manage_series_button.setFixedSize(150, 40)
+        
+        self.reset_sort_button = QPushButton("Ripristina Ordine")
+        self.reset_sort_button.clicked.connect(self._reset_table_sort)
+        self.reset_sort_button.setFixedSize(150, 40)
+        
+        button_layout.addWidget(self.start_button)
+        button_layout.addWidget(self.stop_button)
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.refresh_button)
+        button_layout.addWidget(self.manage_series_button)
+        button_layout.addWidget(self.reset_sort_button)
+        self.top_layout.addLayout(button_layout)
+        self.top_layout.addSpacing(10)
 
+    def _create_series_table(self):
         self.table_widget = QTableWidget()
         self.table_widget.setColumnCount(2)
         self.table_widget.setHorizontalHeaderLabels(["Nome Serie", "Stato"])
         header = self.table_widget.horizontalHeader()
-        # **LA SOLUZIONE È QUI (Parte 1):** Imposta la modalità base su Interattiva
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        
-        # Set header alignment for both columns
         self.table_widget.horizontalHeaderItem(0).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.table_widget.horizontalHeaderItem(1).setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # Centra i numeri di riga nell'intestazione verticale
         self.table_widget.verticalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-
         self.table_widget.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table_widget.setSortingEnabled(True)
         self.table_widget.itemSelectionChanged.connect(self._on_series_selected)
@@ -192,31 +178,37 @@ class AniDownloaderGUI(QMainWindow):
         series_display_layout = QHBoxLayout()
         series_display_layout.addWidget(self.table_widget)
         self.image_label = QLabel()
-        self.image_label.setFixedSize(200, 300); self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setFixedSize(200, 300)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setStyleSheet("border: 1px solid #ccc; background-color: #f0f0f0;")
         series_display_layout.addWidget(self.image_label)
-        top_layout.addLayout(series_display_layout)
+        self.top_layout.addLayout(series_display_layout)
 
-        self.log_output = QTextEdit(); self.log_output.setReadOnly(True); self.log_output.setFont(QFont("Monospace", 9))
-        
+    def _create_log_output(self):
+        self.log_output = QTextEdit()
+        self.log_output.setReadOnly(True)
+        self.log_output.setFont(QFont("Monospace", 9))
+
+    def _setup_main_splitter(self):
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
-        self.main_splitter.addWidget(top_container)
+        self.main_splitter.addWidget(self.top_container)
         self.main_splitter.addWidget(self.log_output)
         self.main_splitter.setSizes([450, 0])
         self.main_splitter.setStretchFactor(0, 1)
         self.main_splitter.setStretchFactor(1, 0)
-        
-        main_layout.addWidget(self.main_splitter)
+        self.main_layout.addWidget(self.main_splitter)
 
-        self.overall_status_label = QLabel("Pronto."); self.overall_status_label.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
-        main_layout.addWidget(self.overall_status_label)
+    def _create_overall_status_label(self):
+        self.overall_status_label = QLabel("Pronto.")
+        self.overall_status_label.setFont(QFont("Sans Serif", 10, QFont.Weight.Bold))
+        self.main_layout.addWidget(self.overall_status_label)
 
     def _reset_stop_warning_setting(self):
         self.settings.setValue("show_stop_warning", True)
         QMessageBox.information(self, "Impostazioni", "L'avviso di interruzione verrà mostrato di nuovo.")
 
     def _open_series_manager(self):
-        dialog = SeriesManagerDialog(parent=self) # Rimosso json_file_path, log_file_path
+        dialog = SeriesManagerDialog(series_repository=self.series_repository, parent=self)
         if dialog.exec():
             self._load_series_data_into_table()
 
@@ -224,28 +216,27 @@ class AniDownloaderGUI(QMainWindow):
         file_dialog = QFileDialog(self)
         if file_dialog.exec():
             selected_file = file_dialog.selectedFiles()[0]
-            self.json_file_path = selected_file
+            self.json_file_path = Path(selected_file)
             self.json_path_input.setText(selected_file)
-            self._app_config["json_file_path"] = selected_file # Salva nel nuovo config.json
-            self._app_config["is_json_path_customized"] = True # Imposta il flag a True
-            self._save_app_config() # Salva il file di configurazione
+            self.app_config_manager.set("json_file_path", selected_file)
+            self.app_config_manager.set("is_json_path_customized", True)
+            self.series_repository._json_file_path = self.json_file_path # Aggiorna il percorso nel repository
             self._load_series_data_into_table()
 
     def _browse_output_dir(self):
         dir_dialog = QFileDialog(self)
         if dir_dialog.exec():
             selected_dir = dir_dialog.selectedFiles()[0]
-            self.output_dir = selected_dir
+            self.output_dir = Path(selected_dir)
             self.output_dir_input.setText(selected_dir)
-            self._app_config["output_dir"] = selected_dir # Salva nel nuovo config.json
-            self._save_app_config() # Salva il file di configurazione
+            self.app_config_manager.set("output_dir", selected_dir)
 
     def _load_series_data_into_table(self):
         try:
-            worker = DownloadWorker(series_list=[], json_file_path=self.json_file_path)
-            self._series_data = worker._load_series_data()
+            self._series_data = self.series_repository.load_series_data()
         except Exception as e:
-            QMessageBox.critical(self, "Errore Caricamento Serie", f"Impossibile caricare: {e}"); self._series_data = []
+            QMessageBox.critical(self, "Errore Caricamento Serie", f"Impossibile caricare: {e}")
+            self._series_data = []
         self._populate_table_main_gui(self._series_data)
         self.table_widget.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
 
@@ -271,34 +262,31 @@ class AniDownloaderGUI(QMainWindow):
 
     def _on_series_selected(self):
         selected_items = self.table_widget.selectedItems()
-        if not selected_items: self.image_label.clear(); return
+        if not selected_items:
+            self.image_label.clear()
+            self.image_label.setText("Nessuna serie selezionata")
+            return
         row = selected_items[0].row()
         item = self.table_widget.item(row, 0)
-        if not item: self.image_label.clear(); return
+        if not item:
+            self.image_label.clear()
+            self.image_label.setText("Nessuna serie selezionata")
+            return
         
         series = next((s for s in self._series_data if s.get("name") == item.text()), None)
         if series and series.get("path"):
-            series_path = series.get("path")
-            image_path = os.path.join(os.path.dirname(series_path), "folder.jpg")
-            if os.path.exists(image_path) and (pixmap := QPixmap(image_path)) and not pixmap.isNull():
-                self.image_label.setPixmap(pixmap.scaled(self.image_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            else: self.image_label.clear(); self.image_label.setText("Locandina non trovata")
-        else: self.image_label.clear(); self.image_label.setText("Percorso non definito")
+            load_poster_image(self.image_label, series.get("path"))
+        else:
+            self.image_label.clear()
+            self.image_label.setText("Percorso non definito")
 
     def start_download(self):
         if self._download_thread and self._download_thread.isRunning(): return
         if not self._series_data: return
 
-        self.table_widget.setSortingEnabled(False)
-        self.main_splitter.setSizes([450, 200])
-        
-        for row in range(self.table_widget.rowCount()):
-            self.table_widget.setItem(row, 1, StatusTableWidgetItem("In coda...", 2))
-            self.table_widget.item(row, 1).setBackground(QColor(Qt.GlobalColor.transparent))
-
-        self.start_button.setEnabled(False); self.stop_button.setEnabled(True)
-        self.refresh_button.setEnabled(False); self.json_path_input.setEnabled(False); self.output_dir_input.setEnabled(False)
-        self.log_output.clear(); self.overall_status_label.setText("Avvio processo...")
+        self._set_download_in_progress_ui_state(True)
+        self.log_output.clear()
+        self.overall_status_label.setText("Avvio processo...")
 
         self._download_thread = QThread()
         self._download_worker = DownloadWorker(series_list=self._series_data, json_file_path=self.json_file_path, log_file_path=self.log_file_path, output_dir=self.output_dir)
@@ -325,10 +313,10 @@ class AniDownloaderGUI(QMainWindow):
         else: self._execute_stop_procedure()
 
     def _execute_stop_procedure(self):
-        if self.download_worker:
+        if self._download_worker: # Changed from self.download_worker to self._download_worker
             self.overall_status_label.setText("Interruzione in corso...")
             self.stop_button.setEnabled(False)
-            self.download_worker.request_stop()
+            self._download_worker.request_stop() # Changed from self.download_worker to self._download_worker
 
     def _update_series_status(self, series_name, status_message):
         status_lower = status_message.lower()
@@ -362,13 +350,29 @@ class AniDownloaderGUI(QMainWindow):
         self.log_output.append(f"🚫 SKIPPED [{series_name}]: {reason}")
         self._update_series_status(series_name, f"🚫 Saltato: {reason}")
 
+    def _set_download_in_progress_ui_state(self, in_progress: bool):
+        """Imposta lo stato degli elementi UI in base allo stato del download."""
+        self.table_widget.setSortingEnabled(not in_progress)
+        self.main_splitter.setSizes([450, 200 if in_progress else 0])
+        
+        if in_progress:
+            for row in range(self.table_widget.rowCount()):
+                self.table_widget.setItem(row, 1, StatusTableWidgetItem("In coda...", 2))
+                self.table_widget.item(row, 1).setBackground(QColor(Qt.GlobalColor.transparent))
+
+        self.start_button.setEnabled(not in_progress)
+        self.stop_button.setEnabled(in_progress)
+        self.refresh_button.setEnabled(not in_progress)
+        self.json_path_input.setEnabled(not in_progress)
+        self.output_dir_input.setEnabled(not in_progress)
+
     def _download_finished(self):
-        self.table_widget.setSortingEnabled(True)
-        self.start_button.setEnabled(True); self.stop_button.setEnabled(False)
-        self.refresh_button.setEnabled(True); self.json_path_input.setEnabled(True); self.output_dir_input.setEnabled(True)
+        self._set_download_in_progress_ui_state(False)
         if "Interruzione" not in self.overall_status_label.text():
              self.overall_status_label.setText("Processo completato.")
         
         if self._download_thread:
-            self._download_thread.quit(); self._download_thread.wait()
-        self._download_thread = None; self._download_worker = None
+            self._download_thread.quit()
+            self._download_thread.wait()
+        self._download_thread = None
+        self._download_worker = None
