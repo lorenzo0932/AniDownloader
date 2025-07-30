@@ -10,9 +10,10 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from core.download_worker import DownloadWorker, save_series_data
 from .series_editor import SeriesEditorDialog
+from pathlib import Path # Importa Path
 
 class SeriesManagerDialog(QDialog):
-    def __init__(self, json_file_path, log_file_path, parent=None):
+    def __init__(self, parent=None): # Rimosso json_file_path, log_file_path
         super().__init__(parent)
         self.setWindowTitle("Gestisci Serie")
         screen_geometry = QApplication.primaryScreen().geometry()
@@ -23,8 +24,9 @@ class SeriesManagerDialog(QDialog):
         self.setGeometry(x, y, window_width, window_height)
         self.setMinimumSize(700, 500)
         
-        self._json_file_path = json_file_path
-        self._log_file_path = log_file_path
+        # Accedi ai percorsi tramite il parent (AniDownloaderGUI)
+        self._json_file_path = self.parent().json_file_path
+        self._log_file_path = self.parent().log_file_path
         self._series_data = []
         self._original_series_data = []
         self._init_ui()

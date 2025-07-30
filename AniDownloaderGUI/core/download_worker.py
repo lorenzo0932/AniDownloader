@@ -11,15 +11,14 @@ import logging
 from pathlib import Path
 from queue import Empty
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
+from config.defaults import DEFAULT_LOG_FILE, DEFAULT_OUTPUT_DIR, DEFAULT_SERIES_JSON_PATH
 
 try:
     import psutil
 except ImportError:
     psutil = None
 
-DEFAULT_JSON_FILE_PATH = 'series_data.json'
-DEFAULT_LOG_FILE = 'serie_critical_errors.log'
-DEFAULT_OUTPUT_DIR = "/home/lorenzo/Video/Convertiti"
+DEFAULT_JSON_FILE_PATH = DEFAULT_SERIES_JSON_PATH
 
 def get_next_episode_num(series_path):
     if not os.path.exists(series_path): os.makedirs(series_path)

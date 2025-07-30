@@ -1,4 +1,6 @@
 import os
+import json
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
     QPushButton, QTableWidget, QHeaderView, QFileDialog, QLabel,
@@ -6,7 +8,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QThread, Qt, QSettings
 from PyQt6.QtGui import QIcon, QFont, QPixmap, QColor, QAction
-from core.download_worker import DownloadWorker, DEFAULT_JSON_FILE_PATH, DEFAULT_LOG_FILE, DEFAULT_OUTPUT_DIR
+from core.download_worker import DownloadWorker
+from config.defaults import DEFAULT_LOG_FILE, DEFAULT_OUTPUT_DIR, DEFAULT_CONFIG_DIR, DEFAULT_SERIES_JSON_PATH, DEFAULT_APP_CONFIG_PATH
 from .widgets import StatusTableWidgetItem, StopConfirmationDialog
 from .series_manager import SeriesManagerDialog
 
@@ -24,15 +27,98 @@ class AniDownloaderGUI(QMainWindow):
         self.setMinimumSize(800, 500)
         
         self.setWindowIcon(QIcon('assets/logo.png'))
-        self.settings = QSettings("MyScript", "AniDownloader")
-        self.json_file_path = self.settings.value("json_file_path", DEFAULT_JSON_FILE_PATH)
-        self.output_dir = self.settings.value("output_dir", DEFAULT_OUTPUT_DIR)
-        self.log_file_path = self.settings.value("log_file_path", DEFAULT_LOG_FILE)
+        
+        # Assicurati che la directory di configurazione esista per QSettings
+        DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        qsettings_path = str(DEFAULT_CONFIG_DIR / "AniDownloader.conf")
+        self.settings = QSettings(qsettings_path, QSettings.Format.IniFormat) # Per le impostazioni dell'applicazione (es. avvisi)
+
+        # Carica o crea il file di configurazione dell'applicazione
+        self._app_config = self._load_app_config()
+
+        # Inizializza tutti i percorsi dai valori di configurazione o dai default
+        self.json_file_path = self._app_config.get("json_file_path", str(DEFAULT_SERIES_JSON_PATH))
+        self.output_dir = self._app_config.get("output_dir", DEFAULT_OUTPUT_DIR)
+        self.log_file_path = self._app_config.get("log_file_path", DEFAULT_LOG_FILE)
+        
+        is_json_path_customized = self._app_config.get("is_json_path_customized", False)
+
+        # Verifica se il file series_data.json esiste al percorso configurato
+        if not Path(self.json_file_path).exists():
+            # Se il percorso era personalizzato e il file non esiste più, notifica l'utente
+            if is_json_path_customized:
+                QMessageBox.information(self, "File Serie Non Trovato", 
+                                        f"Il file dei dati delle serie non è stato trovato nella posizione specificata:\n"
+                                        f"{self.json_file_path}\n"
+                                        f"È stato ripristinato il percorso di default e creato un nuovo file vuoto in: {DEFAULT_SERIES_JSON_PATH}")
+            
+            # Reimposta al percorso di default e aggiorna la configurazione
+            self.json_file_path = str(DEFAULT_SERIES_JSON_PATH)
+            self._app_config["json_file_path"] = self.json_file_path
+            self._app_config["is_json_path_customized"] = False
+            self._save_app_config()
+            
+            # Assicurati che il file series_data.json di default esista
+            DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            with open(DEFAULT_SERIES_JSON_PATH, 'w', encoding='utf-8') as f:
+                json.dump([], f, indent=4)
+
         self._download_thread = None
         self._download_worker = None
         self._series_data = [] # Lasciato pubblico come richiesto
         self._init_ui()
         self._load_series_data_into_table()
+
+    def _load_app_config(self):
+        DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        default_config = {
+            "json_file_path": str(DEFAULT_SERIES_JSON_PATH),
+            "output_dir": str(DEFAULT_OUTPUT_DIR), # Convert to string
+            "log_file_path": str(DEFAULT_LOG_FILE), # Convert to string
+            "is_json_path_customized": False # Nuovo flag
+        }
+        
+        config_path = DEFAULT_APP_CONFIG_PATH
+        
+        if config_path.exists():
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                # Unisci la configurazione caricata con i default per garantire tutte le chiavi
+                for key, value in default_config.items():
+                    if key not in config:
+                        config[key] = value
+                return config
+            except json.JSONDecodeError:
+                # File corrotto o vuoto, ricrea con i default
+                QMessageBox.warning(self, "File di Configurazione Corrotto", 
+                                    f"Il file di configurazione '{config_path}' è corrotto o vuoto. Verrà ricreato con le impostazioni di default.")
+                self._save_app_config(default_config)
+                return default_config
+        else:
+            # Primo avvio o file non trovato, crea con i default
+            self._save_app_config(default_config)
+            return default_config
+
+    def _save_app_config(self, config_data=None):
+        if config_data is None:
+            config_data = {
+                "json_file_path": str(self.json_file_path), # Ensure it's a string
+                "output_dir": str(self.output_dir), # Ensure it's a string
+                "log_file_path": str(self.log_file_path), # Ensure it's a string
+                "is_json_path_customized": self._app_config.get("is_json_path_customized", False) # Salva il flag
+            }
+        
+        DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(DEFAULT_APP_CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=4, ensure_ascii=False)
+
+    def _init_ui(self):
+        menu_bar = self.menuBar()
+        settings_menu = menu_bar.addMenu("Impostazioni")
+        reset_warning_action = QAction("Ripristina avviso 'Ferma Download'", self)
+        reset_warning_action.triggered.connect(self._reset_stop_warning_setting)
+        settings_menu.addAction(reset_warning_action)
 
     def _init_ui(self):
         menu_bar = self.menuBar()
@@ -130,7 +216,7 @@ class AniDownloaderGUI(QMainWindow):
         QMessageBox.information(self, "Impostazioni", "L'avviso di interruzione verrà mostrato di nuovo.")
 
     def _open_series_manager(self):
-        dialog = SeriesManagerDialog(self.json_file_path, self.log_file_path, self)
+        dialog = SeriesManagerDialog(parent=self) # Rimosso json_file_path, log_file_path
         if dialog.exec():
             self._load_series_data_into_table()
 
@@ -140,7 +226,9 @@ class AniDownloaderGUI(QMainWindow):
             selected_file = file_dialog.selectedFiles()[0]
             self.json_file_path = selected_file
             self.json_path_input.setText(selected_file)
-            self.settings.setValue("json_file_path", selected_file)
+            self._app_config["json_file_path"] = selected_file # Salva nel nuovo config.json
+            self._app_config["is_json_path_customized"] = True # Imposta il flag a True
+            self._save_app_config() # Salva il file di configurazione
             self._load_series_data_into_table()
 
     def _browse_output_dir(self):
@@ -149,7 +237,8 @@ class AniDownloaderGUI(QMainWindow):
             selected_dir = dir_dialog.selectedFiles()[0]
             self.output_dir = selected_dir
             self.output_dir_input.setText(selected_dir)
-            self.settings.setValue("output_dir", selected_dir)
+            self._app_config["output_dir"] = selected_dir # Salva nel nuovo config.json
+            self._save_app_config() # Salva il file di configurazione
 
     def _load_series_data_into_table(self):
         try:
