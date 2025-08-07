@@ -1,105 +1,180 @@
-# AniDownloader: Anime Download and Conversion System
+# AniDownloader
 
-This repository contains a Python script and its related configuration files and utilities to automate the download and conversion of anime episodes.
+An advanced system to automate the download, conversion, and management of your favorite anime series.
 
-## 1. `downloadAnime.sh` (Main Script)
+<br/>
 
-This is the main Python script that manages the entire process of downloading and converting anime episodes.
+<div align="center">
 
-**Main features:**
-- **Configuration loading**: Reads series data from the `series_data.json` file to know which anime to download and where to save them.
-- **Next episode determination**: Identifies the last downloaded episode in a specific folder and calculates the number of the next episode to download.
-- **Parallel download**: Uses `aria2c` to download episodes in parallel, optimizing download speed.
-- **Series continuation management**: Supports series that span multiple seasons, renaming files based on the overall episode numbering.
-- **Video Conversion**: Uses ffmpeg for H.265 video conversion and post-conversion integrity verification directly within the script.
-- **Final report**: At the end of execution, it provides a detailed summary of downloaded episodes, conversion status, and time taken for each operation.
+![AniDownloader Workflow](media/main_workflow.gif)
 
-**Dependencies:**
-- `python3`: Required for script execution.
-- `aria2c`: Command-line tool for accelerated downloads.
-- `ffmpeg`: Used for video file conversion and verification after conversion.
+*AniDownloader in action: from planning and parallel downloading to automatic conversion.*
 
-## 2. `series_data.json` (Configuration File)
+</div>
 
-This JSON file is essential for configuring the series that `downloadAnime.sh` should download. **Do not directly modify `series_data.json` unless you know what you are doing.**
+<br/>
 
-To add new series or modify existing ones, refer to the `series_data_template.json` template.
+AniDownloader is a complete solution, featuring both an intuitive graphical user interface (GUI) and a command-line interface (CLI), designed to simplify and automate the entire process of downloading and archiving anime episodes. It intelligently manages new releases, converts files to optimize storage space, and integrates seamlessly into your system.
 
-### Series object structure:
+---
 
-Each object within the JSON array represents a series and must contain the following properties:
+## ✨ Key Features
 
-- **`name`**: The full name of the series.
-- **`path`**: The full local path where the series episodes will be saved, followed by the season number (e.g., `/home/lorenzo/Video/Simulcast/SeriesName/1`).
-- **`link_pattern`**: The download link pattern for the series. It is crucial to replace the episode number with `{ep}`. Example: `https://srv16-suisen.sweetpixel.org/DDL/ANIME/SentaiDaishikkaku2/SentaiDaishikkaku2_Ep_{ep}_SUB_ITA.mp4`.
-- **`continue`**: (Optional) A boolean value (`true` or `false`). Set to `true` if the series is a continuation of a previous season and episode numbering should account for already passed episodes.
-- **`passed_episodes`**: (Required if `continue` is `true`) An integer defining the total number of episodes from previous seasons already downloaded.
+*   **Intuitive Graphical Interface**: Easily manage your series, monitor progress, and configure settings with a modern GUI built in PyQt6.
+*   **High-Speed Parallel Downloads**: Leverages the power of `aria2c` to download multiple episodes simultaneously, maximizing your download speed.
+*   **Automatic Video Conversion**: Automatically converts downloaded videos to the H.265 (HEVC) format for significant space savings while maintaining high visual quality.
+*   **Advanced Series Management**: Built-in support for series that continue across multiple seasons, with automatic file renaming to maintain a consistent and continuous episode numbering.
+*   **Real-Time Monitoring**: Keep track of the status of each download and conversion directly from the main table, with color-coded status updates.
+*   **Dual Mode (GUI & CLI)**: Choose between using the user-friendly graphical interface or the `AniDownloader.sh` script for server environments or automation.
+*   **Process Control**: Safely stop the entire download and conversion process at any time through a confirmation dialog.
+*   **Automation with Systemd**: Includes ready-to-use service files (`.service`, `.timer`) to schedule automatic runs on Linux systems.
+*   **Dependency Checks**: Automatically verifies the presence of required tools (`ffmpeg`, `aria2c`) on startup to ensure proper functionality.
 
-**Example structure:**
+## 🚀 Getting Started
 
-```json
-[
-    {
-        "name": "Series Name",
-        "path": "local_series_path/season_number",
-        "link_pattern": "series_download_link",
-        "continue": true,
-        "passed_episodes": 12
-    },
-    {
-        "name": "Series Name2",
-        "path": "local_series_path/season_number",
-        "link_pattern": "series_download_link"
-    }
-]
+Follow these steps to get started with AniDownloader.
+
+### 📋 Prerequisites
+
+Ensure you have the following software installed on your system:
+
+1.  **Python 3.8+**: Required to run the application.
+2.  **FFmpeg**: Essential for video conversion and verification.
+3.  **Aria2c**: Required for accelerated and parallel downloads.
+
+You can install **FFmpeg** and **Aria2c** using your system's package manager:
+
+```bash
+# On Debian/Ubuntu
+sudo apt update && sudo apt install ffmpeg aria2
+
+# On Fedora
+sudo dnf install ffmpeg aria2
+
+# On macOS (with Homebrew)
+brew install ffmpeg aria2
+
+# On Windows (with Winget)
+winget install "FFmpeg (Essentials Build)"
+winget install aria2
 ```
 
-## 3. `series_data_template.json` (Configuration Template)
+### 🛠️ Installation
 
-This file serves as a template for creating or modifying the `series_data.json` file.
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/AniDownloader.git
+    cd AniDownloader
+    ```
 
-**Instructions for use:**
-1. Open `series_data_template.json`.
-2. **Delete all comments** present in the file (lines starting with `//`).
-3. Modify the content by adding information related to your series, following the "Series object structure" described above.
-4. Save the final file with the name `series_data.json` (without `_template`) in the same directory.
+2.  **Install Python dependencies:**
+    The graphical application requires a few Python libraries. Install them using the `requirements.txt` file.
+    ```bash
+    # Navigate to the GUI folder
+    cd AniDownloaderGUI
 
-## 4. `AniDownloader.desktop` (Desktop Launcher)
+    # Install the required packages
+    pip install -r requirements.txt
+    ```
 
-This file is a desktop application for Linux systems (compatible with desktop environments like GNOME, KDE, etc.) that provides a simple way to launch the `downloadAnime.sh` script with a double click.
+## ⚙️ Configuration
 
-**Details:**
-- **`Name=AniDownloader`**: The displayed name of the application in the menu or on the desktop.
-- **`Comment=Downloads all configured simulcast anime`**: A brief description of its function.
-- **`Path=/home/lorenzo/.local/share/myScript/downloadAnime/`**: Specifies the working directory from which the `downloadAnime.sh` script will be executed.
-- **`Exec=sh -c './downloadAnime.sh'`**: The actual command that is executed when the application is launched.
-- **`Icon=/home/lorenzo/.local/share/myScript/downloadAnime/logo.png`**: The path to the icon displayed for the application.
-- **`Terminal=true`**: Indicates that the application should be run within a terminal window, allowing the script's output to be viewed.
+Series configuration is handled through the `series_data.json` file. While you can edit it manually, **it is highly recommended to use the graphical interface ("Manage Series")** to avoid syntax errors.
 
-## 5. `AniDownloaderGUI/` (Graphical User Interface)
+On the first launch, the application will automatically create the necessary configuration files in `~/.config/AniDownloader/`.
 
-This directory contains a new Python-based Graphical User Interface (GUI) application built with PyQt6, offering a user-friendly way to manage and automate anime downloads.
+![Series Management](media/series_management.gif)
+*Adding, editing, and removing series is easy thanks to the integrated editor.*
 
-**Main Features:**
-- **Centralized Management**: Provides a visual interface to view the status of ongoing downloads and conversions.
-- **Series Configuration**: Allows users to easily add, edit, and remove series entries, including their names, download paths, link patterns, and continuation settings, through dedicated management and editing dialogs.
-- **Real-time Progress**: Displays real-time progress updates for downloads and conversions, along with overall system status.
-- **Dependency Checks**: Automatically verifies the presence of necessary dependencies (`aria2c`, `ffmpeg`, `psutil`) and provides guidance if any are missing.
-- **Customizable Paths**: Users can configure the `series_data.json` file path and the output directory for converted videos directly from the GUI.
-- **Cross-platform**: Built with PyQt6, it is designed to run on various operating systems.
-- **Desktop Integration**: Includes a `.desktop` file for easy launching from Linux desktop environments.
+The structure of a series object in the `series_data.json` file is as follows:
 
-**Dependencies:**
-- `PyQt6`: Python bindings for Qt, used for creating the graphical interface.
-- `psutil`: A cross-platform library for system and process monitoring, used for managing download/conversion processes.
-- `requests`: Used for making HTTP requests, primarily for checking the availability of download links.
+```json
+{
+    "name": "Full Series Name",
+    "path": "/local/path/to/series/folder/1",
+    "link_pattern": "https://server.com/anime/Series_Ep_{ep}_SUB_ITA.mp4",
+    "continue": true,
+    "passed_episodes": 12
+}```
 
-**How to Run:**
-To run the GUI, navigate to the `AniDownloaderGUI/` directory and execute `main.py`:
+*   `name`: The name of the series to be displayed in the GUI.
+*   `path`: The full local path to the folder where episodes will be saved.
+*   `link_pattern`: The download link, where `{ep}` is the placeholder for the episode number.
+*   `continue` (optional): Set to `true` if the series is a continuation of a previous season.
+*   `passed_episodes` (optional): Required if `continue` is `true`. Indicates the total number of episodes from previous seasons.
+
+## ▶️ Usage
+
+AniDownloader can be run in three different modes.
+
+### GUI Mode (Recommended)
+
+The graphical interface is the easiest way to use the application.
+
 ```bash
+# From the project's root folder
 cd AniDownloaderGUI/
 python3 main.py
 ```
-Ensure all dependencies listed in `AniDownloaderGUI/requirements.txt` are installed (e.g., `pip install -r AniDownloaderGUI/requirements.txt`).
 
+For better integration on Linux desktops, you can use the `AniDownloaderGUI.desktop` file.
 
+![Safe Stop Feature](media/stop_feature.gif)
+*You can safely stop the process at any time.*
+
+### CLI Mode (Command-Line)
+
+For terminal use or for integration into custom scripts, you can run the `AniDownloader.sh` script directly.
+
+```bash
+# From the project's root folder
+./AniDownloader.sh
+```
+
+The script will read the configuration, download, and convert the episodes, displaying the progress directly in the terminal.
+
+### Automatic Mode (Systemd Service on Linux)
+
+To run downloads automatically at regular intervals, you can use the included `systemd` service files.
+
+1.  **Edit the paths:** Make sure the `WorkingDirectory` and `ExecStart` paths in the `systemd_services/AniDownloader.service` file match your setup.
+2.  **Copy the service files:**
+    ```bash
+    sudo cp systemd_services/AniDownloader.service /etc/systemd/system/
+    sudo cp systemd_services/AniDownloader.timer /etc/systemd/system/
+    ```
+3.  **Reload, enable, and start the timer:**
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now AniDownloader.timer
+    ```
+
+The service will now run automatically every 15 minutes.
+
+## 📂 Project Structure
+
+```
+.
+├── AniDownloader.sh          # Main script for CLI execution
+├── series_data_template.json # Template for series configuration
+├── AniDownloaderGUI/           # Root folder for the GUI application
+│   ├── main.py                 # GUI application entry point
+│   ├── requirements.txt        # Python dependencies for the GUI
+│   ├── assets/                 # Graphic assets (e.g., icons)
+│   ├── config/                 # App configuration management (paths, etc.)
+│   ├── core/                   # Core business logic (download, conversion)
+│   ├── gui/                    # GUI components (windows, dialogs)
+│   └── utils/                  # Utility functions (e.g., image loader)
+└── systemd_services/           # Files for automation via systemd on Linux
+    ├── AniDownloader.service
+    └── AniDownloader.timer
+```
+
+## 💡 Future Developments
+
+Here are some of the future directions for the project:
+
+*   [ ] Integration of a desktop notification system for completed downloads.
+*   [ ] Adding support for multiple download sources for the same series.
+*   [ ] Creating a standalone installer package (e.g., using PyInstaller).
+*   [ ] Improving network error handling with automatic retries.
