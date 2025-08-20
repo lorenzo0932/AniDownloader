@@ -57,18 +57,10 @@ def download_episode(task: dict, status_updater, stop_event, log_file_path: Path
     return str(output_file_path), time.time() - start_time
 
 def convert_and_verify_episode(file_path: str, name: str, output_dir: Path, status_updater, stop_event, log_file_path: Path, max_retries=3):
-    # --- MODIFICA CHIAVE INIZIA ---
-    # Convertiamo esplicitamente a oggetti Path all'inizio per garantire coerenza.
-    # Questo risolve il TypeError.
     output_dir_path = Path(output_dir)
     input_file_path = Path(file_path)
-    
-    # Assicura che la directory di output esista
     output_dir_path.mkdir(parents=True, exist_ok=True)
-    
-    # Costruisci il percorso di output usando l'operatore / su oggetti Path
     output_path = output_dir_path / input_file_path.name
-    # --- FINE MODIFICA ---
     
     for attempt in range(1, max_retries + 1):
         if stop_event.is_set(): raise Exception("Conversione interrotta.")
@@ -77,7 +69,6 @@ def convert_and_verify_episode(file_path: str, name: str, output_dir: Path, stat
         start_time = time.time()
         
         try:
-            # Passiamo i percorsi come stringhe ai comandi esterni
             cmd = ["nice", "-n", "5", "ffmpeg", "-y", "-i", str(input_file_path), "-c:v", "libx265", "-crf", "23", "-preset", "veryfast", "-threads", "12", "-x265-params", "hist-scenecut=1", "-c:a", "copy", str(output_path)]
             creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, creationflags=creationflags)
@@ -126,6 +117,15 @@ def process_series_task(task: dict, output_dir: Path, log_file_path: Path, statu
         
         if convert_to_h265:
             _, conversion_time = convert_and_verify_episode(episode_path, name, output_dir, status_updater, stop_event, log_file_path)
+        
+        # --- MODIFICA CHIAVE ---
+        # Comunica il successo alla GUI, se possibile, senza rompere la CLI.
+        # hasattr controlla se l'oggetto 'status_updater' ha il metodo 'report_finished'.
+        # Questo sarà vero solo per la GUI, non per la CLI.
+        if hasattr(status_updater, 'report_finished'):
+            final_filepath = Path(task["series"]["path"]) / task["final_filename"]
+            status_updater.report_finished(name, str(final_filepath), download_time, conversion_time)
+        # --- FINE MODIFICA ---
         
         return {"name": name, "episode": episode_path, "download_time": download_time, "conversion_time": conversion_time, "error": None}
 
