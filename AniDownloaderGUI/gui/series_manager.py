@@ -1,12 +1,11 @@
 import os
-import re
 import platform
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QLabel, QLineEdit, QPushButton, QMessageBox, QApplication
 )
 from PyQt6.QtCore import Qt
-from core.series_repository import SeriesRepository
+from anidownloader_core.series_repository import SeriesRepository
 from utils.image_loader import load_poster_image
 from .series_editor import SeriesEditorDialog
 
@@ -44,15 +43,19 @@ class SeriesManagerDialog(QDialog):
     def _create_series_display_section(self):
         series_display_layout = QHBoxLayout()
         self._table_widget = QTableWidget()
+        
         self._table_widget.setColumnCount(5)
-        self._table_widget.setHorizontalHeaderLabels(["Nome", "Percorso", "Pattern Link", "Continua", "Ep. Passati"])
+        self._table_widget.setHorizontalHeaderLabels([
+            "Nome", "Percorso", "URL Pagina Serie",
+            "Continua", "Ep. Passati"
+        ])
         
         header = self._table_widget.horizontalHeader()
-        for i in range(self._table_widget.columnCount() - 2):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
-            
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch) # Nome
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch) # Percorso
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch) # URL Pagina Serie
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents) # Continua
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents) # Ep. Passati
     
         self._table_widget.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table_widget.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -95,7 +98,7 @@ class SeriesManagerDialog(QDialog):
         self._remove_button.clicked.connect(self._remove_selected_series)
         self._save_button = QPushButton("Salva e Chiudi")
         self._save_button.setDefault(True)
-        self._save_button.clicked.connect(self._save_changes_and_accept)
+        self._save_button.clicked.connect(self.accept) # Salva e chiudi
         self._cancel_button = QPushButton("Annulla")
         self._cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self._add_button)
@@ -107,8 +110,9 @@ class SeriesManagerDialog(QDialog):
         self.main_layout.addLayout(button_layout)
 
     def _reset_table_sort(self):
-        self._table_widget.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+        self._table_widget.setSortingEnabled(False)
         self._filter_series()
+        self._table_widget.setSortingEnabled(True)
 
     def _on_series_selected(self):
         selected_items = self._table_widget.selectedItems()
@@ -116,14 +120,14 @@ class SeriesManagerDialog(QDialog):
             self._image_label.clear()
             self._image_label.setText("Nessuna serie selezionata")
             return
-        row = selected_items[0].row()
-        item = self._table_widget.item(row, 0)
-        if not item:
-            self._image_label.clear()
-            self._image_label.setText("Nessuna serie selezionata")
-            return
-        
-        series_name = item.text()
+            
+        row = self._table_widget.currentRow()
+        if row == -1: return
+
+        series_name_item = self._table_widget.item(row, 0)
+        if not series_name_item: return
+
+        series_name = series_name_item.text()
         series = next((s for s in self._series_data if s.get("name") == series_name), None)
 
         if series and series.get("path"):
@@ -152,28 +156,24 @@ class SeriesManagerDialog(QDialog):
         for row, series in enumerate(data):
             name_item = QTableWidgetItem(series.get("name", ""))
             path_item = QTableWidgetItem(series.get("path", ""))
-            link_pattern_item = QTableWidgetItem(series.get("link_pattern", ""))
+            series_page_url_item = QTableWidgetItem(series.get("series_page_url", ""))
             continue_item = QTableWidgetItem("Sì" if series.get("continue", False) else "No")
             passed_episodes_item = QTableWidgetItem(str(series.get("passed_episodes", 0)))
 
-            # Set alignment for content of specific columns
             continue_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             passed_episodes_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
             self._table_widget.setItem(row, 0, name_item)
             self._table_widget.setItem(row, 1, path_item)
-            self._table_widget.setItem(row, 2, link_pattern_item)
+            self._table_widget.setItem(row, 2, series_page_url_item)
             self._table_widget.setItem(row, 3, continue_item)
             self._table_widget.setItem(row, 4, passed_episodes_item)
-        self._table_widget.blockSignals(False)
-        if data: self._table_widget.selectRow(0)
-        else: self._on_series_selected()
         
-        # **LA SOLUZIONE È QUI (Parte 2):** Applica il layout intelligente dopo aver caricato i dati
-        # self._table_widget.resizeColumnsToContents()
-        # self._table_widget.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        # self._table_widget.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        # self._table_widget.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self._table_widget.blockSignals(False)
+        if data:
+            self._table_widget.selectRow(0)
+        else:
+            self._on_series_selected()
 
     def _add_series(self):
         editor = SeriesEditorDialog({}, is_new=True, parent=self)
@@ -199,8 +199,10 @@ class SeriesManagerDialog(QDialog):
                 original_index = next((i for i, s in enumerate(self._series_data) if s["name"] == selected_name), -1)
                 if original_index == -1: return
 
-                if is_deleted: self._series_data.pop(original_index)
-                elif modified_data: self._series_data[original_index] = modified_data
+                if is_deleted:
+                    self._series_data.pop(original_index)
+                elif modified_data:
+                    self._series_data[original_index] = modified_data
                 self._filter_series()
                 self._save_current_series_data()
 
@@ -210,14 +212,14 @@ class SeriesManagerDialog(QDialog):
             QMessageBox.warning(self, "Nessuna Selezione", "Seleziona una serie da rimuovere."); return
         
         selected_name = self._table_widget.item(selected_rows[0].row(), 0).text()
-        reply = QMessageBox.question(self, "Conferma Eliminazione", f"Sei sicuro di voler rimuovere '{selected_name}' dalla lista?\nQuesta operazione sarà permanente solo dopo aver salvato.",
+        reply = QMessageBox.question(self, "Conferma Eliminazione", f"Sei sicuro di voler rimuovere '{selected_name}' dalla lista?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             self._series_data = [s for s in self._series_data if s.get("name") != selected_name]
             self._filter_series()
             self._save_current_series_data()
 
-    def _save_changes_and_accept(self):
-        # Changes are now saved automatically by _add_series, _open_series_editor, and _remove_selected_series.
-        # This method now primarily serves to close the dialog.
-        self.accept()
+    def reject(self):
+        # Sovrascrivi reject per ripristinare i dati originali in caso di annullamento
+        self._series_data = self._original_series_data
+        super().reject()
