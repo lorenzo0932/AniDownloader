@@ -11,30 +11,35 @@ import multiprocessing as mp
 import json
 import logging
 from pathlib import Path
+from urllib.parse import urljoin
+from bs4 import BeautifulSoup
+
+# Assicurati che questo import sia corretto per la tua struttura di progetto
+# Se questo script è standalone, potresti dover definire questi percorsi manualmente
 from AniDownloaderGUI.config.defaults import DEFAULT_LOG_FILE, DEFAULT_OUTPUT_DIR, DEFAULT_CONFIG_DIR, DEFAULT_SERIES_JSON_PATH, DEFAULT_APP_CONFIG_PATH
 
 # --- CONFIGURAZIONE ---
 JSON_FILE_PATH = DEFAULT_SERIES_JSON_PATH
 LOG_FILE = DEFAULT_LOG_FILE
 
-def check_dependencies():
-    missing_dependencies = []
-    if not shutil.which("aria2c"):
-        missing_dependencies.append("aria2c")
-    if not shutil.which("ffmpeg"):
-        missing_dependencies.append("ffmpeg")
+# def check_dependencies():
+#     missing_dependencies = []
+#     if not shutil.which("aria2c"):
+#         missing_dependencies.append("aria2c")
+#     if not shutil.which("ffmpeg"):
+#         missing_dependencies.append("ffmpeg")
 
-    if missing_dependencies:
-        print(f"ERRORE: Le seguenti dipendenze non sono state trovate nel PATH: {', '.join(missing_dependencies)}.")
-        print("Questi sono strumenti a riga di comando e non possono essere installati tramite pip.")
-        print("Si prega di installarli manualmente utilizzando il gestore di pacchetti del sistema (es. apt, yum, brew, winget) o scaricando i binari.")
-        print("\nEsempi di installazione:")
-        print("  - Debian/Ubuntu: sudo apt install aria2 ffmpeg")
-        print("  - Fedora: sudo dnf install aria2 ffmpeg")
-        print("  - macOS (Homebrew): brew install aria2 ffmpeg")
-        print("  - Windows (Winget): winget install aria2; winget install ffmpeg")
-        sys.exit(1)
-    print("✅ Dipendenze trovate.")
+#     if missing_dependencies:
+#         print(f"ERRORE: Le seguenti dipendenze non sono state trovate nel PATH: {', '.join(missing_dependencies)}.")
+#         print("Questi sono strumenti a riga di comando e non possono essere installati tramite pip.")
+#         print("Si prega di installarli manualmente utilizzando il gestore di pacchetti del sistema (es. apt, yum, brew, winget) o scaricando i binari.")
+#         print("\nEsempi di installazione:")
+#         print("  - Debian/Ubuntu: sudo apt install aria2 ffmpeg")
+#         print("  - Fedora: sudo dnf install aria2 ffmpeg")
+#         print("  - macOS (Homebrew): brew install aria2 ffmpeg")
+#         print("  - Windows (Winget): winget install aria2; winget install ffmpeg")
+#         sys.exit(1)
+#     print("✅ Dipendenze trovate.")
 
 def load_series_data():
     try:
@@ -56,42 +61,101 @@ def get_next_episode_num(series_path):
                 max_ep = max(max_ep, ep_num)
     return max_ep + 1
 
-def format_episode_number(ep_num):
-    return f"{ep_num:02d}"
-
 def plan_series_task(series):
+    """
+    Pianifica il download di una serie usando un approccio di scraping a 2 fasi.
+    Fase 1: Trova il link alla pagina del nuovo episodio dalla lista principale.
+    Fase 2: Visita la pagina dell'episodio per trovare il link di download finale.
+    """
     name = series["name"]
     path = series["path"]
-    link_pattern = series["link_pattern"]
-    is_continuation = series.get("continue", False)
-    passed_episodes = series.get("passed_episodes", 0)
+    series_page_url = series.get("series_page_url")
+    episode_list_selector = series.get("episode_list_selector")
+    download_link_selector = series.get("download_link_selector")
 
-    final_ep_number = get_next_episode_num(path)
-    if is_continuation and final_ep_number <= passed_episodes:
-        final_ep_number = passed_episodes + 1
-    next_ep_download = final_ep_number if not is_continuation else final_ep_number - passed_episodes
+    if not all([series_page_url, episode_list_selector, download_link_selector]):
+        return { "series": series, "action": "skip", "reason": "Configurazione scraping incompleta." }
 
-    ep_str_download = format_episode_number(next_ep_download)
-    download_url = link_pattern.format(ep=ep_str_download)
-
-    task = {
-        "series": series,
-        "action": "skip",
-        "reason": "URL non raggiungibile.",
-        "download_url": download_url,
-        "next_ep_download": next_ep_download,
-        "final_ep_number": final_ep_number
-    }
+    task = { "series": series, "action": "skip", "reason": "Nessun nuovo episodio trovato." }
 
     try:
-        response = requests.head(download_url, timeout=10, allow_redirects=True)
-        if response.status_code == 200:
-            task["action"] = "process"
-            task["reason"] = f"Pronto per scaricare Ep. {final_ep_number}"
+        # FASE 1: Trova i link a tutti gli episodi
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response_main = requests.get(series_page_url, timeout=15, headers=headers)
+        response_main.raise_for_status()
+        soup_main = BeautifulSoup(response_main.text, 'lxml')
+        
+        episode_page_links = soup_main.select(episode_list_selector)
+        if not episode_page_links:
+            task["reason"] = "Selettore lista episodi non ha trovato link."
+            return task
+
+        found_episodes = []
+        for link in episode_page_links:
+            ep_num_str = link.get('data-episode-num') or link.get_text(strip=True)
+            match = re.search(r'(\d+)', ep_num_str)
+            if match:
+                ep_num = int(match.group(1))
+                ep_page_url = urljoin(series_page_url, link.get('href'))
+                found_episodes.append({"number": ep_num, "page_url": ep_page_url})
+        
+        if not found_episodes:
+            task["reason"] = "Impossibile estrarre i numeri degli episodi dai link."
+            return task
+
+        # Logica di Traduzione e Confronto per Serie in Continuazione
+        is_continuation = series.get("continue", False)
+        passed_episodes = series.get("passed_episodes", 0)
+        next_episode_on_disk = get_next_episode_num(path)
+        
+        found_episodes.sort(key=lambda x: x['number'])
+        
+        episode_to_process = None
+        final_episode_number_for_task = 0
+
+        for ep in found_episodes:
+            local_equivalent_number = ep['number']
+            if is_continuation:
+                local_equivalent_number += passed_episodes
+
+            if local_equivalent_number >= next_episode_on_disk:
+                episode_to_process = ep
+                final_episode_number_for_task = local_equivalent_number
+                break
+        
+        if not episode_to_process:
+            return task
+
+        # FASE 2: Trova il link di download finale
+        ep_page_url = episode_to_process['page_url']
+        response_ep = requests.get(ep_page_url, timeout=15, headers=headers)
+        response_ep.raise_for_status()
+        soup_ep = BeautifulSoup(response_ep.text, 'lxml')
+        
+        final_link_element = soup_ep.select_one(download_link_selector)
+        
+        if not final_link_element:
+            all_links = soup_ep.find_all('a', href=True)
+            for link in all_links:
+                if "download alternativo" in link.get_text(strip=True).lower():
+                    final_link_element = link
+                    break
+        
+        if final_link_element:
+            final_download_url = urljoin(ep_page_url, final_link_element.get('href'))
+            task.update({
+                "action": "process",
+                "reason": f"Pronto per scaricare Ep. {final_episode_number_for_task}",
+                "download_url": final_download_url,
+                "final_ep_number": final_episode_number_for_task
+            })
         else:
-            task["reason"] = f"HTTP {response.status_code}"
-    except requests.RequestException:
-        pass
+            task["reason"] = f"Trovato Ep. {final_episode_number_for_task}, ma non il link di download finale."
+
+    except requests.RequestException as e:
+        task["reason"] = f"Errore di rete: {e}"
+    except Exception as e:
+        task["reason"] = f"Errore imprevisto: {e}"
 
     return task
 
@@ -107,7 +171,12 @@ def download_episode(task, status_dict):
     
     status_dict[name] = f"Download Ep. {task['final_ep_number']}"
     
-    downloaded_file_name = download_url.split("/")[-1].split("?")[0]
+    original_filename = download_url.split("/")[-1].split("?")[0]
+    _, extension = os.path.splitext(original_filename)
+    if not extension or len(extension) > 5: extension = ".mp4"
+    
+    clean_name = re.sub(r'[\W_]+', '_', name)
+    downloaded_file_name = f"{clean_name}_Ep_{task['final_ep_number']:02d}{extension}"
     output_file_path = Path(path) / downloaded_file_name
 
     cmd = [
@@ -126,10 +195,7 @@ def download_episode(task, status_dict):
     try:
         while True:
             line = process.stdout.readline()
-            if not line:
-                break
-            #print(f"aria2c: {line.strip()}")
-            #match = re.search(r'\s(\d+)%', line)
+            if not line: break
             match = re.search(r'\((\d+)%\)', line)
             if match:
                 percent = match.group(1)
@@ -145,16 +211,7 @@ def download_episode(task, status_dict):
         logging.error(f"[{name}] aria2c ha fallito. Codice: {process.returncode}")
         raise Exception("aria2c ha fallito. Controlla il log per dettagli.")
 
-    final_file_path = output_file_path
-    if series.get("continue", False):
-        ep_str_download = format_episode_number(task["next_ep_download"])
-        ep_str_final = format_episode_number(task["final_ep_number"])
-        
-        new_filename = re.sub(f'Ep[._-]?{ep_str_download}', f'Ep_{ep_str_final}', output_file_path.name, flags=re.IGNORECASE)
-        final_file_path = output_file_path.with_name(new_filename)
-        os.rename(output_file_path, final_file_path)
-
-    return str(final_file_path), end_time - start_time
+    return str(output_file_path), end_time - start_time
 
 def convert_and_verify(file_path, status_dict, name, max_retries=3):
     output_dir = DEFAULT_OUTPUT_DIR
@@ -198,7 +255,6 @@ def convert_and_verify(file_path, status_dict, name, max_retries=3):
 
             proc.wait()
 
-            # Verifica
             verify = subprocess.run([
                 "nice", "-n", "5", "ffmpeg", "-y", "-v", "error", "-i",
                 output_path, "-f", "null", "-"
@@ -207,22 +263,17 @@ def convert_and_verify(file_path, status_dict, name, max_retries=3):
             end_time = time.time()
 
             if os.path.getsize(log_path) == 0:
-                # Conversione ok
                 os.remove(log_path)
                 os.remove(file_path)
                 shutil.move(output_path, file_path)
                 return True, end_time - start_time
             else:
-                # Errore, cancella output e riprova
                 os.remove(output_path)
-                # Non stampiamo nulla, solo aggiorniamo status_dict con tentativo
                 continue
 
         except Exception as e:
-            # Qui puoi anche decidere se loggare o ignorare
             continue
 
-    # Se siamo qui, dopo tutti i tentativi
     status_dict[name] = "❌ Conversione fallita"
     log_critical_error(f"Errore nella conversione/verifica: {os.path.basename(file_path)}")
     raise Exception("Errore nella conversione dopo vari tentativi")
@@ -243,9 +294,7 @@ def process_series_worker(task, status_dict):
         return {"name": name, "episode": None, "error": str(e)}
 
 def display_status(status_dict, tasks_names, start_time):
-    # Cancella schermo con ANSI escape
-    print("\033c", end="")  # Questo resetta lo schermo
-
+    print("\033c", end="")
     elapsed = time.time() - start_time
     print(f"--- Stato Attività (Tempo: {elapsed:.0f}s) ---")
     for name in tasks_names:
@@ -257,7 +306,7 @@ def display_status(status_dict, tasks_names, start_time):
     print("\nAttendere...")
 
 def main():
-    check_dependencies()
+    # check_dependencies()
     series_list = load_series_data()
     start_time = time.time()
 
