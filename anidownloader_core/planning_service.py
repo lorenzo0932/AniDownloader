@@ -2,9 +2,9 @@ import importlib
 
 # Mappa che associa il valore del campo "service" nel JSON al nome della Classe Scraper
 SCRAPER_CLASS_MAP = {
-    'AnimeW_scraper': 'AnimeWScraper'
+    'animeW_scraper': 'animeWScraper' # Assicurati che il nome del file sia minuscolo
     # Esempio per il futuro:
-    # 'AltroSito_scraper': 'AltroSitoScraper' 
+    # 'altro_sito_scraper': 'AltroSitoScraper' 
 }
 
 def get_scraper_instance(service_name: str):
@@ -17,9 +17,11 @@ def get_scraper_instance(service_name: str):
     class_name = SCRAPER_CLASS_MAP[service_name]
     
     try:
-        # Importa il modulo (es. scrapers.AnimeW_scraper)
-        module = importlib.import_module(f"scrapers.{service_name}")
-        # Ottiene la classe dal modulo (es. AnimeWScraper)
+        # --- MODIFICA CHIAVE ---
+        # Usiamo un import assoluto, che parte dalla radice del core.
+        module = importlib.import_module(f"anidownloader_core.scrapers.{service_name}")
+        # --- FINE MODIFICA CHIAVE ---
+        
         ScraperClass = getattr(module, class_name)
         return ScraperClass()
     except (ImportError, AttributeError) as e:
