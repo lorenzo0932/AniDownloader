@@ -29,9 +29,9 @@ class animeWScraper(BaseScraper):
         task = { "series": series, "action": "skip", "reason": "Nessun nuovo episodio trovato." }
 
         try:
-            # FASE 1: Trova i link a tutti gli episodi
+            
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-            response_main = requests.get(series_page_url, timeout=15, headers=headers)
+            response_main = requests.get(series_page_url, timeout=15, headers=headers, verify=False)
             response_main.raise_for_status()
             soup_main = BeautifulSoup(response_main.text, 'lxml')
             
@@ -70,7 +70,7 @@ class animeWScraper(BaseScraper):
                 return task
 
             # FASE 2: Trova il link di download finale
-            response_ep = requests.get(episode_to_process['page_url'], timeout=15, headers=headers)
+            response_ep = requests.get(episode_to_process['page_url'], timeout=15, headers=headers, verify=False)
             response_ep.raise_for_status()
             soup_ep = BeautifulSoup(response_ep.text, 'lxml')
             
