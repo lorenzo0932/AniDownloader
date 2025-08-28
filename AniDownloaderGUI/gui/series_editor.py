@@ -154,7 +154,7 @@ class SeriesEditorDialog(QDialog):
             # --- MODIFICA: Salva il servizio corretto in base al pulsante selezionato ---
             checked_id = self._service_button_group.checkedId()
             if checked_id == 1:
-                self._result_data["service"] = "AnimeW_scraper"
+                self._result_data["service"] = "animeW_scraper"
             # elif checked_id == 2:
             #     self._result_data["service"] = "AltroSito_scraper"
             # --- FINE MODIFICA ---
