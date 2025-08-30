@@ -4,3 +4,6 @@ requests
 ffmpeg-python
 beautifulsoup4
 lxml
+selenium
+selenium-wire
+blinker==1.7.0
