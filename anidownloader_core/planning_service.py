@@ -2,7 +2,8 @@ import importlib
 
 # Mappa che associa il valore del campo "service" nel JSON al nome della Classe Scraper
 SCRAPER_CLASS_MAP = {
-    'animeW_scraper': 'animeWScraper' # Assicurati che il nome del file sia minuscolo
+    'animeW_scraper': 'animeWScraper', 
+    'animeU_scraper': 'animeUScraper'
     # Esempio per il futuro:
     # 'altro_sito_scraper': 'AltroSitoScraper' 
 }
