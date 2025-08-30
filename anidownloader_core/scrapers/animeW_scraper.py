@@ -1,18 +1,10 @@
-import os
 import re
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from .base_scraper import BaseScraper
+from .scraper_utils import ScraperUtils
 
-def get_next_episode_num(series_path):
-    if not os.path.exists(series_path): os.makedirs(series_path)
-    max_ep = 0
-    for filename in os.listdir(series_path):
-        if filename.endswith(('.mp4', '.mkv')):
-            match = re.search(r'[._-]Ep[._-]?(\d+)', filename, re.IGNORECASE)
-            if match: max_ep = max(max_ep, int(match.group(1)))
-    return max_ep + 1
 
 class animeWScraper(BaseScraper):
     """Scraper specializzato per il sito 'AnimeW'."""
@@ -55,7 +47,7 @@ class animeWScraper(BaseScraper):
 
             is_continuation = series.get("continue", False)
             passed_episodes = series.get("passed_episodes", 0)
-            next_episode_on_disk = get_next_episode_num(path)
+            next_episode_on_disk = ScraperUtils.get_next_episode_num(path)
             
             found_episodes.sort(key=lambda x: x['number'])
             
