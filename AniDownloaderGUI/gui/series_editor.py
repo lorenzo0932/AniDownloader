@@ -34,37 +34,43 @@ class SeriesEditorDialog(QDialog):
         form_widget = QWidget()
         form_layout = QFormLayout(form_widget)
 
-        # --- MODIFICA CHIAVE: Gestione corretta dei Radio Button ---
         service_groupbox = QGroupBox("Servizio di Download")
         service_layout = QHBoxLayout()
-        
-        # 1. Creare i Radio Button
         self._rb_animeW = QRadioButton("AnimeW Scraper")
-        # Aggiungi qui altri radio button in futuro, es:
-        # self._rb_altrosito = QRadioButton("Altro Sito Scraper")
-
-        # 2. Creare un Button Group per la mutua esclusività
+        self._rb_animeU = QRadioButton("AnimeU Scraper")
         self._service_button_group = QButtonGroup(self)
-        self._service_button_group.addButton(self._rb_animeW, 1) # L'ID 1 corrisponde a 'AnimeW_scraper'
-        # self._service_button_group.addButton(self._rb_altrosito, 2)
-        
-        # 3. Imposta il comportamento per non essere deselezionabile
-        # Se c'è un solo pulsante, non può essere deselezionato. Se ce ne sono di più, possono essere scambiati.
+        self._service_button_group.addButton(self._rb_animeW, 1) 
+        self._service_button_group.addButton(self._rb_animeU, 2)
         self._service_button_group.setExclusive(True)
-
         service_layout.addWidget(self._rb_animeW)
-        # service_layout.addWidget(self._rb_altrosito)
+        service_layout.addWidget(self._rb_animeU)
         service_groupbox.setLayout(service_layout)
         form_layout.addRow(service_groupbox)
-        # --- FINE MODIFICA ---
         
         self._name_input = QLineEdit()
-        self._path_input = QLineEdit()
+        
+        # --- MODIFICA CHIAVE INIZIA ---
+        # 1. Creiamo il layout orizzontale come prima
         path_layout = QHBoxLayout()
-        path_layout.addWidget(self._path_input)
+        self._path_input = QLineEdit()
         path_browse_button = QPushButton("Sfoglia...")
         path_browse_button.clicked.connect(self._browse_series_path)
+        path_layout.addWidget(self._path_input)
         path_layout.addWidget(path_browse_button)
+        
+        # 2. Creiamo un widget contenitore VUOTO
+        path_container_widget = QWidget()
+        
+        # 3. Applichiamo il layout orizzontale al widget contenitore
+        path_container_widget.setLayout(path_layout)
+        
+        # 4. Rimuoviamo i margini dal layout interno per un aspetto pulito
+        path_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 5. Aggiungiamo il WIDGET contenitore al QFormLayout, non il layout
+        form_layout.addRow("Nome:", self._name_input)
+        form_layout.addRow("Percorso Cartella:", path_container_widget)
+        # --- FINE MODIFICA ---
         
         self._series_page_url_input = QLineEdit()
         self._filename_root_input = QLineEdit()
@@ -75,8 +81,6 @@ class SeriesEditorDialog(QDialog):
         self._passed_episodes_input.setMinimum(0)
         self._passed_episodes_input.setMaximum(999)
 
-        form_layout.addRow("Nome:", self._name_input)
-        form_layout.addRow("Percorso Cartella:", self._path_input)
         form_layout.addRow("URL Pagina Serie:", self._series_page_url_input)
         form_layout.addRow("Radice Nome File (Opzionale):", self._filename_root_input)
         
@@ -110,15 +114,10 @@ class SeriesEditorDialog(QDialog):
         self._continue_checkbox.setChecked(self._series_data.get("continue", False))
         self._passed_episodes_input.setValue(self._series_data.get("passed_episodes", 0))
         
-        # Imposta il servizio corretto o il default
         service = self._series_data.get("service")
-        if service == "AnimeW_scraper":
-            self._rb_animeW.setChecked(True)
-        # elif service == "AltroSito_scraper":
-        #     self._rb_altrosito.setChecked(True)
-        else:
-            # Se la serie è nuova o non ha un servizio, seleziona il primo di default
-            self._rb_animeW.setChecked(True)
+        if service == "animeW_scraper": self._rb_animeW.setChecked(True)
+        elif service == "animeU_scraper": self._rb_animeU.setChecked(True)
+        else: self._rb_animeW.setChecked(True)
         
         self._load_poster()
 
@@ -151,13 +150,9 @@ class SeriesEditorDialog(QDialog):
                 "series_page_url": self._series_page_url_input.text().strip()
             }
             
-            # --- MODIFICA: Salva il servizio corretto in base al pulsante selezionato ---
             checked_id = self._service_button_group.checkedId()
-            if checked_id == 1:
-                self._result_data["service"] = "animeW_scraper"
-            # elif checked_id == 2:
-            #     self._result_data["service"] = "AltroSito_scraper"
-            # --- FINE MODIFICA ---
+            if checked_id == 1: self._result_data["service"] = "animeW_scraper"
+            elif checked_id == 2: self._result_data["service"] = "animeU_scraper"
 
             filename_root = self._filename_root_input.text().strip()
             if filename_root: self._result_data["filename_root"] = filename_root
