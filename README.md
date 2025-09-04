@@ -68,40 +68,90 @@ winget install aria2
     ```
 
 2.  **Install Python dependencies:**
-    The graphical application requires a few Python libraries. Install them using the `requirements.txt` file.
-    ```bash
-    # Navigate to the GUI folder
-    cd AniDownloaderGUI
+    AniDownloader has two sets of Python dependencies: one for the GUI and one for the CLI.
 
-    # Install the required packages
-    pip install -r requirements.txt
+    For the **GUI application**:
+    ```bash
+    # Install the required packages for GUI
+    pip install -r AniDownloaderGUI/requirements.txt
     ```
+    For the **CLI script**:
+    ```bash
+    # Install the required packages for CLI
+    pip install -r anidownloader_utils/requirement_cli.txt
+    ```
+
+3.  **Make the CLI script executable:**
+    ```bash
+    # From the project's root folder
+    chmod +x AniDownloader.sh
+    ```
+
+### 📦 Building from Source
+
+You can create standalone executables for both the GUI and CLI applications using the provided build scripts, which leverage PyInstaller.
+
+1.  **Install PyInstaller:**
+    ```bash
+    pip install pyinstaller
+    ```
+
+2.  **Run the build script:**
+    *   To build the **GUI executable**:
+        ```bash
+        python3 anidownloader_utils/build_gui.py
+        ```
+    *   To build the **CLI executable**:
+        ```bash
+        python3 anidownloader_utils/build_cli.py
+        ```
+
+The final executables will be placed in the `dist/` folder in the project's root directory.
 
 ## ⚙️ Configuration
 
-Series configuration is handled through the `series_data.json` file. While you can edit it manually, **it is highly recommended to use the graphical interface ("Manage Series")** to avoid syntax errors.
+Series configuration is handled through the `series_data.json` file. Each series entry must include a `service` field, which specifies which scraper to use.
+
+**It is highly recommended to use the graphical interface ("Manage Series")** to avoid syntax errors.
 
 On the first launch, the application will automatically create the necessary configuration files in `~/.config/AniDownloader/`.
 
-![Series Management](media/series_management.gif)
-*Adding, editing, and removing series is easy thanks to the integrated editor.*
-
-The structure of a series object in the `series_data.json` file is as follows:
+#### Example
 
 ```json
-{
-    "name": "Full Series Name",
-    "path": "/local/path/to/series/folder/1",
-    "link_pattern": "https://server.com/anime/Series_Ep_{ep}_SUB_ITA.mp4",
-    "continue": true,
-    "passed_episodes": 12
-}```
+[
+    {
+        "name": "test",
+        "path": "/home/lorenzo/Experiment/test/1",
+        "series_page_url": "https://somesite.so/something",
+        "service": "animeU_scraper",
+        "continue": false,
+        "passed_episodes": 0
+    }
+]
+```
 
-*   `name`: The name of the series to be displayed in the GUI.
-*   `path`: The full local path to the folder where episodes will be saved.
-*   `link_pattern`: The download link, where `{ep}` is the placeholder for the episode number.
+#### Example 2
+
+```json
+[
+    {
+        "name": "test",
+        "path": "/home/lorenzo/Experiment/test/1",
+        "series_page_url": "https://somesite.co/something",
+        "service": "animeU"_scraper",
+        "continue": true,
+        "passed_episodes": 12
+    }
+]
+```
+
+*   `service`: **(Required)** The identifier of the scraper to use (e.g., `"animeW_scraper"`, `"animeU_scraper"`).
+*   `name`: The name of the series to be displayed.
+*   `path`: The full local path where episodes will be saved.
+*   `series_page_url`: The URL of the main series page.
 *   `continue` (optional): Set to `true` if the series is a continuation of a previous season.
-*   `passed_episodes` (optional): Required if `continue` is `true`. Indicates the total number of episodes from previous seasons.
+*   `passed_episodes` (optional): Required if `continue` is `true`.
 
 ## ▶️ Usage
 
@@ -133,48 +183,76 @@ For terminal use or for integration into custom scripts, you can run the `AniDow
 
 The script will read the configuration, download, and convert the episodes, displaying the progress directly in the terminal.
 
-### Automatic Mode (Systemd Service on Linux)
+### Automatic Mode (Systemd User Service on Linux)
 
-To run downloads automatically at regular intervals, you can use the included `systemd` service files.
+To run downloads automatically at regular intervals without requiring root privileges, you can use the included `systemd` user service files.
 
 1.  **Edit the paths:** Make sure the `WorkingDirectory` and `ExecStart` paths in the `systemd_services/AniDownloader.service` file match your setup.
-2.  **Copy the service files:**
+2.  **Create the user service directory (if it doesn't exist):**
     ```bash
-    sudo cp systemd_services/AniDownloader.service /etc/systemd/system/
-    sudo cp systemd_services/AniDownloader.timer /etc/systemd/system/
+    mkdir -p ~/.config/systemd/user/
     ```
-3.  **Reload, enable, and start the timer:**
+3.  **Copy the service files:**
     ```bash
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now AniDownloader.timer
+    cp systemd_services/AniDownloader.service ~/.config/systemd/user/
+    cp systemd_services/AniDownloader.timer ~/.config/systemd/user/
+    ```
+4.  **Reload, enable, and start the timer:**
+    ```bash
+    systemctl --user daemon-reload
+    systemctl --user enable --now AniDownloader.timer
+    ```
+5.  **Enable lingering (optional, for running services after logout):**
+    If you want the service to continue running after you log out, enable lingering:
+    ```bash
+    loginctl enable-linger $(whoami)
     ```
 
-The service will now run automatically every 15 minutes.
+The service will now run automatically every 15 minutes for your user.
 
 ## 📂 Project Structure
 
 ```
 .
-├── AniDownloader.sh          # Main script for CLI execution
-├── series_data_template.json # Template for series configuration
+├── AniDownloader.py          # Main script for CLI execution
+├── AniDownloader.sh          # Shell wrapper for the CLI script
+├── AniDownloader.desktop     # Desktop entry for Linux GUI launcher
+├── logo.png                  # Application logo
+├── README.md                 # This documentation file
+├── anidownloader_config/       # Global configuration management
+│   ├── app_config_manager.py # Manages application settings
+│   └── defaults.py         # Default configuration values
+├── anidownloader_core/         # Core business logic shared between GUI and CLI
+│   ├── media_processor.py  # Processes media (conversion, verification)
+│   ├── planning_service.py   # Plans download and conversion tasks
+│   ├── series_repository.py # Manages series data (CRUD)
+│   └── scrapers/             # Website scrapers
+├── anidownloader_utils/        # Utility scripts, build tools, and CLI dependencies
+│   ├── build_cli.py          # Build script for the CLI executable
+│   ├── build_gui.py          # Build script for the GUI executable
+│   ├── check_cli_deps.sh     # Script to check CLI dependencies
+│   └── requirement_cli.txt   # Python dependencies for CLI
 ├── AniDownloaderGUI/           # Root folder for the GUI application
 │   ├── main.py                 # GUI application entry point
 │   ├── requirements.txt        # Python dependencies for the GUI
 │   ├── assets/                 # Graphic assets (e.g., icons)
-│   ├── config/                 # App configuration management (paths, etc.)
-│   ├── core/                   # Core business logic (download, conversion)
-│   ├── gui/                    # GUI components (windows, dialogs)
-│   └── utils/                  # Utility functions (e.g., image loader)
+│   ├── core/                   # GUI-specific logic
+│   │   └── download_worker.py  # Handles download/conversion tasks in a separate thread
+│   ├── gui/                    # GUI components (windows, widgets)
+│   └── utils/                  # Utility functions for GUI
+├── media/                    # Contains GIFs and images for README
 └── systemd_services/           # Files for automation via systemd on Linux
-    ├── AniDownloader.service
-    └── AniDownloader.timer
+    ├── AniDownloader.service   # Systemd service unit file
+    └── AniDownloader.timer     # Systemd timer unit file
 ```
 
 ## 💡 Future Developments
 
 Here are some of the future directions for the project:
 
-*   [ ] Integration of a desktop notification system for completed downloads.
-*   [ ] Adding support for multiple download sources for the same series.
-*   [ ] Creating a standalone installer package (e.g., using PyInstaller).
-*   [ ] Improving network error handling with automatic retries.
+*   Integration of a desktop notification system for completed downloads.
+*   Adding support for multiple download sources for the same series.
+*   Improving network error handling with automatic retries.
+*   Rework .desktops files
+*   Implement an user friedly installation process
+*   Need to update gifs (h265 check missing)
