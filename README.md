@@ -139,7 +139,7 @@ On the first launch, the application will automatically create the necessary con
         "name": "test",
         "path": "/home/lorenzo/Experiment/test/1",
         "series_page_url": "https://somesite.co/something",
-        "service": "animeU"_scraper",
+        "service": "animeU_scraper",
         "continue": true,
         "passed_episodes": 12
     }
