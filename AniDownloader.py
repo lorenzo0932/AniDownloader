@@ -166,4 +166,5 @@ def main():
         print(f"\nTempo totale: {end_time - start_time:.2f} secondi")
 
 if __name__ == '__main__':
+    mp.freeze_support()
     main()
