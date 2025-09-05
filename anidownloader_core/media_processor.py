@@ -69,7 +69,7 @@ def convert_and_verify_episode(file_path: str, name: str, output_dir: Path, stat
         start_time = time.time()
         
         try:
-            cmd = ["nice", "-n", "5", "ffmpeg", "-y", "-i", str(input_file_path), "-c:v", "libx265", "-crf", "23", "-preset", "veryfast", "-threads", "12", "-x265-params", "hist-scenecut=1", "-c:a", "copy", str(output_path)]
+            cmd = ["ffmpeg", "-y", "-i", str(input_file_path), "-c:v", "libx265", "-crf", "23", "-preset", "veryfast", "-threads", "12", "-x265-params", "hist-scenecut=1", "-c:a", "copy", str(output_path)]
             creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, creationflags=creationflags)
             
@@ -89,7 +89,7 @@ def convert_and_verify_episode(file_path: str, name: str, output_dir: Path, stat
             
             log_file = output_path.with_suffix(output_path.suffix + ".log")
             with open(log_file, "w") as log_f:
-                subprocess.run(["nice", "-n", "5", "ffmpeg", "-y", "-v", "error", "-i", str(output_path), "-f", "null", "-"], stderr=log_f)
+                subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(output_path), "-f", "null", "-"], stderr=log_f)
             
             if log_file.stat().st_size == 0:
                 log_file.unlink()
@@ -114,7 +114,7 @@ def process_series_task(task: dict, output_dir: Path, log_file_path: Path, statu
 
     try:
         episode_path, download_time = download_episode(task, status_updater, stop_event, log_file_path)
-        
+        print(f"{episode_path})")
         if convert_to_h265:
             _, conversion_time = convert_and_verify_episode(episode_path, name, output_dir, status_updater, stop_event, log_file_path)
         
