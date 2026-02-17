@@ -178,6 +178,20 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 }
 
 /* --- SPECIFIC WIDGETS --- */
+QProgressBar {
+    background-color: #121212;
+    border: 1px solid #404040;
+    border-radius: 4px;
+    text-align: center;
+    color: #ffffff;
+    height: 20px;
+}
+
+QProgressBar::chunk {
+    background-color: #6200ea;
+    border-radius: 2px;
+}
+
 QTextEdit {
     background-color: #121212;
     border: 1px solid #404040;
@@ -390,6 +404,20 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
 }
 
 /* --- SPECIFIC WIDGETS --- */
+QProgressBar {
+    background-color: #ffffff;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+    text-align: center;
+    color: #212121;
+    height: 20px;
+}
+
+QProgressBar::chunk {
+    background-color: #6200ea;
+    border-radius: 2px;
+}
+
 QTextEdit {
     background-color: #ffffff;
     border: 1px solid #d0d0d0;

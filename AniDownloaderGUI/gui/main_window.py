@@ -1,18 +1,29 @@
 import os
 from pathlib import Path
+import re
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
-    QPushButton, QTableWidget, QHeaderView, QFileDialog, QLabel,
-    QLineEdit, QMessageBox, QTextEdit, QStyle, QMenuBar, QSplitter, QTableWidgetItem, QApplication, QCheckBox
+    QPushButton, QTableWidget, QHeaderView, QLabel,
+    QMessageBox, QTextEdit, QStyle, QSplitter, 
+    QTableWidgetItem, QApplication
 )
 from PyQt6.QtCore import QThread, Qt, QSettings, QByteArray, QEvent, QTimer, QSize
-from PyQt6.QtGui import QIcon, QFont, QColor, QAction
+from PyQt6.QtGui import QIcon, QFont, QColor
+
+# Core & Config imports
 from core.download_worker import DownloadWorker
 from anidownloader_core.series_repository import SeriesRepository
 from anidownloader_config.app_config_manager import AppConfigManager
 from anidownloader_config.defaults import DEFAULT_CONFIG_DIR, DEFAULT_SERIES_JSON_PATH, DEFAULT_NUM_CHUNKS
 from utils.image_loader import load_poster_image
-from .widgets import StatusTableWidgetItem, StopConfirmationDialog
+
+# Widgets imports (Refactoring: tutto da .widgets)
+from .widgets import (
+    StatusTableWidgetItem, 
+    StopConfirmationDialog, 
+    ProgressBarTableWidgetItem, 
+    ProgressBarDelegate
+)
 from .settings import SettingsDialog
 from .series_manager import SeriesManagerDialog
 from .styles import DARK_THEME_QSS, LIGHT_THEME_QSS
@@ -22,14 +33,12 @@ class AniDownloaderGUI(QMainWindow):
         super().__init__()
         self.setWindowTitle("AniDownloader GUI")
         
-        self._is_dark_theme = None # Initialize as None to force first application
+        self._is_dark_theme = None 
         
-        # Debounce timer for theme changes
         self._theme_debounce_timer = QTimer()
         self._theme_debounce_timer.setSingleShot(True)
         self._theme_debounce_timer.timeout.connect(self._apply_theme_on_event)
         
-        # Apply Theme based on system
         self._apply_theme()
             
         screen_geometry = QApplication.primaryScreen().geometry()
@@ -58,22 +67,18 @@ class AniDownloaderGUI(QMainWindow):
         self.restore_geometry_and_state()
 
     def changeEvent(self, event):
-        """Handle system events, specifically theme changes."""
         if event.type() == QEvent.Type.PaletteChange:
             app = QApplication.instance()
             if app:
-                # Basic check to see if we should even bother starting the timer
+                # Controlla se dovremmo aggiornare il tema
                 is_dark = app.palette().window().color().lightness() < 128
                 if is_dark != self._is_dark_theme:
-                    # Debounce to avoid rapid fire events and crashes
                     self._theme_debounce_timer.start(500)
         super().changeEvent(event)
 
     def _apply_theme_on_event(self):
-        """Safely apply theme triggered by an event while preserving selection."""
         old_is_dark = self._is_dark_theme
         
-        # Save current selection
         self._preserved_series_name = None
         current_row_index = self.table_widget.currentRow()
         if current_row_index != -1:
@@ -84,7 +89,6 @@ class AniDownloaderGUI(QMainWindow):
         self._apply_theme()
         
         if old_is_dark != self._is_dark_theme:
-            # Find the index of the previously selected item after repopulation
             restored_row_index = -1
             if self._preserved_series_name:
                 for r_idx, s_data in enumerate(self._series_data):
@@ -92,23 +96,18 @@ class AniDownloaderGUI(QMainWindow):
                         restored_row_index = r_idx
                         break
             
-            # Re-populate table, passing the intended selection.
-            # _populate_table_main_gui will handle selecting the row and calling _on_series_selected.
             self._load_series_data_into_table(row_to_select=restored_row_index)
 
     def _apply_theme(self):
-        """Detects system theme brightness and applies appropriate stylesheet."""
         app = QApplication.instance()
         if not app: return
 
-        # Simple heuristic: check window background lightness
         palette = app.palette()
         bg_color = palette.window().color()
         lightness = bg_color.lightness()
         
         new_is_dark = lightness < 128
         
-        # Guard: Avoid redundant stylesheet applications (expensive)
         if self._is_dark_theme == new_is_dark:
             return
             
@@ -119,7 +118,6 @@ class AniDownloaderGUI(QMainWindow):
             
         self._is_dark_theme = new_is_dark
         
-        # Force table to not show the "focus rect"
         if hasattr(self, 'table_widget'):
             self.table_widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
@@ -157,64 +155,58 @@ class AniDownloaderGUI(QMainWindow):
         button_layout = QHBoxLayout()
         button_layout.setSpacing(12)
         
-        # Start Button
         self.start_button = QPushButton("Avvia Download")
-        self.start_button.setObjectName("primaryButton") # Apply primary style
+        self.start_button.setObjectName("primaryButton")
         self.start_button.clicked.connect(self.start_download)
         self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_button.setFixedSize(160, 45)
         self.start_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         
-        # Stop Button
         self.stop_button = QPushButton("Ferma Download")
-        self.stop_button.setObjectName("dangerButton") # Apply danger style
+        self.stop_button.setObjectName("dangerButton")
         self.stop_button.clicked.connect(self.stop_download)
         self.stop_button.setEnabled(False)
         self.stop_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.stop_button.setFixedSize(160, 45)
         self.stop_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         
-        # Utility Buttons
         self.refresh_button = QPushButton("Aggiorna Serie")
         self.refresh_button.clicked.connect(self._load_series_data_into_table)
-        self.refresh_button.setMinimumSize(140, 45) # Use setMinimumSize instead of setFixedSize
+        self.refresh_button.setMinimumSize(140, 45)
         self.refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
-        self.refresh_button.setIconSize(QSize(24, 24)) # Standardize icon size
+        self.refresh_button.setIconSize(QSize(24, 24))
         self.refresh_button.setToolTip("Ricarica i dati delle serie dalla sorgente")
         
         self.manage_series_button = QPushButton("Gestisci Serie")
         self.manage_series_button.clicked.connect(self._open_series_manager)
-        self.manage_series_button.setMinimumSize(140, 45) # Use setMinimumSize instead of setFixedSize
+        self.manage_series_button.setMinimumSize(140, 45)
         self.manage_series_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.manage_series_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)) # Using a view-related icon
-        self.manage_series_button.setIconSize(QSize(24, 24)) # Standardize icon size
+        self.manage_series_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        self.manage_series_button.setIconSize(QSize(24, 24))
         self.manage_series_button.setToolTip("Aggiungi, modifica o rimuovi le serie")
         
         self.reset_sort_button = QPushButton("Reset Ordine")
         self.reset_sort_button.clicked.connect(self._reset_table_sort)
-        self.reset_sort_button.setMinimumSize(140, 45) # Use setMinimumSize instead of setFixedSize
+        self.reset_sort_button.setMinimumSize(140, 45)
         self.reset_sort_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.reset_sort_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogResetButton))
-        self.reset_sort_button.setIconSize(QSize(24, 24)) # Standardize icon size
+        self.reset_sort_button.setIconSize(QSize(24, 24))
         self.reset_sort_button.setToolTip("Ripristina l'ordinamento predefinito delle serie")
         
-        # Settings Button with Icon Fallback
         self.settings_button = QPushButton()
         self.settings_button.setToolTip("Impostazioni")
         self.settings_button.setFixedSize(45, 45)
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
         
-        # Try to load system icon for settings/preferences
-        icon = QIcon.fromTheme("preferences-system") # Primary attempt to load a system theme icon
+        icon = QIcon.fromTheme("preferences-system")
         if icon.isNull():
-             icon = QIcon.fromTheme("emblem-system") # Fallback 1: a more generic system emblem
+             icon = QIcon.fromTheme("emblem-system")
         
         if not icon.isNull():
             self.settings_button.setIcon(icon)
-            self.settings_button.setIconSize(QSize(24, 24)) # Standardize icon size
+            self.settings_button.setIconSize(QSize(24, 24))
         else:
-            # Final Fallback: if no suitable theme icon is found, use a text representation
             self.settings_button.setText("⚙️")
             self.settings_button.setFont(QFont("Segoe UI", 16))
 
@@ -236,8 +228,8 @@ class AniDownloaderGUI(QMainWindow):
         self.table_widget = QTableWidget()
         self.table_widget.setColumnCount(2)
         self.table_widget.setHorizontalHeaderLabels(["Nome Serie", "Stato"])
-        self.table_widget.verticalHeader().setVisible(False) # Hide row numbers
-        self.table_widget.setAlternatingRowColors(True) # Better readability
+        self.table_widget.verticalHeader().setVisible(False)
+        self.table_widget.setAlternatingRowColors(True)
         
         header = self.table_widget.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -248,19 +240,16 @@ class AniDownloaderGUI(QMainWindow):
         self.table_widget.setSortingEnabled(True)
         self.table_widget.itemSelectionChanged.connect(self._on_series_selected)
         
+        # Qui usiamo il delegate importato da widgets
+        self.table_widget.setItemDelegateForColumn(1, ProgressBarDelegate())
+        
         series_display_layout = QHBoxLayout()
         series_display_layout.addWidget(self.table_widget)
         
         self.image_label = QLabel()
-        self.image_label.setFixedSize(220, 320) # Slightly larger
+        self.image_label.setFixedSize(220, 320)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setObjectName("imageLabel") # ID for styling if needed, but border is inline
-        # Keep border inline for simplicity as it relies on specific colors that might change
-        # Or better: let QSS handle it if we can target it. 
-        # I'll update it dynamically in _apply_theme logic ideally, but for now inline is safe.
-        # However, to support light theme, I should use generic QSS or QPalette colors.
-        # Let's use a generic border style here and let QSS override via ID if I add it to QSS.
-        # For now, I'll stick to a neutral border.
+        self.image_label.setObjectName("imageLabel")
         self.image_label.setStyleSheet("border: 2px solid gray; border-radius: 6px;")
         
         series_display_layout.addWidget(self.image_label)
@@ -274,14 +263,13 @@ class AniDownloaderGUI(QMainWindow):
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
         self.main_splitter.addWidget(self.top_container)
         self.main_splitter.addWidget(self.log_output)
-        self.main_splitter.setStretchFactor(0, 3) # Give more space to top
+        self.main_splitter.setStretchFactor(0, 3)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_layout.addWidget(self.main_splitter)
 
     def _create_overall_status_label(self):
         self.overall_status_label = QLabel("Pronto.")
         self.overall_status_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        # Remove hardcoded color to let theme handle it
         self.overall_status_label.setStyleSheet("margin-top: 5px;")
         self.main_layout.addWidget(self.overall_status_label)
         
@@ -313,7 +301,6 @@ class AniDownloaderGUI(QMainWindow):
     def _open_settings(self):
         dialog = SettingsDialog(self.app_config_manager, self.settings, parent=self)
         if dialog.exec():
-            # Se i percorsi sono cambiati, ricarichiamo tutto
             if dialog.paths_changed:
                 self._load_config_paths()
                 self.series_repository = SeriesRepository(self.json_file_path)
@@ -328,35 +315,28 @@ class AniDownloaderGUI(QMainWindow):
         try: self._series_data = self.series_repository.load_series_data()
         except Exception as e: QMessageBox.critical(self, "Errore Caricamento Serie", f"Impossibile caricare: {e}"); self._series_data = []
         self._populate_table_main_gui(self._series_data, row_to_select=row_to_select)
-        # Il reset dell'ordinamento è gestito da _reset_table_sort
 
     def _populate_table_main_gui(self, data_to_display, row_to_select=0):
-        self.table_widget.setSortingEnabled(False) # Disabilita l'ordinamento durante il popolamento
+        self.table_widget.setSortingEnabled(False)
         self.table_widget.setRowCount(0); self.table_widget.setRowCount(len(data_to_display))
         for row, series in enumerate(data_to_display):
-            name_item = QTableWidgetItem(series["name"]); status_item = StatusTableWidgetItem("In attesa", 3)
+            name_item = QTableWidgetItem(series["name"]); status_item = ProgressBarTableWidgetItem("In attesa", 3)
             self.table_widget.setItem(row, 0, name_item); self.table_widget.setItem(row, 1, status_item)
         
         if data_to_display:
             if row_to_select != -1:
-                # Ensure row_to_select is valid
                 row_to_select = min(max(0, row_to_select), len(data_to_display)-1)
                 self.table_widget.setCurrentCell(row_to_select, 0)
                 self.table_widget.scrollToItem(self.table_widget.item(row_to_select, 0))
             else:
-                # If no specific row to select, select the first row
                 self.table_widget.setCurrentCell(0, 0)
-            # Always call _on_series_selected after (re)populating and selecting a row
             self._on_series_selected() 
         else:
-            # If no data, clear selection and image
             self.table_widget.clearSelection()
             self._on_series_selected()
         self.table_widget.setSortingEnabled(True)
 
-    # MODIFICA 1: Ripristinata la logica corretta per il reset
     def _reset_table_sort(self):
-        # Rimuove l'indicatore grafico e ripopola la tabella per ripristinare l'ordine originale
         self.table_widget.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         self._populate_table_main_gui(self._series_data)
 
@@ -378,11 +358,9 @@ class AniDownloaderGUI(QMainWindow):
         self.log_output.clear()
         self.overall_status_label.setText("Avvio processo...")
         
-        # Ricarichiamo sempre la config prima di partire per essere sicuri
         convert_to_h265 = self.app_config_manager.get("convert_to_h265", True)
         num_chunks = self.app_config_manager.get("num_chunks", DEFAULT_NUM_CHUNKS)
         
-        # Usiamo i percorsi aggiornati
         self._load_config_paths()
 
         self._download_thread = QThread()
@@ -419,74 +397,131 @@ class AniDownloaderGUI(QMainWindow):
 
     def _execute_stop_procedure(self):
         if self._download_worker:
-            self.overall_status_label.setText("Interruzione in corso..."); self.stop_button.setEnabled(False); self._download_worker.request_stop()
+            self.overall_status_label.setText("Interruzione in corso...")
+            self.stop_button.setEnabled(False)
+            self._download_worker.request_stop()
 
-    # MODIFICA 3: Implementato l'ordinamento intelligente
     def _update_series_status(self, series_name, status_message):
         status_lower = status_message.lower()
         new_priority = 1
         color = QColor(Qt.GlobalColor.transparent)
 
         # Determine colors based on theme
-        is_dark = getattr(self, '_is_dark_theme', True) # Default to dark if attribute missing
+        is_dark = getattr(self, '_is_dark_theme', True)
         
         if is_dark:
             # Dark Theme Colors
-            if "download" in status_lower: new_priority, color = 0, QColor("#1b5e20") # Dark Green
-            elif "conversione" in status_lower: new_priority, color = 0, QColor("#0d47a1") # Dark Blue
-            elif "fatto" in status_lower: new_priority, color = 2, QColor("#1b5e20") # Dark Green
+            if "download" in status_lower: new_priority, color = 0, QColor("#1b5e20")
+            elif "conversione" in status_lower: new_priority, color = 0, QColor("#0d47a1")
+            elif "fatto" in status_lower: new_priority, color = 2, QColor("#1b5e20")
             elif "saltato" in status_lower: new_priority, color = 3, QColor(Qt.GlobalColor.transparent)
-            elif "errore" in status_lower: new_priority, color = 1, QColor("#b71c1c") # Dark Red
-            elif "interrotto" in status_lower: new_priority, color = 1, QColor("#b71c1c") # Dark Red
+            elif "errore" in status_lower: new_priority, color = 1, QColor("#b71c1c")
+            elif "interrotto" in status_lower: new_priority, color = 1, QColor("#b71c1c")
         else:
-            # Light Theme Colors (Lighter pastels)
-            if "download" in status_lower: new_priority, color = 0, QColor("#c8e6c9") # Light Green
-            elif "conversione" in status_lower: new_priority, color = 0, QColor("#bbdefb") # Light Blue
-            elif "fatto" in status_lower: new_priority, color = 2, QColor("#c8e6c9") # Light Green
+            # Light Theme Colors
+            if "download" in status_lower: new_priority, color = 0, QColor("#c8e6c9")
+            elif "conversione" in status_lower: new_priority, color = 0, QColor("#bbdefb")
+            elif "fatto" in status_lower: new_priority, color = 2, QColor("#c8e6c9")
             elif "saltato" in status_lower: new_priority, color = 3, QColor(Qt.GlobalColor.transparent)
-            elif "errore" in status_lower: new_priority, color = 1, QColor("#ffcdd2") # Light Red
-            elif "interrotto" in status_lower: new_priority, color = 1, QColor("#ffcdd2") # Light Red
+            elif "errore" in status_lower: new_priority, color = 1, QColor("#ffcdd2")
+            elif "interrotto" in status_lower: new_priority, color = 1, QColor("#ffcdd2")
         
+        # Current phase extraction for progress bar
+        current_phase = ""
+        if "download" in status_lower:
+            current_phase = "download"
+        elif "conversione" in status_lower:
+            current_phase = "conversion"
+
         for row in range(self.table_widget.rowCount()):
             if self.table_widget.item(row, 0).text() == series_name:
-                # Controlla la priorità attuale prima di aggiornare
                 current_item = self.table_widget.item(row, 1)
-                old_priority = -1 # Valore di default se l'item non esiste o non ha priorità
-                if isinstance(current_item, StatusTableWidgetItem):
-                    old_priority = current_item.priority
+                
+                progress = 0
+                is_active = False
+                match = re.search(r'(\d+)%', status_message)
+                if current_phase:
+                    is_active = True
+                    if match:
+                        progress = int(match.group(1))
 
-                # Aggiorna la riga
-                status_item = StatusTableWidgetItem(status_message, new_priority)
-                self.table_widget.setItem(row, 1, status_item)
+                if isinstance(current_item, ProgressBarTableWidgetItem):
+                    old_priority = current_item.priority
+                    # Keep text clean if showing progress
+                    display_text = status_message.split(' - ')[0] if is_active else status_message
+                    current_item.setText(display_text) 
+                    current_item.setData(Qt.ItemDataRole.UserRole + 1, progress)
+                    current_item.setData(Qt.ItemDataRole.UserRole + 2, is_active)
+                    current_item.setData(Qt.ItemDataRole.UserRole + 3, current_phase)
+                    current_item.priority = new_priority
+                else: 
+                    old_priority = -1
+                    status_item = StatusTableWidgetItem(status_message, new_priority)
+                    self.table_widget.setItem(row, 1, status_item)
+                
                 for col in range(self.table_widget.columnCount()):
                     self.table_widget.item(row, col).setBackground(color)
                 
-                # Se la priorità è cambiata, scatena un ri-ordinamento
                 if old_priority != new_priority:
                     self.table_widget.sortItems(1, Qt.SortOrder.AscendingOrder)
+                
+                self.table_widget.viewport().update()
                 break
-        
+
     def _handle_worker_error(self, series_name, error_message):
         if series_name in ["GLOBAL", "DEPENDENCIES", "CONFIG"]:
             QMessageBox.critical(self, f"Errore Critico: {series_name}", error_message); self._execute_stop_procedure()
-        else: self._update_series_status(series_name, f"❌ Errore")
+        else:
+            self._update_series_status(series_name, f"❌ Errore")
+            for row in range(self.table_widget.rowCount()):
+                if self.table_widget.item(row, 0).text() == series_name:
+                    item = self.table_widget.item(row, 1)
+                    if isinstance(item, ProgressBarTableWidgetItem):
+                        item.setData(Qt.ItemDataRole.UserRole + 2, False) 
+                    break
+            self.table_widget.viewport().update()
         self.log_output.append(f"ERRORE [{series_name}]: {error_message}")
 
     def _handle_series_finished(self, series_name, episode_path, download_time, conversion_time):
         self.log_output.append(f"✅ {os.path.basename(episode_path)} | DL: {download_time:.2f}s | Conv: {conversion_time:.2f}s")
         self._update_series_status(series_name, "✅ Fatto")
+        for row in range(self.table_widget.rowCount()):
+            if self.table_widget.item(row, 0).text() == series_name:
+                item = self.table_widget.item(row, 1)
+                if isinstance(item, ProgressBarTableWidgetItem):
+                    item.setData(Qt.ItemDataRole.UserRole + 1, 0)
+                    item.setData(Qt.ItemDataRole.UserRole + 2, False)
+                break
+        self.table_widget.viewport().update()
 
     def _handle_task_skipped(self, series_name, reason):
-        self.log_output.append(f"🚫 SKIPPED [{series_name}]: {reason}"); self._update_series_status(series_name, f"🚫 Saltato")
+        self.log_output.append(f"🚫 SKIPPED [{series_name}]: {reason}")
+        self._update_series_status(series_name, f"🚫 Saltato")
+        for row in range(self.table_widget.rowCount()):
+            if self.table_widget.item(row, 0).text() == series_name:
+                item = self.table_widget.item(row, 1)
+                if isinstance(item, ProgressBarTableWidgetItem):
+                    item.setData(Qt.ItemDataRole.UserRole + 1, 0)
+                    item.setData(Qt.ItemDataRole.UserRole + 2, False)
+                break
+        self.table_widget.viewport().update()
 
-    # MODIFICA 2: Aggiunto reset_sort_button alla logica
     def _set_ui_state_for_download(self, in_progress: bool):
         self.table_widget.setSortingEnabled(not in_progress)
         self.main_splitter.setSizes([self.height() - 200, 200] if in_progress else [self.height(), 0])
         
         if in_progress:
             for row in range(self.table_widget.rowCount()):
-                self.table_widget.setItem(row, 1, StatusTableWidgetItem("In coda...", 2))
+                current_item = self.table_widget.item(row, 1)
+                if not isinstance(current_item, ProgressBarTableWidgetItem):
+                    status_item = ProgressBarTableWidgetItem("In coda...", 2, is_active=False)
+                    self.table_widget.setItem(row, 1, status_item)
+                else:
+                    current_item.setText("In coda...")
+                    current_item.priority = 2
+                    current_item.setData(Qt.ItemDataRole.UserRole + 1, 0)
+                    current_item.setData(Qt.ItemDataRole.UserRole + 2, False)
+                
                 for col in range(self.table_widget.columnCount()):
                     self.table_widget.item(row, col).setBackground(QColor(Qt.GlobalColor.transparent))
 

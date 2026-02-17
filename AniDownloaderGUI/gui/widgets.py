@@ -1,8 +1,132 @@
 from PyQt6.QtWidgets import (
     QTableWidgetItem, QDialog, QVBoxLayout, QLabel,
-    QCheckBox, QHBoxLayout, QPushButton, QSpinBox, QGroupBox, QFormLayout, QMessageBox
+    QCheckBox, QHBoxLayout, QPushButton, QStyledItemDelegate, 
+    QStyleOptionProgressBar, QStyle, QApplication, QStyleOptionViewItem
 )
-from PyQt6.QtCore import QTimer, Qt, QSettings
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QColor, QPalette
+
+# --- CLASSI PROGRESS BAR ---
+
+class ProgressBarTableWidgetItem(QTableWidgetItem):
+    def __init__(self, text, priority, progress=0, is_active=False, phase=""):
+        super().__init__(text)
+        self.priority = priority
+        self._progress = progress
+        self._is_active = is_active
+        self._phase = phase
+        self.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
+
+    def data(self, role):
+        if role == Qt.ItemDataRole.DisplayRole:
+            return super().data(role)
+        if role == Qt.ItemDataRole.UserRole:
+            return self.priority
+        if role == Qt.ItemDataRole.UserRole + 1:
+            return self._progress
+        if role == Qt.ItemDataRole.UserRole + 2:
+            return self._is_active
+        if role == Qt.ItemDataRole.UserRole + 3:
+            return self._phase
+        return super().data(role)
+
+    def setData(self, role, value):
+        if role == Qt.ItemDataRole.UserRole + 1:
+            self._progress = value
+        elif role == Qt.ItemDataRole.UserRole + 2:
+            self._is_active = value
+        elif role == Qt.ItemDataRole.UserRole + 3:
+            self._phase = value
+        super().setData(role, value)
+
+    # Ordinamento per priorità
+    def __lt__(self, other):
+        if hasattr(other, 'priority'):
+            return self.priority < other.priority
+        return super().__lt__(other)
+
+    def progress(self):
+        return self._progress
+
+    def is_active(self):
+        return self._is_active
+
+    def phase(self):
+        return self._phase
+
+class ProgressBarDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        # Otteniamo l'item
+        item = None
+        if hasattr(option.widget, 'item'):
+            item = option.widget.item(index.row(), index.column())
+        
+        # Se è il nostro item ed è attivo (Download/Conversione)
+        if isinstance(item, ProgressBarTableWidgetItem) and item.is_active():
+            
+            # 1. DISEGNO SFONDO (PULITO)
+            # Copiamo le opzioni e rimuoviamo il testo per evitare sovrapposizioni
+            opt = QStyleOptionViewItem(option)
+            self.initStyleOption(opt, index)
+            opt.text = "" 
+            style = option.widget.style()
+            # Disegna lo sfondo della cella (selezione, focus, ecc.) senza testo
+            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, option.widget)
+
+            # 2. PREPARAZIONE DATI
+            progress = item.progress()
+            phase = item.data(Qt.ItemDataRole.UserRole + 3)
+            display_phase = "Elaborazione"
+            if phase == "download":
+                display_phase = "Download"
+            elif phase == "conversion":
+                display_phase = "Conversione"
+            
+            text_string = f"{display_phase} {progress}%"
+
+            # Gestione Colori (Tema)
+            main_window = option.widget.window()
+            is_dark = True
+            if main_window and hasattr(main_window, '_is_dark_theme'):
+                is_dark = getattr(main_window, '_is_dark_theme')
+
+            if is_dark:
+                chunk_color = QColor("#6200ea")  # Viola scuro
+                bg_color = QColor(0, 0, 0, 0)    # Trasparente
+                text_color = QColor("#ffffff")   # Testo Bianco
+            else:
+                chunk_color = QColor("#6200ea")  # Viola chiaro
+                bg_color = QColor(0, 0, 0, 0)    # Trasparente
+                text_color = QColor("#212121")   # Testo Nero
+
+            # 3. DISEGNO PROGRESS BAR (SENZA TESTO AUTOMATICO)
+            bar_option = QStyleOptionProgressBar()
+            bar_option.rect = option.rect.adjusted(3, 3, -3, -3) # Padding
+            bar_option.minimum = 0
+            bar_option.maximum = 100
+            bar_option.progress = progress
+            bar_option.textVisible = False  # <--- IMPORTANTE: Disabilitiamo il testo automatico
+            
+            palette = option.palette
+            palette.setColor(QPalette.ColorRole.Highlight, chunk_color)
+            palette.setColor(QPalette.ColorRole.Base, bg_color)
+            bar_option.palette = palette
+
+            # Disegna solo la barra grafica
+            style.drawControl(QStyle.ControlElement.CE_ProgressBar, bar_option, painter, option.widget)
+
+            # 4. DISEGNO TESTO MANUALE (CENTRATO)
+            painter.save()
+            painter.setPen(text_color)
+            # Disegna il testo esattamente al centro del rettangolo della cella
+            painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, text_string)
+            painter.restore()
+            
+        else:
+            # Disegno standard per stati inattivi (In coda, Fatto, ecc.)
+            super().paint(painter, option, index)
+
+# --- CLASSI DIALOGHI E STATUS ---
 
 class StatusTableWidgetItem(QTableWidgetItem):
     def __init__(self, text, priority):
@@ -12,6 +136,8 @@ class StatusTableWidgetItem(QTableWidgetItem):
     def __lt__(self, other):
         if isinstance(other, StatusTableWidgetItem):
             return self.priority < other.priority
+        if hasattr(other, 'priority'):
+            return self.priority < other.priority
         return super().__lt__(other)
 
 class StopConfirmationDialog(QDialog):
@@ -20,9 +146,9 @@ class StopConfirmationDialog(QDialog):
         self.setWindowTitle("Conferma Interruzione")
         self.setModal(True)
         self.setMinimumWidth(400)
-        
+
         _layout = QVBoxLayout(self)
-        
+
         _message_label = QLabel(
             "<b>ATTENZIONE: Stai per interrompere il processo.</b><br><br>"
             "Questa operazione terminerà forzatamente tutti i download e le conversioni in corso.<br>"
@@ -39,15 +165,15 @@ class StopConfirmationDialog(QDialog):
         self._ok_button = QPushButton("Attendi 5s...")
         self._ok_button.setEnabled(False)
         self._ok_button.clicked.connect(self.accept)
-        
+
         _cancel_button = QPushButton("Annulla")
         _cancel_button.clicked.connect(self.reject)
-        
+
         _button_layout.addStretch()
         _button_layout.addWidget(_cancel_button)
         _button_layout.addWidget(self._ok_button)
         _layout.addLayout(_button_layout)
-        
+
         self._timer_seconds = 5
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.update_timer)
