@@ -39,7 +39,6 @@ class ProgressBarTableWidgetItem(QTableWidgetItem):
             self._phase = value
         super().setData(role, value)
 
-    # Ordinamento per priorità
     def __lt__(self, other):
         if hasattr(other, 'priority'):
             return self.priority < other.priority
@@ -56,74 +55,72 @@ class ProgressBarTableWidgetItem(QTableWidgetItem):
 
 class ProgressBarDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
-        # Otteniamo l'item
         item = None
         if hasattr(option.widget, 'item'):
             item = option.widget.item(index.row(), index.column())
         
-        # Se è il nostro item ed è attivo (Download/Conversione)
         if isinstance(item, ProgressBarTableWidgetItem) and item.is_active():
-            
-            # 1. DISEGNO SFONDO (PULITO)
-            # Copiamo le opzioni e rimuoviamo il testo per evitare sovrapposizioni
+            # 1. DISEGNO SFONDO CELLA (Senza Testo)
             opt = QStyleOptionViewItem(option)
             self.initStyleOption(opt, index)
             opt.text = "" 
             style = option.widget.style()
-            # Disegna lo sfondo della cella (selezione, focus, ecc.) senza testo
             style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, option.widget)
 
-            # 2. PREPARAZIONE DATI
-            progress = item.progress()
-            phase = item.data(Qt.ItemDataRole.UserRole + 3)
-            display_phase = "Elaborazione"
-            if phase == "download":
-                display_phase = "Download"
-            elif phase == "conversion":
-                display_phase = "Conversione"
-            
-            text_string = f"{display_phase} {progress}%"
-
-            # Gestione Colori (Tema)
+            # 2. CONFIGURAZIONE COLORI IN BASE AL TEMA
             main_window = option.widget.window()
             is_dark = True
             if main_window and hasattr(main_window, '_is_dark_theme'):
                 is_dark = getattr(main_window, '_is_dark_theme')
 
             if is_dark:
-                chunk_color = QColor("#6200ea")  # Viola scuro
-                bg_color = QColor(0, 0, 0, 0)    # Trasparente
-                text_color = QColor("#ffffff")   # Testo Bianco
+                # Tema Scuro: Viola intenso, sfondo scuro, testo bianco
+                chunk_color = QColor("#6200ea") 
+                bar_bg_color = QColor(45, 45, 45) # Grigio molto scuro
+                text_color = QColor("#ffffff")
             else:
-                chunk_color = QColor("#6200ea")  # Viola chiaro
-                bg_color = QColor(0, 0, 0, 0)    # Trasparente
-                text_color = QColor("#212121")   # Testo Nero
+                # Tema Chiaro: Viola pastello, sfondo grigio chiaro, testo nero
+                # Usiamo un viola più chiaro (#b39ddb) per far risaltare il testo nero
+                chunk_color = QColor("#b39ddb") 
+                bar_bg_color = QColor("#eeeeee") # Grigio chiaro per visibilità
+                text_color = QColor("#212121")
 
-            # 3. DISEGNO PROGRESS BAR (SENZA TESTO AUTOMATICO)
+            # 3. DISEGNO PROGRESS BAR (Grafica)
             bar_option = QStyleOptionProgressBar()
-            bar_option.rect = option.rect.adjusted(3, 3, -3, -3) # Padding
+            bar_option.rect = option.rect.adjusted(4, 4, -4, -4)
             bar_option.minimum = 0
             bar_option.maximum = 100
-            bar_option.progress = progress
-            bar_option.textVisible = False  # <--- IMPORTANTE: Disabilitiamo il testo automatico
+            bar_option.progress = item.progress()
+            bar_option.textVisible = False # Testo gestito manualmente per precisione
             
+            # Applichiamo i colori alla palette della barra
             palette = option.palette
-            palette.setColor(QPalette.ColorRole.Highlight, chunk_color)
-            palette.setColor(QPalette.ColorRole.Base, bg_color)
+            palette.setColor(QPalette.ColorRole.Highlight, chunk_color) # Colore caricamento
+            palette.setColor(QPalette.ColorRole.Base, bar_bg_color)      # Colore sfondo barra
             bar_option.palette = palette
 
-            # Disegna solo la barra grafica
             style.drawControl(QStyle.ControlElement.CE_ProgressBar, bar_option, painter, option.widget)
 
-            # 4. DISEGNO TESTO MANUALE (CENTRATO)
+            # 4. DISEGNO TESTO MANUALE
+            progress = item.progress()
+            phase = item.data(Qt.ItemDataRole.UserRole + 3)
+            display_phase = "Download" if phase == "download" else "Conversione" if phase == "conversion" else "Elaborazione"
+            
+            text_string = f"{display_phase} {progress}%"
+
             painter.save()
             painter.setPen(text_color)
-            # Disegna il testo esattamente al centro del rettangolo della cella
+            # Usiamo un font leggermente più grassetto per la barra se in tema chiaro
+            if not is_dark:
+                font = painter.font()
+                font.setBold(True)
+                painter.setFont(font)
+                
             painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, text_string)
             painter.restore()
             
         else:
-            # Disegno standard per stati inattivi (In coda, Fatto, ecc.)
+            # Stati non attivi (In coda, Fatto, ecc.)
             super().paint(painter, option, index)
 
 # --- CLASSI DIALOGHI E STATUS ---
