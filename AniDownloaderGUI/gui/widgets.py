@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import (
     QTableWidgetItem, QDialog, QVBoxLayout, QLabel,
-    QCheckBox, QHBoxLayout, QPushButton
+    QCheckBox, QHBoxLayout, QPushButton, QSpinBox, QGroupBox, QFormLayout, QMessageBox
 )
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, Qt, QSettings
 
 class StatusTableWidgetItem(QTableWidgetItem):
     def __init__(self, text, priority):
