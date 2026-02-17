@@ -22,12 +22,13 @@ class DownloadSignals(QObject):
     overall_status = pyqtSignal(str)
 
 class DownloadWorker(QObject):
-    def __init__(self, series_list, json_file_path: Path, log_file_path: Path, output_dir: Path, convert_to_h265: bool):
+    def __init__(self, series_list, json_file_path: Path, log_file_path: Path, output_dir: Path, convert_to_h265: bool, num_chunks: int = 1):
         super().__init__()
         self._json_file_path = json_file_path
         self._log_file_path = log_file_path
         self._output_dir = output_dir
         self._convert_to_h265 = convert_to_h265
+        self._num_chunks = num_chunks
         self._signals = DownloadSignals()
         self._is_running = True
         self._pool = self._manager = self._queue = self._stop_event = self._timer = None
@@ -154,7 +155,7 @@ class DownloadWorker(QObject):
         queue_updater = QueueStatusUpdater(self._queue)
         
         self._pool = mp.Pool(processes=mp.cpu_count())
-        pool_args = [(task, self._output_dir, self._log_file_path, queue_updater, self._stop_event, self._convert_to_h265) for task in to_process]
+        pool_args = [(task, self._output_dir, self._log_file_path, queue_updater, self._stop_event, self._convert_to_h265, self._num_chunks) for task in to_process]
         self._active_tasks = self._pool.starmap_async(process_series_task, pool_args)
         # Non chiudere il pool qui, aspetta che i task finiscano in _check_status
 
