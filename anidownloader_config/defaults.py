@@ -22,6 +22,9 @@ DEFAULT_LOG_FILE = Path(user_log_dir(appname=APP_NAME)) / 'serie_critical_errors
 DEFAULT_SERIES_JSON_PATH = DEFAULT_CONFIG_DIR / "series_data.json"
 DEFAULT_APP_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.json"
 
+# --- Impostazioni di Default ---
+DEFAULT_NUM_CHUNKS = 1
+
 
 # --- Verifica e Creazione delle Directory (Opzionale ma consigliato) ---
 # È buona norma assicurarsi che le directory esistano prima di usarle.
