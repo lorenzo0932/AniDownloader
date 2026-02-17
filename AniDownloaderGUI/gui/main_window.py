@@ -2,10 +2,9 @@ import os
 from pathlib import Path
 import re
 from PyQt6.QtWidgets import (
-    QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
-    QPushButton, QTableWidget, QHeaderView, QLabel,
-    QMessageBox, QTextEdit, QStyle, QSplitter, 
-    QTableWidgetItem, QApplication
+    QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, 
+    QTableWidget, QHeaderView, QLabel, QMessageBox, QTextEdit, 
+    QStyle, QSplitter, QTableWidgetItem, QApplication
 )
 from PyQt6.QtCore import QThread, Qt, QSettings, QByteArray, QEvent, QTimer, QSize
 from PyQt6.QtGui import QIcon, QFont, QColor
@@ -17,7 +16,7 @@ from anidownloader_config.app_config_manager import AppConfigManager
 from anidownloader_config.defaults import DEFAULT_CONFIG_DIR, DEFAULT_SERIES_JSON_PATH, DEFAULT_NUM_CHUNKS
 from utils.image_loader import load_poster_image
 
-# Widgets imports (Refactoring: tutto da .widgets)
+# Widgets imports
 from .widgets import (
     StatusTableWidgetItem, 
     StopConfirmationDialog, 
@@ -45,18 +44,16 @@ class AniDownloaderGUI(QMainWindow):
         window_width, window_height = 1000, 700
         x, y = (screen_geometry.width() - window_width) // 2, (screen_geometry.height() - window_height) // 2
         self.setGeometry(x, y, window_width, window_height)
-        self.setMinimumSize(800, 500)
+        self.setMinimumSize(850, 600)
         
         self.setWindowIcon(QIcon('assets/logo.png'))
         
         self.app_config_manager = AppConfigManager()
-        
         DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         qsettings_path = str(DEFAULT_CONFIG_DIR / "AniDownloader.conf")
         self.settings = QSettings(qsettings_path, QSettings.Format.IniFormat)
 
         self._load_config_paths()
-        
         self.series_repository = SeriesRepository(self.json_file_path)
         self._check_series_file()
 
@@ -70,54 +67,40 @@ class AniDownloaderGUI(QMainWindow):
         if event.type() == QEvent.Type.PaletteChange:
             app = QApplication.instance()
             if app:
-                # Controlla se dovremmo aggiornare il tema
                 is_dark = app.palette().window().color().lightness() < 128
                 if is_dark != self._is_dark_theme:
                     self._theme_debounce_timer.start(500)
         super().changeEvent(event)
 
     def _apply_theme_on_event(self):
-        old_is_dark = self._is_dark_theme
-        
+        """Mantiene lo scroll durante il cambio tema."""
+        v_scroll = self.table_widget.verticalScrollBar().value()
+        current_row = self.table_widget.currentRow()
         self._preserved_series_name = None
-        current_row_index = self.table_widget.currentRow()
-        if current_row_index != -1:
-            item = self.table_widget.item(current_row_index, 0)
-            if item:
-                self._preserved_series_name = item.text()
+        if current_row != -1:
+            item = self.table_widget.item(current_row, 0)
+            if item: self._preserved_series_name = item.text()
 
         self._apply_theme()
+        self._series_data = self.series_repository.load_series_data()
         
-        if old_is_dark != self._is_dark_theme:
-            restored_row_index = -1
-            if self._preserved_series_name:
-                for r_idx, s_data in enumerate(self._series_data):
-                    if s_data.get("name") == self._preserved_series_name:
-                        restored_row_index = r_idx
-                        break
-            
-            self._load_series_data_into_table(row_to_select=restored_row_index)
+        restored_idx = -1
+        if self._preserved_series_name:
+            for i, s in enumerate(self._series_data):
+                if s.get("name") == self._preserved_series_name:
+                    restored_idx = i; break
+        
+        self._populate_table_main_gui(self._series_data, row_to_select=restored_idx, scroll_to_selected=False)
+        QTimer.singleShot(0, lambda: self.table_widget.verticalScrollBar().setValue(v_scroll))
 
     def _apply_theme(self):
         app = QApplication.instance()
         if not app: return
-
         palette = app.palette()
-        bg_color = palette.window().color()
-        lightness = bg_color.lightness()
-        
-        new_is_dark = lightness < 128
-        
-        if self._is_dark_theme == new_is_dark:
-            return
-            
-        if new_is_dark:
-            app.setStyleSheet(DARK_THEME_QSS)
-        else:
-            app.setStyleSheet(LIGHT_THEME_QSS)
-            
+        new_is_dark = palette.window().color().lightness() < 128
+        if self._is_dark_theme == new_is_dark: return
+        app.setStyleSheet(DARK_THEME_QSS if new_is_dark else LIGHT_THEME_QSS)
         self._is_dark_theme = new_is_dark
-        
         if hasattr(self, 'table_widget'):
             self.table_widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
@@ -127,171 +110,98 @@ class AniDownloaderGUI(QMainWindow):
         self.log_file_path = Path(self.app_config_manager.get("log_file_path"))
 
     def _check_series_file(self):
-        is_json_path_customized = self.app_config_manager.get("is_json_path_customized", False)
         if not self.json_file_path.exists():
-            if is_json_path_customized:
-                QMessageBox.warning(self, "File Serie Non Trovato", 
-                                        f"Il file specificato non è stato trovato:\n{self.json_file_path}\n"
-                                        f"Verrà ripristinato il percorso di default.")
             self.json_file_path = DEFAULT_SERIES_JSON_PATH
             self.app_config_manager.set("json_file_path", str(self.json_file_path))
-            self.app_config_manager.set("is_json_path_customized", False)
             self.series_repository = SeriesRepository(self.json_file_path)
             self.series_repository.save_series_data([])
 
     def _init_ui(self):
-        self._create_main_layout()
-        self._create_control_buttons()
-        self._create_series_table()
-        self._create_log_output()
-        self._setup_main_splitter()
-        self._create_overall_status_label()
-
-    def _create_main_layout(self):
         central_widget = QWidget(); self.setCentralWidget(central_widget); self.main_layout = QVBoxLayout(central_widget)
         self.top_container = QWidget(); self.top_layout = QVBoxLayout(self.top_container); self.top_layout.setContentsMargins(0,0,0,0)
 
-    def _create_control_buttons(self):
         button_layout = QHBoxLayout()
         button_layout.setSpacing(12)
         
         self.start_button = QPushButton("Avvia Download")
         self.start_button.setObjectName("primaryButton")
         self.start_button.clicked.connect(self.start_download)
-        self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_button.setFixedSize(160, 45)
-        self.start_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         
         self.stop_button = QPushButton("Ferma Download")
         self.stop_button.setObjectName("dangerButton")
         self.stop_button.clicked.connect(self.stop_download)
         self.stop_button.setEnabled(False)
-        self.stop_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.stop_button.setFixedSize(160, 45)
-        self.stop_button.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         
         self.refresh_button = QPushButton("Aggiorna Serie")
         self.refresh_button.clicked.connect(self._load_series_data_into_table)
         self.refresh_button.setMinimumSize(140, 45)
-        self.refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
-        self.refresh_button.setIconSize(QSize(24, 24))
-        self.refresh_button.setToolTip("Ricarica i dati delle serie dalla sorgente")
         
         self.manage_series_button = QPushButton("Gestisci Serie")
         self.manage_series_button.clicked.connect(self._open_series_manager)
         self.manage_series_button.setMinimumSize(140, 45)
-        self.manage_series_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.manage_series_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
-        self.manage_series_button.setIconSize(QSize(24, 24))
-        self.manage_series_button.setToolTip("Aggiungi, modifica o rimuovi le serie")
         
         self.reset_sort_button = QPushButton("Reset Ordine")
         self.reset_sort_button.clicked.connect(self._reset_table_sort)
         self.reset_sort_button.setMinimumSize(140, 45)
-        self.reset_sort_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.reset_sort_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogResetButton))
-        self.reset_sort_button.setIconSize(QSize(24, 24))
-        self.reset_sort_button.setToolTip("Ripristina l'ordinamento predefinito delle serie")
         
         self.settings_button = QPushButton()
-        self.settings_button.setToolTip("Impostazioni")
         self.settings_button.setFixedSize(45, 45)
-        self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        
-        icon = QIcon.fromTheme("preferences-system")
-        if icon.isNull():
-             icon = QIcon.fromTheme("emblem-system")
-        
-        if not icon.isNull():
-            self.settings_button.setIcon(icon)
-            self.settings_button.setIconSize(QSize(24, 24))
-        else:
-            self.settings_button.setText("⚙️")
-            self.settings_button.setFont(QFont("Segoe UI", 16))
-
+        self.settings_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
         self.settings_button.clicked.connect(self._open_settings)
 
-        button_layout.addWidget(self.start_button)
-        button_layout.addWidget(self.stop_button)
+        button_layout.addWidget(self.start_button); button_layout.addWidget(self.stop_button)
         button_layout.addStretch(1) 
-        button_layout.addWidget(self.refresh_button)
-        button_layout.addWidget(self.manage_series_button)
-        button_layout.addWidget(self.reset_sort_button)
-        button_layout.addSpacing(10)
-        button_layout.addWidget(self.settings_button)
-        
-        self.top_layout.addLayout(button_layout)
-        self.top_layout.addSpacing(15)
+        button_layout.addWidget(self.refresh_button); button_layout.addWidget(self.manage_series_button)
+        button_layout.addWidget(self.reset_sort_button); button_layout.addSpacing(10); button_layout.addWidget(self.settings_button)
+        self.top_layout.addLayout(button_layout); self.top_layout.addSpacing(15)
 
-    def _create_series_table(self):
-        self.table_widget = QTableWidget()
-        self.table_widget.setColumnCount(2)
+        # Configurazione Tabella
+        self.table_widget = QTableWidget(); self.table_widget.setColumnCount(2)
         self.table_widget.setHorizontalHeaderLabels(["Nome Serie", "Stato"])
         self.table_widget.verticalHeader().setVisible(False)
         self.table_widget.setAlternatingRowColors(True)
         
+        # --- LOGICA COLONNE DINAMICHE ---
         header = self.table_widget.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setMinimumSectionSize(200)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)    # Nome si espande
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive) # Stato è regolabile
+        
+        # Impostiamo una larghezza iniziale suggerita
+        self.table_widget.setColumnWidth(1, 230) 
+        # Impostiamo un limite minimo assoluto per evitare che la barra sparisca
+        header.setMinimumSectionSize(200) 
         
         self.table_widget.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table_widget.setSortingEnabled(True)
         self.table_widget.itemSelectionChanged.connect(self._on_series_selected)
-        
-        # Qui usiamo il delegate importato da widgets
         self.table_widget.setItemDelegateForColumn(1, ProgressBarDelegate())
         
-        series_display_layout = QHBoxLayout()
-        series_display_layout.addWidget(self.table_widget)
-        
-        self.image_label = QLabel()
-        self.image_label.setFixedSize(220, 320)
+        self.image_label = QLabel(); self.image_label.setFixedSize(220, 320)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setObjectName("imageLabel")
         self.image_label.setStyleSheet("border: 2px solid gray; border-radius: 6px;")
         
-        series_display_layout.addWidget(self.image_label)
+        series_display_layout = QHBoxLayout()
+        series_display_layout.addWidget(self.table_widget); series_display_layout.addWidget(self.image_label)
         self.top_layout.addLayout(series_display_layout)
 
-    def _create_log_output(self):
-        self.log_output = QTextEdit()
-        self.log_output.setReadOnly(True)
-
-    def _setup_main_splitter(self):
+        self.log_output = QTextEdit(); self.log_output.setReadOnly(True)
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
-        self.main_splitter.addWidget(self.top_container)
-        self.main_splitter.addWidget(self.log_output)
-        self.main_splitter.setStretchFactor(0, 3)
-        self.main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.addWidget(self.top_container); self.main_splitter.addWidget(self.log_output)
+        self.main_splitter.setStretchFactor(0, 3); self.main_splitter.setStretchFactor(1, 1)
         self.main_layout.addWidget(self.main_splitter)
 
-    def _create_overall_status_label(self):
         self.overall_status_label = QLabel("Pronto.")
         self.overall_status_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        self.overall_status_label.setStyleSheet("margin-top: 5px;")
         self.main_layout.addWidget(self.overall_status_label)
-        
-    def restore_geometry_and_state(self):
-        geometry = self.settings.value("geometry")
-        if geometry:
-            self.restoreGeometry(geometry)
 
-        splitter_sizes_value = self.settings.value("splitter_sizes")
-        if splitter_sizes_value:
-            if isinstance(splitter_sizes_value, QByteArray):
-                self.main_splitter.restoreState(splitter_sizes_value)
-            elif isinstance(splitter_sizes_value, list):
-                try:
-                    byte_string = "".join(splitter_sizes_value).encode('ascii')
-                    self.main_splitter.restoreState(QByteArray.fromHex(byte_string))
-                except Exception:
-                    self.main_splitter.setSizes([self.height() - 200, 200])
-            else:
-                 self.main_splitter.setSizes([self.height() - 200, 200])
-        else:
-            self.main_splitter.setSizes([self.height() - 200, 200])
+    def restore_geometry_and_state(self):
+        if self.settings.value("geometry"): self.restoreGeometry(self.settings.value("geometry"))
+        if self.settings.value("splitter_sizes"): self.main_splitter.restoreState(self.settings.value("splitter_sizes"))
 
     def closeEvent(self, event):
         self.settings.setValue("geometry", self.saveGeometry())
@@ -300,40 +210,34 @@ class AniDownloaderGUI(QMainWindow):
 
     def _open_settings(self):
         dialog = SettingsDialog(self.app_config_manager, self.settings, parent=self)
-        if dialog.exec():
-            if dialog.paths_changed:
-                self._load_config_paths()
-                self.series_repository = SeriesRepository(self.json_file_path)
-                self._load_series_data_into_table()
-                self.overall_status_label.setText("Impostazioni aggiornate.")
+        if dialog.exec() and dialog.paths_changed:
+            self._load_config_paths()
+            self.series_repository = SeriesRepository(self.json_file_path)
+            self._load_series_data_into_table()
 
     def _open_series_manager(self):
-        dialog = SeriesManagerDialog(series_repository=self.series_repository, parent=self); 
-        if dialog.exec(): self._load_series_data_into_table()
+        if SeriesManagerDialog(series_repository=self.series_repository, parent=self).exec():
+            self._load_series_data_into_table()
 
     def _load_series_data_into_table(self, row_to_select=0):
         try: self._series_data = self.series_repository.load_series_data()
-        except Exception as e: QMessageBox.critical(self, "Errore Caricamento Serie", f"Impossibile caricare: {e}"); self._series_data = []
+        except Exception: self._series_data = []
         self._populate_table_main_gui(self._series_data, row_to_select=row_to_select)
 
-    def _populate_table_main_gui(self, data_to_display, row_to_select=0):
+    def _populate_table_main_gui(self, data_to_display, row_to_select=0, scroll_to_selected=True):
         self.table_widget.setSortingEnabled(False)
         self.table_widget.setRowCount(0); self.table_widget.setRowCount(len(data_to_display))
         for row, series in enumerate(data_to_display):
-            name_item = QTableWidgetItem(series["name"]); status_item = ProgressBarTableWidgetItem("In attesa", 3)
+            name_item = QTableWidgetItem(series["name"])
+            status_item = ProgressBarTableWidgetItem("In attesa", 3)
             self.table_widget.setItem(row, 0, name_item); self.table_widget.setItem(row, 1, status_item)
         
-        if data_to_display:
-            if row_to_select != -1:
-                row_to_select = min(max(0, row_to_select), len(data_to_display)-1)
-                self.table_widget.setCurrentCell(row_to_select, 0)
+        if data_to_display and row_to_select != -1:
+            row_to_select = min(max(0, row_to_select), len(data_to_display)-1)
+            self.table_widget.setCurrentCell(row_to_select, 0)
+            if scroll_to_selected:
                 self.table_widget.scrollToItem(self.table_widget.item(row_to_select, 0))
-            else:
-                self.table_widget.setCurrentCell(0, 0)
             self._on_series_selected() 
-        else:
-            self.table_widget.clearSelection()
-            self._on_series_selected()
         self.table_widget.setSortingEnabled(True)
 
     def _reset_table_sort(self):
@@ -341,39 +245,27 @@ class AniDownloaderGUI(QMainWindow):
         self._populate_table_main_gui(self._series_data)
 
     def _on_series_selected(self):
-        if not self.table_widget.selectedItems(): self.image_label.clear(); self.image_label.setText("Nessuna serie selezionata"); return
-        row = self.table_widget.currentRow(); 
-        if row == -1: return
+        if not self.table_widget.selectedItems(): return
+        row = self.table_widget.currentRow()
         item = self.table_widget.item(row, 0)
         if not item: return
         series = next((s for s in self._series_data if s.get("name") == item.text()), None)
         if series and series.get("path"): load_poster_image(self.image_label, series.get("path"))
-        else: self.image_label.clear(); self.image_label.setText("Percorso non definito")
+        else: self.image_label.clear(); self.image_label.setText("Nessuna Immagine")
 
     def start_download(self):
-        if self._download_thread and self._download_thread.isRunning(): return
-        if not self._series_data: QMessageBox.information(self, "Nessuna Serie", "Aggiungi almeno una serie."); return
-
+        if not self._series_data: return
         self._set_ui_state_for_download(True)
         self.log_output.clear()
-        self.overall_status_label.setText("Avvio processo...")
         
-        convert_to_h265 = self.app_config_manager.get("convert_to_h265", True)
-        num_chunks = self.app_config_manager.get("num_chunks", DEFAULT_NUM_CHUNKS)
-        
-        self._load_config_paths()
-
         self._download_thread = QThread()
         self._download_worker = DownloadWorker(
-            series_list=self._series_data, 
-            json_file_path=self.json_file_path, 
-            log_file_path=self.log_file_path, 
-            output_dir=self.output_dir, 
-            convert_to_h265=convert_to_h265,
-            num_chunks=num_chunks
+            series_list=self._series_data, json_file_path=self.json_file_path, 
+            log_file_path=self.log_file_path, output_dir=self.output_dir, 
+            convert_to_h265=self.app_config_manager.get("convert_to_h265", True),
+            num_chunks=self.app_config_manager.get("num_chunks", DEFAULT_NUM_CHUNKS)
         )
         self._download_worker.moveToThread(self._download_thread)
-
         self._download_thread.started.connect(self._download_worker.run)
         self._download_worker._signals.progress.connect(self._update_series_status)
         self._download_worker._signals.error.connect(self._handle_worker_error)
@@ -387,9 +279,8 @@ class AniDownloaderGUI(QMainWindow):
         self._download_thread.start()
 
     def stop_download(self):
-        show_warning = self.settings.value("show_stop_warning", True, type=bool)
-        if show_warning:
-            dialog = StopConfirmationDialog(self);
+        if self.settings.value("show_stop_warning", True, type=bool):
+            dialog = StopConfirmationDialog(self)
             if dialog.exec():
                 if dialog.dont_show_again(): self.settings.setValue("show_stop_warning", False)
                 self._execute_stop_procedure()
@@ -404,138 +295,60 @@ class AniDownloaderGUI(QMainWindow):
     def _update_series_status(self, series_name, status_message):
         status_lower = status_message.lower()
         new_priority = 1
-        color = QColor(Qt.GlobalColor.transparent)
-
-        # Determine colors based on theme
-        is_dark = getattr(self, '_is_dark_theme', True)
         
-        if is_dark:
-            # Dark Theme Colors
-            if "download" in status_lower: new_priority, color = 0, QColor("#1b5e20")
-            elif "conversione" in status_lower: new_priority, color = 0, QColor("#0d47a1")
-            elif "fatto" in status_lower: new_priority, color = 2, QColor("#1b5e20")
-            elif "saltato" in status_lower: new_priority, color = 3, QColor(Qt.GlobalColor.transparent)
-            elif "errore" in status_lower: new_priority, color = 1, QColor("#b71c1c")
-            elif "interrotto" in status_lower: new_priority, color = 1, QColor("#b71c1c")
-        else:
-            # Light Theme Colors
-            if "download" in status_lower: new_priority, color = 0, QColor("#c8e6c9")
-            elif "conversione" in status_lower: new_priority, color = 0, QColor("#bbdefb")
-            elif "fatto" in status_lower: new_priority, color = 2, QColor("#c8e6c9")
-            elif "saltato" in status_lower: new_priority, color = 3, QColor(Qt.GlobalColor.transparent)
-            elif "errore" in status_lower: new_priority, color = 1, QColor("#ffcdd2")
-            elif "interrotto" in status_lower: new_priority, color = 1, QColor("#ffcdd2")
-        
-        # Current phase extraction for progress bar
         current_phase = ""
-        if "download" in status_lower:
-            current_phase = "download"
-        elif "conversione" in status_lower:
-            current_phase = "conversion"
-
+        if "download" in status_lower: current_phase = "download"; new_priority = 0
+        elif "conversione" in status_lower: current_phase = "conversion"; new_priority = 0
+        elif "fatto" in status_lower: new_priority = 2
+        elif "saltato" in status_lower: new_priority = 3
+        
         for row in range(self.table_widget.rowCount()):
             if self.table_widget.item(row, 0).text() == series_name:
-                current_item = self.table_widget.item(row, 1)
+                item = self.table_widget.item(row, 1)
                 
                 progress = 0
-                is_active = False
+                is_active = bool(current_phase)
                 match = re.search(r'(\d+)%', status_message)
-                if current_phase:
-                    is_active = True
-                    if match:
-                        progress = int(match.group(1))
+                if match: progress = int(match.group(1))
 
-                if isinstance(current_item, ProgressBarTableWidgetItem):
-                    old_priority = current_item.priority
-                    # Keep text clean if showing progress
-                    display_text = status_message.split(' - ')[0] if is_active else status_message
-                    current_item.setText(display_text) 
-                    current_item.setData(Qt.ItemDataRole.UserRole + 1, progress)
-                    current_item.setData(Qt.ItemDataRole.UserRole + 2, is_active)
-                    current_item.setData(Qt.ItemDataRole.UserRole + 3, current_phase)
-                    current_item.priority = new_priority
-                else: 
-                    old_priority = -1
-                    status_item = StatusTableWidgetItem(status_message, new_priority)
-                    self.table_widget.setItem(row, 1, status_item)
-                
-                for col in range(self.table_widget.columnCount()):
-                    self.table_widget.item(row, col).setBackground(color)
-                
-                if old_priority != new_priority:
-                    self.table_widget.sortItems(1, Qt.SortOrder.AscendingOrder)
+                if isinstance(item, ProgressBarTableWidgetItem):
+                    old_prio = item.priority
+                    item.setText(status_message.split(' - ')[0] if is_active else status_message)
+                    item.setData(Qt.ItemDataRole.UserRole + 1, progress)
+                    item.setData(Qt.ItemDataRole.UserRole + 2, is_active)
+                    item.setData(Qt.ItemDataRole.UserRole + 3, current_phase)
+                    item.priority = new_priority
+                    
+                    if old_prio != new_priority:
+                        self.table_widget.sortItems(1, Qt.SortOrder.AscendingOrder)
                 
                 self.table_widget.viewport().update()
                 break
 
     def _handle_worker_error(self, series_name, error_message):
         if series_name in ["GLOBAL", "DEPENDENCIES", "CONFIG"]:
-            QMessageBox.critical(self, f"Errore Critico: {series_name}", error_message); self._execute_stop_procedure()
+            QMessageBox.critical(self, "Errore Critico", error_message); self._execute_stop_procedure()
         else:
-            self._update_series_status(series_name, f"❌ Errore")
-            for row in range(self.table_widget.rowCount()):
-                if self.table_widget.item(row, 0).text() == series_name:
-                    item = self.table_widget.item(row, 1)
-                    if isinstance(item, ProgressBarTableWidgetItem):
-                        item.setData(Qt.ItemDataRole.UserRole + 2, False) 
-                    break
-            self.table_widget.viewport().update()
+            self._update_series_status(series_name, "❌ Errore")
         self.log_output.append(f"ERRORE [{series_name}]: {error_message}")
 
-    def _handle_series_finished(self, series_name, episode_path, download_time, conversion_time):
-        self.log_output.append(f"✅ {os.path.basename(episode_path)} | DL: {download_time:.2f}s | Conv: {conversion_time:.2f}s")
+    def _handle_series_finished(self, series_name, ep_path, dl_t, conv_t):
+        self.log_output.append(f"✅ {os.path.basename(ep_path)} | DL: {dl_t:.2f}s | Conv: {conv_t:.2f}s")
         self._update_series_status(series_name, "✅ Fatto")
-        for row in range(self.table_widget.rowCount()):
-            if self.table_widget.item(row, 0).text() == series_name:
-                item = self.table_widget.item(row, 1)
-                if isinstance(item, ProgressBarTableWidgetItem):
-                    item.setData(Qt.ItemDataRole.UserRole + 1, 0)
-                    item.setData(Qt.ItemDataRole.UserRole + 2, False)
-                break
-        self.table_widget.viewport().update()
 
     def _handle_task_skipped(self, series_name, reason):
         self.log_output.append(f"🚫 SKIPPED [{series_name}]: {reason}")
-        self._update_series_status(series_name, f"🚫 Saltato")
-        for row in range(self.table_widget.rowCount()):
-            if self.table_widget.item(row, 0).text() == series_name:
-                item = self.table_widget.item(row, 1)
-                if isinstance(item, ProgressBarTableWidgetItem):
-                    item.setData(Qt.ItemDataRole.UserRole + 1, 0)
-                    item.setData(Qt.ItemDataRole.UserRole + 2, False)
-                break
-        self.table_widget.viewport().update()
+        self._update_series_status(series_name, "🚫 Saltato")
 
     def _set_ui_state_for_download(self, in_progress: bool):
         self.table_widget.setSortingEnabled(not in_progress)
-        self.main_splitter.setSizes([self.height() - 200, 200] if in_progress else [self.height(), 0])
-        
-        if in_progress:
-            for row in range(self.table_widget.rowCount()):
-                current_item = self.table_widget.item(row, 1)
-                if not isinstance(current_item, ProgressBarTableWidgetItem):
-                    status_item = ProgressBarTableWidgetItem("In coda...", 2, is_active=False)
-                    self.table_widget.setItem(row, 1, status_item)
-                else:
-                    current_item.setText("In coda...")
-                    current_item.priority = 2
-                    current_item.setData(Qt.ItemDataRole.UserRole + 1, 0)
-                    current_item.setData(Qt.ItemDataRole.UserRole + 2, False)
-                
-                for col in range(self.table_widget.columnCount()):
-                    self.table_widget.item(row, col).setBackground(QColor(Qt.GlobalColor.transparent))
-
-        self.start_button.setEnabled(not in_progress)
-        self.stop_button.setEnabled(in_progress)
-        self.refresh_button.setEnabled(not in_progress)
-        self.manage_series_button.setEnabled(not in_progress)
-        self.reset_sort_button.setEnabled(not in_progress)
-        self.settings_button.setEnabled(not in_progress)
+        self.start_button.setEnabled(not in_progress); self.stop_button.setEnabled(in_progress)
+        self.refresh_button.setEnabled(not in_progress); self.manage_series_button.setEnabled(not in_progress)
+        self.reset_sort_button.setEnabled(not in_progress); self.settings_button.setEnabled(not in_progress)
 
     def _on_download_finished(self):
         self._set_ui_state_for_download(False)
         if "Interruzione" not in self.overall_status_label.text():
              self.overall_status_label.setText("Processo completato.")
-        if self._download_thread:
-            self._download_thread.quit(); self._download_thread.wait()
+        if self._download_thread: self._download_thread.quit(); self._download_thread.wait()
         self._download_thread, self._download_worker = None, None
