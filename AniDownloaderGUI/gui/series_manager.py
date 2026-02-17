@@ -2,9 +2,9 @@ import os
 import platform
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QHeaderView, QLabel, QLineEdit, QPushButton, QMessageBox, QApplication
+    QHeaderView, QLabel, QLineEdit, QPushButton, QMessageBox, QApplication, QStyle
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from anidownloader_core.series_repository import SeriesRepository
 from utils.image_loader import load_poster_image
 from .series_editor import SeriesEditorDialog
@@ -83,6 +83,9 @@ class SeriesManagerDialog(QDialog):
         
         self._reset_sort_button = QPushButton("Ripristina Ordine")
         self._reset_sort_button.clicked.connect(self._reset_table_sort)
+        self._reset_sort_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogResetButton))
+        self._reset_sort_button.setIconSize(QSize(24, 24))
+        self._reset_sort_button.setToolTip("Ripristina l'ordinamento predefinito delle serie")
         control_layout.addWidget(self._reset_sort_button)
         self.main_layout.addLayout(control_layout)
 
@@ -110,6 +113,7 @@ class SeriesManagerDialog(QDialog):
         self.main_layout.addLayout(button_layout)
 
     def _reset_table_sort(self):
+        self._table_widget.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
         self._table_widget.setSortingEnabled(False)
         self._filter_series()
         self._table_widget.setSortingEnabled(True)
