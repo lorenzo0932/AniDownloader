@@ -67,13 +67,17 @@ def main():
         config_manager = AppConfigManager()
         # 2. Usa il metodo 'get' per leggere l'impostazione.
         convert_to_h265 = config_manager.get('convert_to_h265', False)
+        num_chunks = config_manager.get('num_chunks', 1)
         print(f"ℹ️ Conversione H.265: {'Abilitata' if convert_to_h265 else 'Disabilitata'}")
+        if convert_to_h265:
+             print(f"ℹ️ Chunk Encoding: {num_chunks}")
     except Exception as e:
         # Aggiungiamo un traceback per un debug più facile in caso di errori imprevisti
         import traceback
         print(f"ATTENZIONE: Impossibile caricare config app. Conversione disabilitata.")
         print(traceback.format_exc())
         convert_to_h265 = False
+        num_chunks = 1
     # --- FINE MODIFICA ---
 
     series_list = load_series_data()
@@ -128,7 +132,7 @@ def main():
         
         results = []
         with mp.Pool(mp.cpu_count()) as pool:
-            pool_args = [(task, OUTPUT_DIR, LOG_FILE, cli_status_updater, stop_event, convert_to_h265) for task in to_process]
+            pool_args = [(task, OUTPUT_DIR, LOG_FILE, cli_status_updater, stop_event, convert_to_h265, num_chunks) for task in to_process]
             async_results = pool.starmap_async(process_series_task, pool_args)
 
             try:
