@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from PyQt6.QtWidgets import QMessageBox
-from anidownloader_config.defaults import DEFAULT_APP_CONFIG_PATH, DEFAULT_SERIES_JSON_PATH, DEFAULT_OUTPUT_DIR, DEFAULT_LOG_FILE
+from anidownloader_config.defaults import DEFAULT_APP_CONFIG_PATH, DEFAULT_SERIES_JSON_PATH, DEFAULT_OUTPUT_DIR, DEFAULT_LOG_FILE, DEFAULT_NUM_CHUNKS
 
 class AppConfigManager:
     def __init__(self, config_path: Path = DEFAULT_APP_CONFIG_PATH):
@@ -17,7 +17,8 @@ class AppConfigManager:
             "output_dir": str(DEFAULT_OUTPUT_DIR),
             "log_file_path": str(DEFAULT_LOG_FILE),
             "is_json_path_customized": False,
-            "convert_to_h265": True # Default value for the new setting
+            "convert_to_h265": True, # Default value for the new setting
+            "num_chunks": DEFAULT_NUM_CHUNKS
         }
 
         if self._config_path.exists():
