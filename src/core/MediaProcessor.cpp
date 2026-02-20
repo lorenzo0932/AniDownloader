@@ -121,7 +121,7 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
     for (const auto& p : parts) {
         fs::path outP = p.string() + ".enc.mp4";
         fs::path progP = p.string() + ".txt";
-        std::string cmd = "ffmpeg -v error -y -i " + Q(p.string()) + " -c:v libx265 -crf 23 -preset veryfast -threads 4 -progress " + Q(progP.string()) + " " + Q(outP.string()) + " > /dev/null 2>&1";
+        std::string cmd = "ffmpeg -v error -y -i " + Q(p.string()) + " -c:v libx265 -crf 23 -preset veryfast -progress " + Q(progP.string()) + " " + Q(outP.string()) + " > /dev/null 2>&1";
         jobs.push_back({outP, progP, std::async(std::launch::async, [cmd]() { return std::system(cmd.c_str()); })});
     }
 
