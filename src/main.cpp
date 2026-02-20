@@ -75,7 +75,7 @@ int main() {
         g_statusMap[n] = m;
     };
 
-    const int MAX_CONCURRENT = 2;
+    const int MAX_CONCURRENT = 10;
     std::atomic<size_t> nextIndex(0);
     std::vector<std::future<void>> workers;
 
