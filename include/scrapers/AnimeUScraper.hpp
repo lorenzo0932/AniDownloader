@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/scrapers/BaseScraper.hpp"
+#include "scrapers/BaseScraper.hpp"
 #include <string>
 
 namespace Core {
