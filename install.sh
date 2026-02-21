@@ -2,7 +2,7 @@
 
 # --- CONFIGURAZIONE PERCORSI ---
 APP_NAME="AniDownloader"
-BIN_NAME="AniDownloader" # Deve coincidere con il nome in add_executable nel CMake
+BIN_NAME="AniDownloader" # Deve coincidere con il nome nel CMake
 INSTALL_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
@@ -12,13 +12,17 @@ ICON_FULL_PATH="$ICON_DEST_DIR/$ICON_NAME"
 
 echo "🚀 Inizio installazione di $APP_NAME..."
 
+# 0. Ferma i servizi per evitare l'errore "Text file busy"
+echo "🛑 Fermo eventuali servizi in esecuzione..."
+systemctl --user stop AniDownloader.timer AniDownloader.service 2>/dev/null
+
 # 1. Compilazione
 echo "📦 Compilazione in corso con Ninja..."
 mkdir -p build && cd build
 cmake .. -G Ninja
 ninja
 if [ $? -ne 0 ]; then
-    echo "❌ Errore durante la compilazione. Verifica le dipendenze (cpr, nlohmann_json)."
+    echo "❌ Errore durante la compilazione. Verifica le dipendenze."
     exit 1
 fi
 
@@ -30,47 +34,62 @@ mkdir -p "$ICON_DEST_DIR"
 
 # 3. Installazione Binario
 echo "📂 Installazione binario in $INSTALL_DIR..."
-cp "$BIN_NAME" "$INSTALL_DIR/"
+# Rimuovo prima il vecchio binario per evitare blocchi se è in uso
+rm -f "$INSTALL_DIR/$BIN_NAME"
+cp -f "$BIN_NAME" "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/$BIN_NAME"
 
-# 4. Gestione Icona (Il pezzo mancante!)
+# Torno alla root del progetto prima di cercare le altre cartelle
+cd .. 
+
+# 4. Gestione Icona
 echo "🖼️ Installazione icona..."
-# Cerchiamo l'icona nella cartella resources (adatta il path se è diverso)
-if [ -f "../resources/logo.png" ]; then
-    cp "../resources/logo.png" "$ICON_FULL_PATH"
+if [ -f "resources/logo.png" ]; then
+    cp -f "resources/logo.png" "$ICON_FULL_PATH"
     echo "✅ Icona copiata in $ICON_FULL_PATH"
 else
-    echo "⚠️ Attenzione: ../resources/logo.png non trovata. L'app non avrà un'icona personalizzata."
+    echo "⚠️ Attenzione: resources/logo.png non trovata (L'app non avrà icona)."
 fi
 
-# 5. Adattamento e installazione file di sistema
-echo "⚙️ Configurazione file .desktop e systemd..."
-cd .. # Torna alla root del progetto
+# 5. Creazione file .desktop da zero (sovrascrittura garantita)
+echo "⚙️ Configurazione file .desktop..."
+rm -f "$APP_DIR/AniDownloader.desktop"
 
-# Fix percorso nel file .desktop (Exec e Icon)
-sed -e "s|^Exec=.*|Exec=$INSTALL_DIR/$BIN_NAME|" \
-    -e "s|^Icon=.*|Icon=$ICON_FULL_PATH|" \
-    -e "s|^Path=.*|Path=$HOME|" \
-    AniDownloader.desktop > "$APP_DIR/AniDownloader.desktop"
+cat <<EOF > "$APP_DIR/AniDownloader.desktop"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=AniDownloader C++
+Comment=Download e Conversione Anime (C++)
+Exec=bash -c "$INSTALL_DIR/$BIN_NAME --burst"
+Path=$HOME
+Icon=$ICON_FULL_PATH
+Terminal=true
+Categories=Network;Video;AudioVideo;
+EOF
 
-# Fix e copia file Systemd (dalla cartella systemd_services)
+echo "✅ File .desktop generato e salvato in $APP_DIR"
+
+# 6. Fix e installazione file Systemd
+echo "⚙️ Configurazione file Systemd..."
 if [ -d "systemd_services" ]; then
     sed "s|^ExecStart=.*|ExecStart=$INSTALL_DIR/$BIN_NAME|" \
         "systemd_services/AniDownloader.service" > "$SYSTEMD_DIR/AniDownloader.service"
-    cp "systemd_services/AniDownloader.timer" "$SYSTEMD_DIR/"
+    cp -f "systemd_services/AniDownloader.timer" "$SYSTEMD_DIR/"
+    echo "✅ File systemd installati."
 else
     echo "❌ Errore: Cartella systemd_services non trovata!"
 fi
 
-# 6. Attivazione Servizi
-echo "🔄 Ricarica demone systemd e attivazione timer..."
+# 7. Attivazione Servizi e Aggiornamento Menu
+echo "🔄 Ricarica demone systemd e riavvio timer..."
 systemctl --user daemon-reload
 systemctl --user enable --now AniDownloader.timer
 
-# Aggiorna il database dei file desktop per far apparire l'icona nel menu
+# Aggiorna il database delle app per far apparire subito l'icona nel menu
 update-desktop-database "$APP_DIR" 2>/dev/null
 
 echo "---"
-echo "✅ Installazione completata!"
-echo "💡 Ora dovresti vedere l'icona nel tuo menu applicazioni."
-echo "🕒 Il servizio automatico è attivo (ogni 15 min)."
+echo "✅ Installazione completata con successo!"
+echo "💡 Se non vedi subito l'icona o la modifica nel menu, prova a disconnetterti e riconnetterti (Logout)."
+echo "🕒 Il servizio automatico in background è attivo."
