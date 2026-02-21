@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/Series.hpp"
-#include "core/scrapers/BaseScraper.hpp"
+#include "scrapers/BaseScraper.hpp"
 #include <memory>
 #include <string>
 
