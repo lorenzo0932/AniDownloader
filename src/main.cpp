@@ -11,7 +11,7 @@
 #include "core/SeriesRepository.hpp"
 #include "core/PlanningService.hpp"
 #include "core/MediaProcessor.hpp"
-#include "core/scrapers/ScraperUtils.hpp"
+#include "scrapers/ScraperUtils.hpp"
 #include "config/AppConfigManager.hpp"
 #include "config/PathHelper.hpp"
 
