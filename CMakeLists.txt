@@ -38,23 +38,23 @@ set(CORE_SOURCES
     src/core/Series.cpp
     src/core/PlanningService.cpp
     src/core/MediaProcessor.cpp
-    src/core/scrapers/AnimeWScraper.cpp
-    src/core/scrapers/AnimeUScraper.cpp
-    src/core/scrapers/ScraperUtils.cpp
+    src/scrapers/AnimeWScraper.cpp
+    src/scrapers/AnimeUScraper.cpp
+    src/scrapers/ScraperUtils.cpp
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
 )
 
 add_executable(AniDownloader ${CORE_SOURCES})
-target_include_directories(AniDownloader PRIVATE include)
-# Link alle librerie (CPR tira dentro anche curl e openssl automaticamente)
+
+# Aggiungi questa riga per rendere visibili sia la cartella include che src (per gli header locali)
+target_include_directories(AniDownloader PRIVATE include src)
+
 target_link_libraries(AniDownloader 
     PRIVATE 
-        nlohmann_json::nlohmann_json
-        cpr::cpr
-        Threads::Threads
+    nlohmann_json::nlohmann_json
+    cpr::cpr
+    Threads::Threads
 )
 
-# Il nome qui deve essere IDENTICO a quello usato in add_executable
-install(TARGETS AniDownloader
-        RUNTIME DESTINATION $ENV{HOME}/.local/bin)
+install(TARGETS AniDownloader RUNTIME DESTINATION $ENV{HOME}/.local/bin)
