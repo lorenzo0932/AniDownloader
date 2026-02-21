@@ -1,0 +1,18 @@
+[
+    {
+        "name": "Nome Serie",
+        "path": "path_della_serie_locale/numero_stagione",
+        "continue": true,
+        "passed_episodes": 12,
+        "series_page_url": "https://www.animeworld.ac/play/nome-serie.IsJ2N/wUObd1",
+        "episode_list_selector": "div.server.active ul.episodes.active li.episode a",
+        "download_link_selector": "#alternativeDownloadLink"
+    },
+    {
+        "name": "Nome Serie2",
+        "path": "path_della_serie_locale/numero_stagione",
+        "series_page_url": "https://www.animeworld.ac/play/nome-serie2.IsJ2N/wUObd1",
+        "episode_list_selector": "div.server.active ul.episodes.active li.episode a",
+        "download_link_selector": "#alternativeDownloadLink"
+    }
+]
