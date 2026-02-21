@@ -7,6 +7,7 @@
 #include <map>
 #include <atomic>
 #include <sstream>
+#include <iomanip> // Per std::setw e std::left
 #include "core/SeriesRepository.hpp"
 #include "core/PlanningService.hpp"
 #include "core/MediaProcessor.hpp"
@@ -16,7 +17,19 @@
 
 using namespace Core;
 
+// Struttura per raccogliere i risultati finali (simile al dict results in Python)
+struct FinalStats {
+    std::string name;
+    std::string fileName;
+    double downloadTime = 0.0;
+    double conversionTime = 0.0;
+    std::string error;
+    bool success = false;
+};
+
 std::mutex g_statusMutex;
+std::mutex g_resultsMutex; // Mutex per proteggere la lista dei risultati
+std::vector<FinalStats> g_finalResults;
 std::map<std::string, std::string> g_statusMap;
 auto g_startTime = std::chrono::steady_clock::now();
 
@@ -84,12 +97,27 @@ int main() {
             while (true) {
                 size_t idx = nextIndex.fetch_add(1);
                 if (idx >= toProcess.size() || stop) break;
+                
                 MediaProcessor mp(cb, stop);
-                mp.processTask(toProcess[idx].second, toProcess[idx].first, convert, numChunks);
+                // Eseguiamo il task e raccogliamo il risultato
+                ProcessResult res = mp.processTask(toProcess[idx].second, toProcess[idx].first, convert, numChunks);
+                
+                // Salvataggio statistiche per il resoconto finale
+                FinalStats stats;
+                stats.name = toProcess[idx].first.name;
+                stats.fileName = toProcess[idx].second.fileName;
+                stats.downloadTime = res.downloadTime;
+                stats.conversionTime = res.conversionTime;
+                stats.error = res.errorMessage;
+                stats.success = res.success;
+
+                std::lock_guard<std::mutex> lock(g_resultsMutex);
+                g_finalResults.push_back(stats);
             }
         }));
     }
 
+    // Loop di monitoraggio UI
     while (true) {
         displayStatus(allNames);
         bool allDone = true;
@@ -98,7 +126,25 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
+    // --- Integrazione Resoconto Finale (Stile Python) ---
     displayStatus(allNames);
-    std::cout << "\n🏁 Fine attività.\n";
+    auto endTime = std::chrono::steady_clock::now();
+    double totalElapsed = std::chrono::duration<double>(endTime - g_startTime).count();
+
+    std::cout << "\n\n--- RESOCONTO FINALE ---" << std::endl;
+    for (const auto& r : g_finalResults) {
+        if (!r.success) {
+            std::cout << "❌ " << std::left << std::setw(30) << r.name 
+                      << " | Errore: " << r.error << std::endl;
+        } else {
+            std::cout << "✅ " << std::left << std::setw(50) << r.fileName 
+                      << " | DL: " << std::fixed << std::setprecision(2) << r.downloadTime << "s"
+                      << " | Conv: " << r.conversionTime << "s" << std::endl;
+        }
+    }
+
+    std::cout << "\nTempo totale: " << std::fixed << std::setprecision(2) << totalElapsed << " secondi" << std::endl;
+    std::cout << "🏁 Fine attività." << std::endl;
+    
     return 0;
 }
