@@ -1,7 +1,13 @@
-#include <unistd.h>    // Per getpid()
-#include <sys/types.h> // Opzionale, ma buona norma per i tipi POSIX
+#ifndef _WIN32
+    #include <sys/types.h>
+    #include <unistd.h>
+#else
+    #include <process.h>
+#endif
+
 #include "core/MediaProcessor.hpp"
-#include "core/scrapers/ScraperUtils.hpp"
+#include "scrapers/ScraperUtils.hpp"
+// ... restanti include
 #include <iostream>
 #include <fstream>
 #include <regex>
