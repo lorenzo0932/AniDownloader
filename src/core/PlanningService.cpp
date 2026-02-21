@@ -1,6 +1,6 @@
 #include "core/PlanningService.hpp"
-#include "core/scrapers/AnimeWScraper.hpp"
-#include "core/scrapers/AnimeUScraper.hpp"
+#include "scrapers/AnimeWScraper.hpp"
+#include "scrapers/AnimeUScraper.hpp"
 #include <iostream>
 
 namespace Core {
