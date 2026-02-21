@@ -28,7 +28,7 @@ FetchContent_MakeAvailable(cpr)
 find_package(Threads REQUIRED)
 
 # --- CONFIGURAZIONE PROGETTO ---
-include_directories(include)
+# include_directories(include)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Sorgenti completi
@@ -46,7 +46,7 @@ set(CORE_SOURCES
 )
 
 add_executable(AniDownloader ${CORE_SOURCES})
-
+target_include_directories(AniDownloader PRIVATE include)
 # Link alle librerie (CPR tira dentro anche curl e openssl automaticamente)
 target_link_libraries(AniDownloader 
     PRIVATE 
@@ -54,3 +54,7 @@ target_link_libraries(AniDownloader
         cpr::cpr
         Threads::Threads
 )
+
+# Il nome qui deve essere IDENTICO a quello usato in add_executable
+install(TARGETS AniDownloader
+        RUNTIME DESTINATION $ENV{HOME}/.local/bin)
