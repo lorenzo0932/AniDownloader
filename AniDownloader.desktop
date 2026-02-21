@@ -1,10 +1,9 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=AniDownloader
-Comment=Scarica tutti gli anime in simulcast configurati
-Path=/home/lorenzo/Video/Simulcast/.AniDownloader/
-Exec=sh -c './AniDownloader.sh'
-Icon=/home/lorenzo/Video/Simulcast/.AniDownloader/logo.png
+Name=AniDownloader C++
+Comment=Download e Conversione Anime (C++)
+Exec=AniDownloader
+Icon=video-x-generic
 Terminal=true
-Categories=Network;
+Categories=Network;Video;AudioVideo;

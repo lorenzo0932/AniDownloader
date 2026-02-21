@@ -1,7 +1,16 @@
 [Unit]
-Description=Servizio per il download automatico delle serie
+Description=AniDownloader C++ Service (Automatic Background Check)
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/lorenzo/Video/Simulcast/.AniDownloader/
-ExecStart=/home/lorenzo/Video/Simulcast/.AniDownloader/AniDownloader.sh
+# Punta al binario standard in .local/bin
+ExecStart=%h/.local/bin/AniDownloader
+# Opzionale: se il tuo main aspetta un input infinito, potresti dover 
+# aggiungere un timeout o assicurarti che il main gestisca l'assenza di TTY
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
