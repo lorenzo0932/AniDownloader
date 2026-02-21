@@ -2,11 +2,14 @@
 
 #include "core/Series.hpp"
 #include "core/scrapers/BaseScraper.hpp"
+#include "config/AppConfigManager.hpp"
 #include <string>
 #include <vector>
 #include <filesystem>
 #include <functional>
 #include <atomic>
+#include <mutex>
+#include <condition_variable>
 
 namespace Core {
 
@@ -25,22 +28,23 @@ namespace Core {
 
         ProcessResult processTask(const DownloadTask& task, 
                                   const Series& series,
-                                  bool convertToH265, 
-                                  int numChunks = 1);
+                                  const Config::ExecutionStrategy& strategy);
 
     private:
         ProgressCallback m_progressCallback;
         std::atomic<bool>& m_stopSignal;
 
-        // Metodi di elaborazione
+        // Gestione Risorse Statica (Condivisa tra tutte le istanze)
+        static std::mutex s_convMutex;
+        static std::condition_variable s_convCv;
+        static std::atomic<int> s_activeConversions;
+
         bool convertAndVerify(const std::string& inputPath, const std::string& seriesName, 
-                             int numChunks, double& outTime);
+                             const Config::ExecutionStrategy& strategy, double& outTime);
         
-        // Nuovi metodi di validazione e log (Aggiunti per risolvere errori)
         bool verifyIntegrity(const std::string& filePath);
         void logError(const std::string& seriesName, const std::string& message);
         
-        // Utility
         double getVideoDuration(const std::string& filePath);
         double getRamUsagePercent();
         int runCommand(const std::string& cmd, 

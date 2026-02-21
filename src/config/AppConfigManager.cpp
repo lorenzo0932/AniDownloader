@@ -2,6 +2,10 @@
 #include "config/PathHelper.hpp"
 #include <fstream>
 #include <iostream>
+#include <thread>
+#include <algorithm>
+#include <chrono>
+#include <iomanip>
 
 namespace Config {
 namespace fs = std::filesystem;
@@ -10,6 +14,7 @@ AppConfigManager::AppConfigManager(fs::path configPath)
     : m_configPath(configPath) {
     try {
         fs::create_directories(PathHelper::getConfigDir());
+        // Assicuriamoci che la cartella che conterrà il log esista
         fs::create_directories(PathHelper::getLogFilePath().parent_path());
     } catch (...) {}
     loadConfig();
@@ -59,4 +64,58 @@ void AppConfigManager::set(const std::string& key, const nlohmann::json& value) 
 }
 
 nlohmann::json AppConfigManager::getAll() const { return m_config; }
+
+// --- IMPLEMENTAZIONE STRATEGIA ADATTIVA ---
+
+ExecutionStrategy AppConfigManager::getExecutionStrategy(size_t pendingTasks, bool burstMode) const {
+    ExecutionStrategy strategy;
+    strategy.isBurstMode = burstMode;
+    strategy.convertToH265 = get<bool>("convert_to_h265", true);
+
+    // Rilevamento core logici (es. 32 sul tuo 5950X)
+    unsigned int totalThreads = std::thread::hardware_concurrency();
+    if (totalThreads == 0) totalThreads = 4; // Fallback
+
+    // Carico target: Burst (85%) o Background (50%)
+    float usageFactor = burstMode ? 0.85f : 0.50f;
+    unsigned int targetThreads = static_cast<unsigned int>(totalThreads * usageFactor);
+
+    if (burstMode) {
+        // Modalità Performance: prioritizziamo parallelismo video e chunking
+        strategy.maxConcurrentTasks = (pendingTasks > 1) ? 2 : 1;
+        strategy.chunksPerTask = (pendingTasks <= 2) ? 4 : 2;
+    } else {
+        // Modalità Background: un solo video, chunking ridotto per non saturare l'I/O
+        strategy.maxConcurrentTasks = 1;
+        strategy.chunksPerTask = (totalThreads > 16) ? 2 : 1;
+    }
+
+    // Calcolo thread per istanza FFmpeg
+    // Esempio: 27 target / (2 video * 2 chunk) = 6.75 -> 6 thread per processo
+    int calculatedThreads = targetThreads / (strategy.maxConcurrentTasks * strategy.chunksPerTask);
+    
+    // Clamp per efficienza: x265 raramente beneficia di più di 12 thread per frame
+    strategy.threadsPerFFmpeg = std::clamp(calculatedThreads, 1, 12);
+
+    return strategy;
 }
+
+void AppConfigManager::logFinalResult(const std::string& seriesName, double dlTime, double convTime) const {
+    try {
+        // Recuperiamo il path dal config o usiamo il default dal PathHelper
+        fs::path logPath = get<std::string>("log_file_path", PathHelper::getLogFilePath().string());
+        std::ofstream logFile(logPath, std::ios::app);
+        
+        if (logFile.is_open()) {
+            auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            logFile << "[" << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S") << "] "
+                    << std::left << std::setw(45) << seriesName 
+                    << " | DL: " << std::fixed << std::setprecision(2) << std::setw(8) << dlTime << "s"
+                    << " | Conv: " << std::setw(8) << convTime << "s" << std::endl;
+        }
+    } catch (...) {
+        // Silenzioso, ma potresti loggare su stderr se necessario
+    }
+}
+
+} // namespace Config

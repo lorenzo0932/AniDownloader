@@ -1,3 +1,5 @@
+#include <unistd.h>    // Per getpid()
+#include <sys/types.h> // Opzionale, ma buona norma per i tipi POSIX
 #include "core/MediaProcessor.hpp"
 #include "core/scrapers/ScraperUtils.hpp"
 #include <iostream>
@@ -6,19 +8,20 @@
 #include <thread>
 #include <future>
 #include <chrono>
-#include <cstdio>
-#include <algorithm>
-#include <unistd.h>
 #include <iomanip>
 
 namespace fs = std::filesystem;
 
 namespace Core {
 
+// Inizializzazione dei membri statici
+std::mutex MediaProcessor::s_convMutex;
+std::condition_variable MediaProcessor::s_convCv;
+std::atomic<int> MediaProcessor::s_activeConversions{0};
+
 MediaProcessor::MediaProcessor(ProgressCallback callback, std::atomic<bool>& stopSignal)
     : m_progressCallback(callback), m_stopSignal(stopSignal) {}
 
-// Helper statico per il quoting (non serve nell'header perché è locale al file)
 static std::string Q(const std::string& p) {
     std::string escaped = "'";
     for (char c : p) {
@@ -29,7 +32,6 @@ static std::string Q(const std::string& p) {
     return escaped;
 }
 
-// Helper per il parsing del progresso ffmpeg
 static long long parseUs(const fs::path& p) {
     if (!fs::exists(p)) return 0;
     std::ifstream f(p); std::string line; long long t = 0;
@@ -83,12 +85,13 @@ bool MediaProcessor::verifyIntegrity(const std::string& filePath) {
     return (status == 0 && errors.empty());
 }
 
-ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series& series, bool convertToH265, int numChunks) {
+ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series& series, const Config::ExecutionStrategy& strategy) {
     ProcessResult res;
     auto startDl = std::chrono::steady_clock::now();
     std::string expandedPath = ScraperUtils::expandTilde(series.path);
     std::string fullFile = (fs::path(expandedPath) / task.fileName).string();
 
+    // --- FASE 1: DOWNLOAD (Parallelo libero) ---
     m_progressCallback(series.name, "Download...");
     std::string dlCmd = "aria2c -x 16 -s 16 --summary-interval=1 --allow-overwrite=true --dir=" + Q(expandedPath) + 
                         " -o " + Q(task.fileName) + " " + Q(task.videoUrl);
@@ -105,9 +108,30 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
     }
     res.downloadTime = std::chrono::duration<double>(std::chrono::steady_clock::now() - startDl).count();
 
-    if (convertToH265) {
-        if (!convertAndVerify(fullFile, series.name, numChunks, res.conversionTime)) {
-            res.errorMessage = "Errore Conversione/Verifica";
+    // --- FASE 2: CONVERSIONE (Semaforo Hardware) ---
+    if (strategy.convertToH265) {
+        m_progressCallback(series.name, "In coda Conv...");
+        
+        {
+            std::unique_lock<std::mutex> lock(s_convMutex);
+            s_convCv.wait(lock, [&]{ 
+                return s_activeConversions < strategy.maxConcurrentTasks || m_stopSignal; 
+            });
+            if (m_stopSignal) return res;
+            s_activeConversions++;
+        }
+
+        // Esecuzione conversione
+        bool ok = convertAndVerify(fullFile, series.name, strategy, res.conversionTime);
+
+        {
+            std::lock_guard<std::mutex> lock(s_convMutex);
+            s_activeConversions--;
+        }
+        s_convCv.notify_one(); 
+
+        if (!ok) {
+            res.errorMessage = "Errore Conversione";
             return res;
         }
     }
@@ -117,7 +141,7 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
     return res;
 }
 
-bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::string& seriesName, int numChunks, double& outTime) {
+bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::string& seriesName, const Config::ExecutionStrategy& strategy, double& outTime) {
     const int MAX_RETRIES = 3;
     auto start = std::chrono::steady_clock::now();
 
@@ -136,7 +160,7 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
 
             m_progressCallback(seriesName, "Splitting...");
             std::string split = "ffmpeg -v error -y -i " + Q(inputPath) + " -c copy -map 0 -f segment -segment_time " + 
-                                std::to_string(duration/numChunks) + " -reset_timestamps 1 " + Q((workDir / "src_%03d.mp4").string());
+                                std::to_string(duration / strategy.chunksPerTask) + " -reset_timestamps 1 " + Q((workDir / "src_%03d.mp4").string());
             if (std::system(split.c_str()) != 0) throw std::runtime_error("Errore split");
 
             std::vector<fs::path> parts;
@@ -150,7 +174,8 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
             for (const auto& p : parts) {
                 fs::path outP = p.string() + ".enc.mp4";
                 fs::path progP = p.string() + ".txt";
-                std::string cmd = "ffmpeg -v error -y -i " + Q(p.string()) + " -c:v libx265 -crf 23 -preset veryfast -threads 8 -progress " + 
+                std::string cmd = "ffmpeg -v error -y -i " + Q(p.string()) + " -c:v libx265 -crf 23 -preset veryfast -threads " + 
+                                  std::to_string(strategy.threadsPerFFmpeg) + " -progress " + 
                                   Q(progP.string()) + " " + Q(outP.string()) + " > /dev/null 2>&1";
                 jobs.push_back({outP, progP, std::async(std::launch::async, [cmd]() { return std::system(cmd.c_str()); })});
             }
@@ -190,4 +215,4 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
     return false;
 }
 
-} // namespace Core
+}
