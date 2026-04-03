@@ -2,124 +2,122 @@
 #include <vector>
 #include <string>
 #include <thread>
-#include <future>
 #include <mutex>
 #include <map>
 #include <atomic>
-#include <sstream>
 #include <iomanip>
+#include <chrono>
 #include "core/SeriesRepository.hpp"
-#include "core/PlanningService.hpp"
-#include "core/MediaProcessor.hpp"
-#include "scrapers/ScraperUtils.hpp"
+#include "core/ExecutionEngine.hpp"
 #include "config/AppConfigManager.hpp"
-#include "config/PathHelper.hpp"
+#include "gui/MainWindow.hpp"
+#include <QApplication>
 
 using namespace Core;
 
-struct FinalStats {
-    std::string name;
-    double downloadTime = 0.0;
-    double conversionTime = 0.0;
-    std::string error;
-    bool success = false;
-};
-
+// Sincronizzazione per la console
 std::mutex g_statusMutex;
-std::mutex g_resultsMutex;
-std::vector<FinalStats> g_finalResults;
 std::map<std::string, std::string> g_statusMap;
+std::vector<TaskReport> g_reports;
 auto g_startTime = std::chrono::steady_clock::now();
 
-void displayStatus(const std::vector<std::string>& allNames, bool burst) {
-    std::stringstream ss;
-    ss << "\033[H"; 
+/**
+ * @brief Aggiorna la dashboard nel terminale.
+ */
+void refreshTerminal(bool burst) {
+    std::lock_guard<std::mutex> lock(g_statusMutex);
+    
+    // ANSI: Sposta cursore in 0,0 (Home)
+    std::cout << "\033[H"; 
+    
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - g_startTime).count();
-    ss << "==========================================================\n";
-    ss << "   AniDownloader C++ | Mod: " << (burst ? "BURST 🚀" : "SILENT ☁️") << " | T: " << elapsed << "s\n";
-    ss << "==========================================================\n";
-    {
-        std::lock_guard<std::mutex> lock(g_statusMutex);
-        for (const auto& n : allNames) {
-            std::string st = g_statusMap.count(n) ? g_statusMap[n] : "In attesa...";
-            std::string disp = (n.length() > 34) ? n.substr(0, 31) + "..." : n;
-            ss << " - " << std::left << std::setw(35) << disp << " : " << st << "          \n";
-        }
+    
+    std::cout << "==========================================================\n";
+    std::cout << "   AniDownloader C++ | Mod: " << (burst ? "BURST 🚀" : "SILENT ☁️") << " | T: " << elapsed << "s\n";
+    std::cout << "==========================================================\n";
+    
+    for (auto const& [name, status] : g_statusMap) {
+        std::string disp = (name.length() > 34) ? name.substr(0, 31) + "..." : name;
+        std::cout << " - " << std::left << std::setw(35) << disp << " : " << status << "\033[K\n";
     }
-    ss << "==========================================================\n";
-    std::cout << ss.str() << std::flush;
+    std::cout << "==========================================================\n" << std::flush;
 }
 
 int main(int argc, char* argv[]) {
     bool burstMode = false;
-    for (int i = 1; i < argc; ++i) if (std::string(argv[i]) == "--burst") burstMode = true;
+    bool guiMode = false;
 
+    // Parsing argomenti
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--burst") burstMode = true;
+        if (arg == "--gui") guiMode = true;
+    }
+
+    if (guiMode) {
+        QApplication app(argc, argv);
+        Gui::MainWindow window;
+        window.show();
+        return app.exec();
+    }
+
+    // --- LOGICA CLI ---
     Config::AppConfigManager configManager;
-    SeriesRepository repo(configManager.get<std::string>("json_file_path", Config::PathHelper::getSeriesJsonPath().string()));
-    
+    SeriesRepository repo(configManager.get<std::string>("json_file_path", ""));
     auto seriesList = repo.loadSeriesData();
-    if (seriesList.empty()) return 0;
-
-    std::cout << "\033[2J📡 Analisi scrapers..." << std::endl;
-    std::vector<std::future<std::pair<Series, DownloadTask>>> planning;
-    for (auto s : seriesList) {
-        planning.push_back(std::async(std::launch::async, [s]() mutable {
-            s.path = ScraperUtils::expandTilde(s.path);
-            return std::make_pair(s, PlanningService::planSingleSeries(s));
-        }));
+    
+    if (seriesList.empty()) {
+        std::cout << "Nessuna serie trovata nel database JSON.\n";
+        return 0;
     }
 
-    std::vector<std::pair<Series, DownloadTask>> toProcess;
-    for (auto& f : planning) {
-        auto res = f.get();
-        if (res.second.shouldProcess) toProcess.push_back(res);
-    }
-
-    if (toProcess.empty()) { std::cout << "✅ Tutto aggiornato.\n"; return 0; }
-
-    auto strategy = configManager.getExecutionStrategy(toProcess.size(), burstMode);
+    // Preparazione terminale
+    std::cout << "\033[2J\033[H"; 
+    
+    ExecutionEngine engine(configManager);
     std::atomic<bool> stop(false);
-    std::vector<std::string> allNames;
-    for (auto& p : toProcess) allNames.push_back(p.first.name);
 
-    auto cb = [](const std::string& n, const std::string& m) {
-        std::lock_guard<std::mutex> l(g_statusMutex);
-        g_statusMap[n] = m;
-    };
-
-    // 10 worker per gestire i download massivi
-    std::atomic<size_t> nextIndex(0);
-    std::vector<std::future<void>> workers;
-    for (int i = 0; i < 10; ++i) {
-        workers.push_back(std::async(std::launch::async, [&]() {
-            while (true) {
-                size_t idx = nextIndex.fetch_add(1);
-                if (idx >= toProcess.size() || stop) break;
-                
-                MediaProcessor mp(cb, stop);
-                ProcessResult res = mp.processTask(toProcess[idx].second, toProcess[idx].first, strategy);
-                
-                if (res.success) configManager.logFinalResult(toProcess[idx].first.name, res.downloadTime, res.conversionTime);
-                
-                std::lock_guard<std::mutex> lock(g_resultsMutex);
-                g_finalResults.push_back({toProcess[idx].first.name, res.downloadTime, res.conversionTime, res.errorMessage, res.success});
+    engine.run(seriesList, burstMode, stop,
+        // 4. ProgressCb
+        [&](const std::string& n, const std::string& m) {
+            {
+                std::lock_guard<std::mutex> l(g_statusMutex);
+                g_statusMap[n] = m;
+            } 
+            refreshTerminal(burstMode);
+        },
+        // 5. StatusCb (Globale)
+        [&](const std::string& s) {
+            // Loggato opzionalmente se necessario
+        },
+        // 6. FinishedCb (Task finito)
+        [&](const TaskReport& r) {
+            std::lock_guard<std::mutex> l(g_statusMutex);
+            g_reports.push_back(r);
+        },
+        // 7. SkippedCb (Serie saltata - IL PARAMETRO MANCANTE)
+        [&](const std::string& n, const std::string& r) {
+            {
+                std::lock_guard<std::mutex> l(g_statusMutex);
+                g_statusMap[n] = "🚫 " + r;
             }
-        }));
-    }
+            refreshTerminal(burstMode);
+        },
+        // 8. AnalysisCb
+        nullptr
+    );
 
-    while (true) {
-        displayStatus(allNames, burstMode);
-        bool allDone = true;
-        for (auto& f : workers) if (f.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) allDone = false;
-        if (allDone) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // Visualizzazione finale
+    std::cout << "\n\n--- RESOCONTO FINALE ---\n";
+    for (const auto& r : g_reports) {
+        if (!r.success) {
+            std::cout << "❌ " << std::left << std::setw(35) << r.name << " | Errore: " << r.error << "\n";
+        } else {
+            std::cout << "✅ " << std::left << std::setw(35) << r.name 
+                      << " | DL: " << std::fixed << std::setprecision(1) << r.dlTime << "s"
+                      << " | Conv: " << r.convTime << "s\n";
+        }
     }
-
-    displayStatus(allNames, burstMode);
-    std::cout << "\n--- RESOCONTO FINALE ---\n";
-    for (const auto& r : g_finalResults) {
-        if (!r.success) std::cout << "❌ " << std::left << std::setw(35) << r.name << " | Errore: " << r.error << "\n";
-        else std::cout << "✅ " << std::left << std::setw(35) << r.name << " | DL: " << r.downloadTime << "s | Conv: " << r.conversionTime << "s\n";
-    }
+    
     return 0;
 }
