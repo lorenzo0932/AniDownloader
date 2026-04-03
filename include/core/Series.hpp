@@ -8,6 +8,7 @@ namespace Core {
         std::string service;          // <--- AGGIUNTO: serve per il PlanningService
         std::string path;
         bool continueSeries = true;
+        bool isHighPriority = false;
         int passedEpisodes = 0;
         std::string seriesPageUrl;
         std::string episodeListSelector;

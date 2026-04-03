@@ -15,6 +15,7 @@ namespace Core {
         s.episodeListSelector = j.value("episode_list_selector", "");
         s.downloadLinkSelector = j.value("download_link_selector", "");
         s.continueSeries = j.value("continue", true);
+        s.isHighPriority = j.value("is_high_priority", false);
         s.passedEpisodes = j.value("passed_episodes", 0);
     }
 
@@ -24,6 +25,7 @@ namespace Core {
             {"service", s.service}, // <--- AGGIUNTO
             {"path", s.path},
             {"continue", s.continueSeries},
+            {"is_high_priority", s.isHighPriority},
             {"passed_episodes", s.passedEpisodes},
             {"series_page_url", s.seriesPageUrl},
             {"episode_list_selector", s.episodeListSelector},
