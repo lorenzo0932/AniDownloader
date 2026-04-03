@@ -40,7 +40,36 @@ DownloadTask AnimeUScraper::planSeriesTask(const Series& series) {
         for (const auto& ep : eps) {
             int local = series.continueSeries ? (ep.n + series.passedEpisodes) : ep.n;
             if (local >= next) {
-                task.videoUrl = ep.u;
+                // IL LINK TROVATO NON È IL VIDEO DIRETTO.
+                // DOBBIAMO ANDARE SULLA PAGINA DELL'EPISODIO, TROVARE L'IFRAME, CARICARE L'IFRAME 
+                // E ESTRARRE 'window.downloadUrl'.
+                
+                cpr::Response epPage = cpr::Get(cpr::Url{ep.u}, 
+                                             cpr::Header{{"User-Agent", "Mozilla/5.0"}},
+                                             cpr::VerifySsl{false});
+                
+                if (epPage.status_code != 200) continue;
+
+                // Cerca l'iframe con id="embed"
+                std::regex iframeRegex(R"raw(<iframe[^>]*id="embed"[^>]*src="([^"]+)")raw");
+                std::smatch iframeMatch;
+                if (!std::regex_search(epPage.text, iframeMatch, iframeRegex)) continue;
+
+                std::string iframeUrl = iframeMatch[1].str();
+                
+                // Ora carichiamo l'URL dell'iframe
+                cpr::Response iframePage = cpr::Get(cpr::Url{iframeUrl}, 
+                                                 cpr::Header{{"User-Agent", "Mozilla/5.0"}},
+                                                 cpr::VerifySsl{false});
+                
+                if (iframePage.status_code != 200) continue;
+
+                // Cerchiamo window.downloadUrl = "..."
+                std::regex dlRegex(R"raw(window\.downloadUrl\s*=\s*"([^"]+)")raw");
+                std::smatch dlMatch;
+                if (!std::regex_search(iframePage.text, dlMatch, dlRegex)) continue;
+
+                task.videoUrl = dlMatch[1].str();
                 task.episodeNumber = local;
                 task.shouldProcess = true;
                 task.fileName = series.name + "_Ep_" + std::to_string(local) + ".mp4";
