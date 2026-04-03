@@ -7,22 +7,20 @@
 namespace Config {
 
     /**
-     * @brief Definisce i parametri di esecuzione calcolati dinamicamente.
+     * @brief Parametri calcolati dinamicamente per bilanciare velocità e reattività del sistema.
      */
     struct ExecutionStrategy {
-        int maxConcurrentTasks; // Video processati insieme
-        int chunksPerTask;      // Numero di chunk per ogni video
-        int threadsPerFFmpeg;   // -threads per ogni istanza FFmpeg
-        bool convertToH265;     // Se eseguire la conversione
-        bool isBurstMode;       // Modalità Burst vs Silent (Background)
+        int maxConcurrentTasks; // Quanti video scaricare/convertire insieme
+        int chunksPerTask;      // Numero di segmenti in cui dividere il video (0 o 1 = codifica diretta)
+        int threadsPerFFmpeg;   // Numero di thread assegnati a ogni processo FFmpeg
+        bool convertToH265;     // Flag per abilitare/disabilitare la conversione
+        bool isBurstMode;       // true = Massima potenza (GUI), false = Background (nice -n 15)
     };
 
     class AppConfigManager {
     public:
-        // Usa il PathHelper per il default come nel tuo originale
         explicit AppConfigManager(std::filesystem::path configPath = PathHelper::getAppConfigPath());
 
-        // Metodo template originale per recupero flessibile
         template<typename T>
         T get(const std::string& key, T defaultValue) const {
             if (m_config.contains(key)) {
@@ -37,13 +35,11 @@ namespace Config {
         nlohmann::json getAll() const;
 
         /**
-         * @brief Genera la strategia basata sulla CPU e il numero di task pendenti.
+         * @brief Genera la strategia ottimale basata sulla CPU rilevata e sulle impostazioni utente.
+         * Applica la logica "Sweet Spot" per x265 (6-8 thread per processo).
          */
         ExecutionStrategy getExecutionStrategy(size_t pendingTasks, bool burstMode) const;
 
-        /**
-         * @brief Registra nel file di storico i tempi di esecuzione di una serie.
-         */
         void logFinalResult(const std::string& seriesName, double dlTime, double convTime) const;
 
     private:

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iomanip>
+#include <cmath>
 
 namespace Config {
 namespace fs = std::filesystem;
@@ -14,8 +15,6 @@ AppConfigManager::AppConfigManager(fs::path configPath)
     : m_configPath(configPath) {
     try {
         fs::create_directories(PathHelper::getConfigDir());
-        // Assicuriamoci che la cartella che conterrà il log esista
-        fs::create_directories(PathHelper::getLogFilePath().parent_path());
     } catch (...) {}
     loadConfig();
 }
@@ -27,7 +26,8 @@ nlohmann::json AppConfigManager::getDefaultConfig() {
         {"log_file_path", PathHelper::getLogFilePath().string()},
         {"is_json_path_customized", false},
         {"convert_to_h265", true},
-        {"num_chunks", 1}
+        {"num_chunks", 0},              // 0 = Modalità Auto (Dinamica)
+        {"auto_cleanup_on_close", true} // Pulizia file parziali
     };
 }
 
@@ -65,44 +65,63 @@ void AppConfigManager::set(const std::string& key, const nlohmann::json& value) 
 
 nlohmann::json AppConfigManager::getAll() const { return m_config; }
 
-// --- IMPLEMENTAZIONE STRATEGIA ADATTIVA ---
+// --- LOGICA DI CALCOLO STRATEGIA ADATTIVA ---
 
 ExecutionStrategy AppConfigManager::getExecutionStrategy(size_t pendingTasks, bool burstMode) const {
     ExecutionStrategy strategy;
     strategy.isBurstMode = burstMode;
     strategy.convertToH265 = get<bool>("convert_to_h265", true);
+    
+    int userChunks = get<int>("num_chunks", 0);
 
-    // Rilevamento core logici (es. 32 sul tuo 5950X)
+    // 1. Rilevamento Hardware (es. 32 thread)
     unsigned int totalThreads = std::thread::hardware_concurrency();
-    if (totalThreads == 0) totalThreads = 4; // Fallback
+    if (totalThreads == 0) totalThreads = 4;
 
-    // Carico target: Burst (85%) o Background (50%)
+    // 2. Budget Thread: Burst (85% CPU) vs Background (50% CPU)
     float usageFactor = burstMode ? 0.85f : 0.50f;
-    unsigned int targetThreads = static_cast<unsigned int>(totalThreads * usageFactor);
+    int targetThreadsBudget = static_cast<int>(totalThreads * usageFactor);
 
+    // 3. Parallelismo Video (Tasks)
     if (burstMode) {
-        // Modalità Performance: prioritizziamo parallelismo video e chunking
+        // Se ci sono più video, ne processiamo 2 contemporaneamente per saturare l'I/O
         strategy.maxConcurrentTasks = (pendingTasks > 1) ? 2 : 1;
-        strategy.chunksPerTask = (pendingTasks <= 2) ? 4 : 2;
     } else {
-        // Modalità Background: un solo video, chunking ridotto per non saturare l'I/O
+        // In background sempre 1 solo video alla volta
         strategy.maxConcurrentTasks = 1;
-        strategy.chunksPerTask = (totalThreads > 16) ? 2 : 1;
     }
 
-    // Calcolo thread per istanza FFmpeg
-    // Esempio: 27 target / (2 video * 2 chunk) = 6.75 -> 6 thread per processo
-    int calculatedThreads = targetThreads / (strategy.maxConcurrentTasks * strategy.chunksPerTask);
+    // 4. Calcolo Dinamico Chunking (Logica "Sweet Spot")
+    if (userChunks == 0) {
+        // Quanti thread abbiamo a disposizione per ogni video nel budget?
+        float threadsAllocatedPerVideo = (float)targetThreadsBudget / strategy.maxConcurrentTasks;
+
+        /* 
+           x265 lavora meglio con 6-8 thread per istanza. 
+           Dividiamo i thread disponibili per il numero ideale di thread per processo (6.5)
+           per ottenere il numero di chunk necessari a saturare la CPU.
+        */
+        int calculatedChunks = std::round(threadsAllocatedPerVideo / 6.5f);
+        
+        // Limiti: min 1, max 8 (per non frammentare eccessivamente i file)
+        strategy.chunksPerTask = std::clamp(calculatedChunks, 1, 8);
+    } else {
+        // L'utente ha forzato un valore (es. 1, 2, 4...)
+        strategy.chunksPerTask = userChunks;
+    }
+
+    // 5. Calcolo finale threads per ogni comando FFmpeg
+    int totalProcesses = strategy.maxConcurrentTasks * strategy.chunksPerTask;
+    int t = targetThreadsBudget / totalProcesses;
     
-    // Clamp per efficienza: x265 raramente beneficia di più di 12 thread per frame
-    strategy.threadsPerFFmpeg = std::clamp(calculatedThreads, 1, 12);
+    // Assegna almeno 1 thread, max 12 (oltre i 12 x265 scala male)
+    strategy.threadsPerFFmpeg = std::clamp(t, 1, 12);
 
     return strategy;
 }
 
 void AppConfigManager::logFinalResult(const std::string& seriesName, double dlTime, double convTime) const {
     try {
-        // Recuperiamo il path dal config o usiamo il default dal PathHelper
         fs::path logPath = get<std::string>("log_file_path", PathHelper::getLogFilePath().string());
         std::ofstream logFile(logPath, std::ios::app);
         
@@ -113,9 +132,7 @@ void AppConfigManager::logFinalResult(const std::string& seriesName, double dlTi
                     << " | DL: " << std::fixed << std::setprecision(2) << std::setw(8) << dlTime << "s"
                     << " | Conv: " << std::setw(8) << convTime << "s" << std::endl;
         }
-    } catch (...) {
-        // Silenzioso, ma potresti loggare su stderr se necessario
-    }
+    } catch (...) {}
 }
 
 } // namespace Config
