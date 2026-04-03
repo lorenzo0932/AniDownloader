@@ -81,17 +81,16 @@ Il porting è in fase attiva. Ecco gli obiettivi prioritari:
 ### 🖥 Compatibilità e Porting
 
 * [ ] **Porting Completo a Windows**: Adattare il core per funzionare su Windows, gestendo i percorsi Windows-style e sostituendo systemd con il Task Scheduler.
-* [ ] **GUI C++ Leggera**: Sviluppo di un'interfaccia grafica nativa (ImGui o Qt6 C++) per eliminare la dipendenza da Python/PyQt6.
+* [ ] **GUI C++ Leggera**: Sviluppo di un'interfaccia grafica nativa (ImGui o Qt6 C++) per eliminare la dipendenza da Python/PyQt6. **FATTO PER LINUX**
 
 ### 📡 Scrapers & Download
 
 * [ ] **Porting AnimeU Scraper**: Completare l'analisi per gestire il rendering JavaScript/Iframe senza dipendere da Selenium.
-* [ ] **Notifiche Desktop Native**: Integrazione con `libnotify` (Linux) e `Toast Notifications` (Windows).
+* [ ] **Notifiche Desktop Native**: Integrazione con `libnotify` (Linux) e `Toast Notifications` (Windows). **FATTO PER LINUX**
 
 ### ⚙️ Engine Core
 
-* [ ] **Analisi Integrità Avanzata**: Check post-conversione basato su checksum per prevenire artefatti video.
-* [ ] **Gestione Priorità**: Marcare serie specifiche come "Alta Priorità" per scavalcare la coda.
+* [ ] **Gestione Priorità**: Marcare serie specifiche come "Alta Priorità" per scavalcare la coda. **FATTO PER LINUX**
 
 ---
 
