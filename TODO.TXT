@@ -1,0 +1,6 @@
+aggiornare il file readme (solo testo con placeholder per le immagini e gif)
+mergiare con dev
+testare per qualche settimana
+creare le gif e foto di presentazione per la nuova versione da aggiungere al readme
+
+Iniziare a lavorare sulla compatibilità di questa nuova versione con windows(da fare assolutamente)
