@@ -30,6 +30,8 @@ namespace Core {
                                   const Series& series,
                                   const Config::ExecutionStrategy& strategy);
 
+        static void notifyStop(); // Sveglia tutti i thread in attesa del semaforo
+
     private:
         ProgressCallback m_progressCallback;
         std::atomic<bool>& m_stopSignal;
