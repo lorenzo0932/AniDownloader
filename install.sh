@@ -54,6 +54,7 @@ fi
 # 5. Creazione file .desktop da zero (sovrascrittura garantita)
 echo "⚙️ Configurazione file .desktop..."
 rm -f "$APP_DIR/AniDownloader.desktop"
+rm -f "$APP_DIR/AniDownloaderGUI.desktop"
 
 cat <<EOF > "$APP_DIR/AniDownloader.desktop"
 [Desktop Entry]
@@ -68,7 +69,21 @@ Terminal=true
 Categories=Network;Video;AudioVideo;
 EOF
 
-echo "✅ File .desktop generato e salvato in $APP_DIR"
+cat <<EOF > "$APP_DIR/AniDownloaderGUI.desktop"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=AniDownloader C++
+Comment=Download e Conversione Anime (C++)
+Exec=bash -c "$INSTALL_DIR/$BIN_NAME --gui"
+Path=$HOME
+Icon=$ICON_FULL_PATH
+Terminal=false
+Categories=Network;Video;AudioVideo;
+EOF
+
+
+echo "✅ File .desktop generati e salvati in $APP_DIR"
 
 # 6. Fix e installazione file Systemd
 echo "⚙️ Configurazione file Systemd..."

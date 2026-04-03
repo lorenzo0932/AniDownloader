@@ -1,9 +1,0 @@
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=AniDownloader C++
-Comment=Download e Conversione Anime (C++)
-Exec=bash -c "/home/lorenzo/.local/bin/AniDownloader --burst"
-Icon=anidownloader_logo.png
-Terminal=true
-Categories=Network;Video;AudioVideo;
