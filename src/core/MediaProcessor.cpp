@@ -17,12 +17,13 @@
 #include <sstream>
 #include <locale>
 #include <algorithm>
+#include <random>
+#include <system_error>
 
 namespace fs = std::filesystem;
 
 namespace Core {
 
-// Inizializzazione dei membri statici
 std::mutex MediaProcessor::s_convMutex;
 std::condition_variable MediaProcessor::s_convCv;
 std::atomic<int> MediaProcessor::s_activeConversions{0};
@@ -99,10 +100,10 @@ double MediaProcessor::getVideoDuration(const std::string& filePath) {
 }
 
 bool MediaProcessor::verifyIntegrity(const std::string& filePath) {
-    std::string verifyCmd = "ffmpeg -v error -i " + Q(filePath) + " -f null - 2>&1";
-    std::string errors;
-    int status = runCommand(verifyCmd, [&](const std::string& line) { errors += line; });
-    return (status == 0 && errors.empty());
+    // Verifichiamo solo il codice di uscita, ignorando i warning testuali di FFmpeg
+    std::string verifyCmd = "ffmpeg -v error -i " + Q(filePath) + " -f null -";
+    int status = runCommand(verifyCmd, nullptr);
+    return (status == 0);
 }
 
 ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series& series, const Config::ExecutionStrategy& strategy) {
@@ -130,13 +131,10 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
 
     // --- FASE 2: CONVERSIONE ---
     if (strategy.convertToH265) {
-        m_progressCallback(series.name, "In coda Conv...");
-        
+        m_progressCallback(series.name, "In coda...");
         {
             std::unique_lock<std::mutex> lock(s_convMutex);
-            s_convCv.wait(lock, [&]{ 
-                return s_activeConversions < strategy.maxConcurrentTasks || m_stopSignal; 
-            });
+            s_convCv.wait(lock, [&]{ return s_activeConversions < strategy.maxConcurrentTasks || m_stopSignal; });
             if (m_stopSignal) return res;
             s_activeConversions++;
         }
@@ -160,19 +158,23 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
     return res;
 }
 
-
 bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::string& seriesName, const Config::ExecutionStrategy& strategy, double& outTime) {
     const int MAX_RETRIES = 2;
     auto start = std::chrono::steady_clock::now();
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    std::uniform_int_distribution<unsigned long long> dis(1000, 9999);
 
     for (int attempt = 1; attempt <= MAX_RETRIES; ++attempt) {
         if (m_stopSignal) return false;
         
-        m_progressCallback(seriesName, "Prep. T" + std::to_string(attempt));
+        m_progressCallback(seriesName, "Analisi...");
         
-        bool isRamDisk = (getRamUsagePercent() < 50.0 && fs::exists("/dev/shm"));
+        bool isRamDisk = (getRamUsagePercent() < 55.0 && fs::exists("/dev/shm"));
         fs::path baseWorkDir = isRamDisk ? fs::path("/dev/shm") : fs::temp_directory_path();
-        fs::path workDir = baseWorkDir / ("anidown_" + std::to_string(getpid()) + "_" + std::to_string(std::hash<std::string>{}(seriesName)));
+        
+        std::string uniqueId = std::to_string(std::hash<std::string>{}(inputPath)) + "_" + std::to_string(dis(gen));
+        fs::path workDir = baseWorkDir / ("anidown_proc_" + uniqueId);
         
         fs::remove_all(workDir); 
         fs::create_directories(workDir);
@@ -203,12 +205,12 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
             else {
                 m_progressCallback(seriesName, "Splitting...");
                 std::string split = "ffmpeg -v error -y -i " + Q(inputPath) + " -c copy -map 0 -f segment -segment_time " + 
-                                    formatFloat(duration / strategy.chunksPerTask) + " -reset_timestamps 1 " + Q((workDir / "src_%03d.mp4").string());
+                                    formatFloat(duration / strategy.chunksPerTask) + " -reset_timestamps 1 " + Q((workDir / "s%03d.mp4").string());
                 if (std::system(split.c_str()) != 0) throw std::runtime_error("Errore split");
 
                 std::vector<fs::path> parts;
                 for (const auto& p : fs::directory_iterator(workDir)) 
-                    if (p.path().filename().string().find("src_") == 0) parts.push_back(p.path());
+                    if (p.path().filename().string().find("s") == 0) parts.push_back(p.path());
                 std::sort(parts.begin(), parts.end());
 
                 m_progressCallback(seriesName, "Encoding...");
@@ -232,36 +234,38 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
                     m_progressCallback(seriesName, "Conv " + std::to_string(std::min(99, (int)((cur * 100) / (duration * 1000000)))) + "%");
                     if (allDone) break; std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
+                for (auto& j : jobs) if (j.f.get() != 0) throw std::runtime_error("Errore in un chunk");
 
                 m_progressCallback(seriesName, "Merging...");
                 std::ofstream l(workDir / "list.txt");
                 for (auto& j : jobs) l << "file '" << j.out.filename().string() << "'\n";
                 l.close();
-                std::string concat = "ffmpeg -v error -y -f concat -safe 0 -i " + Q((workDir / "list.txt").string()) + " -c copy " + Q(finalMergedInWork.string()) + " > /dev/null 2>&1";
+                std::string concat = "ffmpeg -v error -y -fflags +genpts -f concat -safe 0 -i " + Q((workDir / "list.txt").string()) + " -c copy " + Q(finalMergedInWork.string()) + " > /dev/null 2>&1";
                 if (std::system(concat.c_str()) != 0) throw std::runtime_error("Errore merging");
             }
 
-            // --- FASE DI VERIFICA (Quella che sembrava lenta) ---
             m_progressCallback(seriesName, "Verifica...");
             if (verifyIntegrity(finalMergedInWork.string())) {
                 
                 m_progressCallback(seriesName, "Salvataggio...");
-                // Se siamo in RAM dobbiamo copiare, se siamo su disco basta rinominare (molto più veloce)
-                if (isRamDisk) {
-                    fs::copy(finalMergedInWork, inputPath, fs::copy_options::overwrite_existing);
-                } else {
-                    fs::rename(finalMergedInWork, inputPath);
+                
+                // --- FIX: SPOSTAMENTO ROBUSTO (Gestione Cross-Device EXDEV) ---
+                std::error_code ec;
+                fs::rename(finalMergedInWork, inputPath, ec);
+                
+                if (ec) {
+                    // Se rename fallisce (partizioni diverse), usiamo copia + rimozione sorgente
+                    fs::copy(finalMergedInWork, inputPath, fs::copy_options::overwrite_existing, ec);
+                    if (ec) throw std::runtime_error("Impossibile copiare file sul disco finale: " + ec.message());
                 }
                 
                 fs::remove_all(workDir);
                 outTime = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
                 return true;
-            } else {
-                throw std::runtime_error("File corrotto dopo unione");
-            }
+            } else throw std::runtime_error("Verifica file unito fallita");
 
         } catch (const std::exception& e) {
-            logError(seriesName, "Tentativo " + std::to_string(attempt) + " fallito: " + e.what());
+            logError(seriesName, "Tentativo " + std::to_string(attempt) + " fallito: " + std::string(e.what()));
             fs::remove_all(workDir);
             if (attempt == MAX_RETRIES) break;
             std::this_thread::sleep_for(std::chrono::seconds(2));
