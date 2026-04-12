@@ -12,6 +12,7 @@
 #include "config/AppConfigManager.hpp"
 #include "gui/MainWindow.hpp"
 #include <QApplication>
+#include <QSurfaceFormat>
 
 using namespace Core;
 
@@ -44,6 +45,15 @@ void refreshTerminal(bool burst) {
 }
 
 int main(int argc, char* argv[]) {
+    // --- OTTIMIZZAZIONI HARDWARE UI (Qt 6) ---
+    // In Qt 6, l'HighDPI è attivo di default, non serve richiamarlo.
+    
+    // Configuriamo la superficie di rendering per la massima fluidità
+    QSurfaceFormat format;
+    format.setSamples(4);      // Anti-aliasing hardware
+    format.setSwapInterval(1); // Abilita V-Sync
+    QSurfaceFormat::setDefaultFormat(format);
+
     bool burstMode = false;
     bool guiMode = false;
 
@@ -56,6 +66,8 @@ int main(int argc, char* argv[]) {
 
     if (guiMode) {
         QApplication app(argc, argv);
+        app.setDesktopSettingsAware(true);
+
         Gui::MainWindow window;
         window.show();
         return app.exec();
@@ -88,14 +100,14 @@ int main(int argc, char* argv[]) {
         },
         // 5. StatusCb (Globale)
         [&](const std::string& s) {
-            // Loggato opzionalmente se necessario
+            (void)s; // Silenzia il warning dell'unused parameter
         },
-        // 6. FinishedCb (Task finito)
+        // 6. FinishedCb
         [&](const TaskReport& r) {
             std::lock_guard<std::mutex> l(g_statusMutex);
             g_reports.push_back(r);
         },
-        // 7. SkippedCb (Serie saltata - IL PARAMETRO MANCANTE)
+        // 7. SkippedCb
         [&](const std::string& n, const std::string& r) {
             {
                 std::lock_guard<std::mutex> l(g_statusMutex);
@@ -107,7 +119,7 @@ int main(int argc, char* argv[]) {
         nullptr
     );
 
-    // Visualizzazione finale
+    // Visualizzazione finale resoconto
     std::cout << "\n\n--- RESOCONTO FINALE ---\n";
     for (const auto& r : g_reports) {
         if (!r.success) {
