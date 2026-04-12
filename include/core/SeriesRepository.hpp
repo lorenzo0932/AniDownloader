@@ -1,24 +1,21 @@
 #pragma once
-
-#include <string>
 #include <vector>
 #include <filesystem>
-#include "Series.hpp" // Includiamo la nuova struct
+#include <optional>
+#include <mutex>
+#include "Series.hpp"
 
 namespace Core {
-
     class SeriesRepository {
     public:
         explicit SeriesRepository(const std::filesystem::path& jsonFilePath);
-
-        // Ora restituisce un vettore tipizzato di Serie
-        std::vector<Series> loadSeriesData();
-
-        // Ora prende un vettore tipizzato
+        const std::vector<Series>& loadSeriesData(bool forceReload = false);
         void saveSeriesData(const std::vector<Series>& seriesData);
+        void invalidateCache();
 
     private:
         std::filesystem::path m_jsonFilePath;
+        std::optional<std::vector<Series>> m_cache; // Re-inserito optional
+        mutable std::mutex m_mutex; 
     };
-
 }
