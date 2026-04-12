@@ -2,6 +2,7 @@
 #include <QFileDialog>
 #include <QStyle>
 #include <QMessageBox>
+#include <QTimer>
 
 namespace Gui {
 
@@ -13,9 +14,13 @@ SettingsDialog::SettingsDialog(Config::AppConfigManager *configManager, QSetting
     resize(600, 550);
     setMinimumWidth(500);
 
+    // 1. CARICAMENTO DATI IMMEDIATO (Sicurezza logica)
+    // Leggiamo i valori subito: così se saveSettings() viene chiamato 
+    // per assurdo immediatamente, i confronti non falliscono.
     m_initialJsonPath = m_configManager->get<std::string>("json_file_path", "");
     m_initialOutputDir = m_configManager->get<std::string>("output_dir", "");
 
+    // 2. COSTRUZIONE UI (Layout e Widget)
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
 
@@ -37,6 +42,24 @@ SettingsDialog::SettingsDialog(Config::AppConfigManager *configManager, QSetting
     mainLayout->addWidget(scrollArea);
 
     initButtons(mainLayout);
+
+    // 3. POPOLAMENTO UI DIFFERITO (Fluidità visiva)
+    // Usiamo il timer per riempire i campi solo quando la finestra è pronta.
+    // Inseriamo qui TUTTI i caricamenti per coerenza.
+    QTimer::singleShot(0, this, [this]() {
+        // Percorsi
+        m_jsonPathEdit->setText(QString::fromStdString(m_initialJsonPath));
+        m_outputDirEdit->setText(QString::fromStdString(m_initialOutputDir));
+        
+        // Video
+        m_h265Checkbox->setChecked(m_configManager->get<bool>("convert_to_h265", true));
+        m_chunkSpin->setValue(m_configManager->get<int>("num_chunks", 0));
+        
+        // App
+        m_confirmStopCheckbox->setChecked(m_qSettings->value("show_stop_warning", true).toBool());
+        m_confirmCloseCheckbox->setChecked(m_qSettings->value("show_close_warning", true).toBool());
+        m_autoCleanupCheckbox->setChecked(m_configManager->get<bool>("auto_cleanup_on_close", true));
+    });
 }
 
 void SettingsDialog::initPathsSection(QVBoxLayout *contentLayout) {
@@ -46,7 +69,7 @@ void SettingsDialog::initPathsSection(QVBoxLayout *contentLayout) {
 
     layout->addWidget(new QLabel("File Database Serie (JSON):"));
     QHBoxLayout *jsonRow = new QHBoxLayout();
-    m_jsonPathEdit = new QLineEdit(QString::fromStdString(m_initialJsonPath));
+    m_jsonPathEdit = new QLineEdit(); // Inizialmente vuoto
     QPushButton *jsonBtn = new QPushButton("...");
     jsonBtn->setFixedWidth(40);
     connect(jsonBtn, &QPushButton::clicked, this, &SettingsDialog::browseJson);
@@ -56,7 +79,7 @@ void SettingsDialog::initPathsSection(QVBoxLayout *contentLayout) {
 
     layout->addWidget(new QLabel("Cartella di Destinazione (Output):"));
     QHBoxLayout *outRow = new QHBoxLayout();
-    m_outputDirEdit = new QLineEdit(QString::fromStdString(m_initialOutputDir));
+    m_outputDirEdit = new QLineEdit(); // Inizialmente vuoto
     QPushButton *outBtn = new QPushButton("...");
     outBtn->setFixedWidth(40);
     connect(outBtn, &QPushButton::clicked, this, &SettingsDialog::browseOutput);
@@ -73,7 +96,6 @@ void SettingsDialog::initVideoSection(QVBoxLayout *contentLayout) {
     layout->setSpacing(10);
 
     m_h265Checkbox = new QCheckBox("Abilita compressione H.265 (HEVC)");
-    m_h265Checkbox->setChecked(m_configManager->get<bool>("convert_to_h265", true));
     layout->addWidget(m_h265Checkbox);
 
     QLabel *h265Desc = new QLabel("Riduce le dimensioni del file (~50%) mantenendo la qualità.");
@@ -95,22 +117,20 @@ void SettingsDialog::initVideoSection(QVBoxLayout *contentLayout) {
     QHBoxLayout *chunkCtrlLayout = new QHBoxLayout();
     chunkCtrlLayout->addWidget(new QLabel("Numero di Chunk:"));
     m_chunkSpin = new QSpinBox();
-    m_chunkSpin->setRange(0, 32);                      // PERMETTE LO 0
-    m_chunkSpin->setSpecialValueText("Auto");          // MOSTRA "Auto" AL POSTO DI 0
-    m_chunkSpin->setValue(m_configManager->get<int>("num_chunks", 0));
+    m_chunkSpin->setRange(0, 32);
+    m_chunkSpin->setSpecialValueText("Auto");
     m_chunkSpin->setFixedWidth(80);
     chunkCtrlLayout->addWidget(m_chunkSpin);
     chunkCtrlLayout->addStretch();
     layout->addLayout(chunkCtrlLayout);
 
+    // ... (resto della funzione initVideoSection con il warningContainer rimane uguale)
     QWidget *warningContainer = new QWidget();
     warningContainer->setObjectName("warningLabel");
     QHBoxLayout *warningLayout = new QHBoxLayout(warningContainer);
-    
     QLabel *warningIconLbl = new QLabel();
     warningIconLbl->setPixmap(style()->standardIcon(QStyle::SP_MessageBoxWarning).pixmap(32, 32));
     warningLayout->addWidget(warningIconLbl, 0, Qt::AlignTop);
-
     QLabel *warningText = new QLabel(
         "<b>Attenzione alle Prestazioni:</b><br>"
         "• <b>H.265:</b> Richiede molta potenza di calcolo.<br>"
@@ -120,7 +140,6 @@ void SettingsDialog::initVideoSection(QVBoxLayout *contentLayout) {
     warningText->setWordWrap(true);
     warningLayout->addWidget(warningText, 1);
     layout->addWidget(warningContainer);
-
     contentLayout->addWidget(group);
 }
 
@@ -130,11 +149,9 @@ void SettingsDialog::initAppSection(QVBoxLayout *contentLayout) {
     layout->setSpacing(10);
 
     m_confirmStopCheckbox = new QCheckBox("Mostra conferma prima di interrompere un download");
-    m_confirmStopCheckbox->setChecked(m_qSettings->value("show_stop_warning", true).toBool());
     layout->addWidget(m_confirmStopCheckbox);
 
     m_confirmCloseCheckbox = new QCheckBox("Mostra conferma prima di chiudere l'app (durante un download)");
-    m_confirmCloseCheckbox->setChecked(m_qSettings->value("show_close_warning", true).toBool());
     layout->addWidget(m_confirmCloseCheckbox);
 
     QFrame *line = new QFrame();
@@ -143,7 +160,6 @@ void SettingsDialog::initAppSection(QVBoxLayout *contentLayout) {
     layout->addWidget(line);
 
     m_autoCleanupCheckbox = new QCheckBox("Pulizia Automatica dei file parziali");
-    m_autoCleanupCheckbox->setChecked(m_configManager->get<bool>("auto_cleanup_on_close", true));
     layout->addWidget(m_autoCleanupCheckbox);
 
     QLabel *cleanupDesc = new QLabel("Rimuove automaticamente i file temporanei (.aria2) e i segmenti video in caso di interruzione o chiusura forzata.");
@@ -190,6 +206,7 @@ void SettingsDialog::saveSettings() {
     m_configManager->set("json_file_path", newJsonPath);
     m_configManager->set("output_dir", newOutputDir);
 
+    // Grazie al caricamento nel costruttore, m_initialJsonPath è sempre popolato
     if (newJsonPath != m_initialJsonPath) m_pathsChanged = true;
     if (newOutputDir != m_initialOutputDir) m_pathsChanged = true;
 
