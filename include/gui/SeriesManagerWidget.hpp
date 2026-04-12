@@ -1,7 +1,7 @@
-#ifndef SERIESMANAGERDIALOG_HPP
-#define SERIESMANAGERDIALOG_HPP
+#ifndef SERIESMANAGERWIDGET_HPP
+#define SERIESMANAGERWIDGET_HPP
 
-#include <QDialog>
+#include <QWidget>
 #include <QTableWidget>
 #include <QLineEdit>
 #include <QLabel>
@@ -12,14 +12,16 @@
 
 namespace Gui {
 
-    class SeriesManagerDialog : public QDialog {
+    class SeriesManagerWidget : public QWidget {
         Q_OBJECT
 
     public:
-        explicit SeriesManagerDialog(Core::SeriesRepository *repository, QWidget *parent = nullptr);
+        explicit SeriesManagerWidget(Core::SeriesRepository *repository, QWidget *parent = nullptr);
 
-    protected:
-        void reject() override;
+    signals:
+        // Questo segnale avviserà la MainWindow ogni volta che aggiungiamo/eliminiamo/modifichiamo
+        // una serie, così la tabella principale si aggiornerà in background da sola!
+        void dataChanged();
 
     private slots:
         void onSeriesSelected();
@@ -37,7 +39,9 @@ namespace Gui {
 
         Core::SeriesRepository *m_seriesRepository;
         std::vector<Core::Series> m_seriesData;
-        std::vector<Core::Series> m_originalSeriesData;
+        
+        // Lo teniamo per un eventuale ripristino se si vuole implementare un tasto "Annulla tutto"
+        std::vector<Core::Series> m_originalSeriesData; 
 
         QTableWidget *m_tableWidget;
         QLabel *m_imageLabel;
@@ -46,4 +50,4 @@ namespace Gui {
 
 }
 
-#endif // SERIESMANAGERDIALOG_HPP
+#endif // SERIESMANAGERWIDGET_HPP
