@@ -1,4 +1,5 @@
 #include "gui/SeriesEditorDialog.hpp"
+#include "gui/ImageCache.hpp"
 #include "scrapers/ScraperUtils.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -8,6 +9,7 @@
 #include <QMessageBox>
 #include <QGroupBox>
 #include <QDir>
+#include <QTimer>
 #include <filesystem>
 
 namespace Gui {
@@ -20,19 +22,19 @@ SeriesEditorDialog::SeriesEditorDialog(const Core::Series& seriesData, bool isNe
     setMinimumSize(500, 600);
 
     initUi();
-    populateFields();
+
+    // Popolamento differito per fluidità
+    QTimer::singleShot(0, this, &SeriesEditorDialog::populateFields);
 }
 
 void SeriesEditorDialog::initUi() {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
-    m_imageLabel = new QLabel("Locandina non trovata", this);
-    // Impostiamo una dimensione fissa o minima per evitare problemi di scaling all'avvio
+    m_imageLabel = new QLabel(this);
     m_imageLabel->setFixedSize(220, 320); 
     m_imageLabel->setAlignment(Qt::AlignCenter);
     m_imageLabel->setStyleSheet("border: 1px solid #444; background-color: #121212; border-radius: 4px;");
     
-    // Centriamo l'immagine orizzontalmente
     QHBoxLayout *imageContainer = new QHBoxLayout();
     imageContainer->addStretch();
     imageContainer->addWidget(m_imageLabel);
@@ -49,7 +51,6 @@ void SeriesEditorDialog::initUi() {
     m_serviceButtonGroup = new QButtonGroup(this);
     m_serviceButtonGroup->addButton(m_rbAnimeW, 1);
     m_serviceButtonGroup->addButton(m_rbAnimeU, 2);
-    m_serviceButtonGroup->setExclusive(true);
     serviceLayout->addWidget(m_rbAnimeW);
     serviceLayout->addWidget(m_rbAnimeU);
     formLayout->addRow(serviceGroupBox);
@@ -62,8 +63,9 @@ void SeriesEditorDialog::initUi() {
     pathLayout->setContentsMargins(0, 0, 0, 0);
     m_pathInput = new QLineEdit(pathContainer);
     QPushButton *pathBrowseBtn = new QPushButton("Sfoglia...", pathContainer);
+    
     connect(pathBrowseBtn, &QPushButton::clicked, this, &SeriesEditorDialog::browseSeriesPath);
-    // Aggiorna la locandina appena il percorso cambia
+    // Caricamento sincrono istantaneo al cambio testo
     connect(m_pathInput, &QLineEdit::textChanged, this, &SeriesEditorDialog::loadPoster);
     
     pathLayout->addWidget(m_pathInput);
@@ -112,12 +114,7 @@ void SeriesEditorDialog::populateFields() {
     m_pathInput->setText(QString::fromStdString(m_seriesData.path));
     m_seriesPageUrlInput->setText(QString::fromStdString(m_seriesData.seriesPageUrl));
     
-    if (m_isNew) {
-        m_continueCheckbox->setChecked(false);
-    } else {
-        m_continueCheckbox->setChecked(m_seriesData.continueSeries);
-    }
-    
+    m_continueCheckbox->setChecked(m_isNew ? false : m_seriesData.continueSeries);
     m_highPriorityCheckbox->setChecked(m_seriesData.isHighPriority);
     m_passedEpisodesInput->setValue(m_seriesData.passedEpisodes);
 
@@ -127,37 +124,25 @@ void SeriesEditorDialog::populateFields() {
     loadPoster();
 }
 
-void SeriesEditorDialog::loadPoster() {
+void Gui::SeriesEditorDialog::loadPoster() {
     std::string pathStr = m_pathInput->text().toStdString();
     if (pathStr.empty()) {
         m_imageLabel->clear();
-        m_imageLabel->setText("Nessun percorso");
+        m_imageLabel->setText("Nessun Percorso");
         return;
     }
 
-    // 1. ESPANDI TILDE (Cruciale per trovare il file)
-    std::string expandedPath = Core::ScraperUtils::expandTilde(pathStr);
-    std::filesystem::path seriesPath(expandedPath);
-
-    // 2. Cerchiamo 'folder.jpg' sia dentro la cartella che nella cartella padre
-    // (A seconda di come l'utente organizza la libreria)
+    std::filesystem::path seriesPath(Core::ScraperUtils::expandTilde(pathStr));
     std::filesystem::path imgPath = seriesPath / "folder.jpg";
-    if (!std::filesystem::exists(imgPath)) {
-        imgPath = seriesPath.parent_path() / "folder.jpg";
-    }
+    if (!std::filesystem::exists(imgPath)) imgPath = seriesPath.parent_path() / "folder.jpg";
 
     if (std::filesystem::exists(imgPath)) {
-        QPixmap pixmap(QString::fromStdString(imgPath.string()));
-        if (!pixmap.isNull()) {
-            m_imageLabel->setPixmap(pixmap.scaled(m_imageLabel->size(), 
-                                                  Qt::KeepAspectRatio, 
-                                                  Qt::SmoothTransformation));
-            return;
-        }
+        // Sincrono: l'immagine appare all'istante mentre scrivi o selezioni
+        m_imageLabel->setPixmap(ImageCache::instance().get(QString::fromStdString(imgPath.string()), 220, 320));
+    } else {
+        m_imageLabel->clear();
+        m_imageLabel->setText("Locandina\nnon trovata");
     }
-
-    m_imageLabel->clear();
-    m_imageLabel->setText("Locandina non trovata");
 }
 
 void SeriesEditorDialog::browseSeriesPath() {
@@ -165,7 +150,6 @@ void SeriesEditorDialog::browseSeriesPath() {
     QString selectedDir = QFileDialog::getExistingDirectory(this, "Seleziona Cartella Serie", startDir);
     if (!selectedDir.isEmpty()) {
         m_pathInput->setText(selectedDir);
-        // loadPoster viene chiamata automaticamente via segnale textChanged
     }
 }
 

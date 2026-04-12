@@ -25,7 +25,7 @@ namespace Gui {
         void browseSeriesPath();
         void saveChanges();
         void deleteSeries();
-        void loadPoster();
+        void loadPoster(); // Caricamento diretto istantaneo
 
     private:
         void initUi();
