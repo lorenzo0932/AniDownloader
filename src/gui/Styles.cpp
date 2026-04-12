@@ -4,7 +4,7 @@ namespace Gui {
 
 const QString DARK_THEME_QSS = R"raw(
 /* --- GENERAL --- */
-QMainWindow, QDialog {
+QMainWindow, QDialog, #slidingContainer, #downloadView, #managerView {
     background-color: #1e1e1e;
     color: #ffffff;
 }
@@ -13,6 +13,37 @@ QWidget {
     font-family: "Segoe UI", "Roboto", "Helvetica Neue", sans-serif;
     font-size: 10pt;
     color: #ffffff;
+}
+
+/* --- NAVBAR SUPERIORE (Aggiunta per Tab) --- */
+QWidget#topNavBar {
+    background-color: #121212;
+    border-bottom: 2px solid #333333;
+}
+
+QPushButton#navTabButton {
+    background-color: transparent;
+    border: none;
+    border-bottom: 4px solid transparent;
+    padding: 0px 20px;
+    font-weight: bold;
+    color: #888888;
+    min-height: 60px;
+}
+
+QPushButton#navTabButton:hover {
+    background-color: #252525;
+    color: #ffffff;
+}
+
+QPushButton#navTabButton:checked {
+    color: #6200ea;
+    border-bottom: 4px solid #6200ea;
+    background-color: #1a1a1a;
+}
+
+QPushButton#navTabButton:pressed {
+    background-color: #000000;
 }
 
 /* --- GROUP BOX --- */
@@ -67,6 +98,10 @@ QPushButton#primaryButton:hover {
     border-color: #7c4dff;
 }
 
+QPushButton#primaryButton:pressed {
+    background-color: #5000ca;
+}
+
 QPushButton#dangerButton {
     background-color: #cf6679; /* Red-ish for dark mode */
     color: #000000;
@@ -75,6 +110,10 @@ QPushButton#dangerButton {
 
 QPushButton#dangerButton:hover {
     background-color: #ff8a80;
+}
+
+QPushButton#dangerButton:pressed {
+    background-color: #b05566;
 }
 
 /* --- INPUTS & LISTS --- */
@@ -214,7 +253,7 @@ QWidget#settingsFooter {
 
 const QString LIGHT_THEME_QSS = R"raw(
 /* --- GENERAL --- */
-QMainWindow, QDialog {
+QMainWindow, QDialog, #slidingContainer, #downloadView, #managerView {
     background-color: #f5f5f5;
     color: #212121;
 }
@@ -223,6 +262,25 @@ QWidget {
     font-family: "Segoe UI", "Roboto", "Helvetica Neue", sans-serif;
     font-size: 10pt;
     color: #212121;
+}
+
+/* --- NAVBAR (Light) --- */
+QWidget#topNavBar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #dddddd;
+}
+
+QPushButton#navTabButton {
+    background-color: transparent;
+    border: none;
+    border-bottom: 4px solid transparent;
+    color: #757575;
+    min-height: 60px;
+}
+
+QPushButton#navTabButton:checked {
+    color: #6200ea;
+    border-bottom: 4px solid #6200ea;
 }
 
 /* --- GROUP BOX --- */
@@ -278,6 +336,10 @@ QPushButton#primaryButton:hover {
     border-color: #7c4dff;
 }
 
+QPushButton#primaryButton:pressed {
+    background-color: #5000ca;
+}
+
 QPushButton#dangerButton {
     background-color: #d32f2f;
     color: #ffffff;
@@ -286,6 +348,10 @@ QPushButton#dangerButton {
 
 QPushButton#dangerButton:hover {
     background-color: #e57373;
+}
+
+QPushButton#dangerButton:pressed {
+    background-color: #b05566;
 }
 
 /* --- INPUTS & LISTS --- */
