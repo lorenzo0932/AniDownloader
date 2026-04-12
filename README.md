@@ -1,21 +1,23 @@
-# 🚀 AniDownloader C++ (Engine Edition)
+# 🚀 AniDownloader C++ (Qt6 Engine Edition)
 
-Una riscrittura completa, ad alte prestazioni, del sistema **AniDownloader**. Questo porting in **C++17** è progettato per utenti che necessitano di massima velocità, efficienza e un'integrazione nativa profonda con i sistemi Linux, con l'obiettivo di una futura espansione cross-platform.
+Una riscrittura completa, ad alte prestazioni, del sistema **AniDownloader**. Questo porting in **C++17** con **Qt6** è progettato per utenti che necessitano di massima velocità, efficienza e un'integrazione nativa profonda con i sistemi Linux, con l'obiettivo di una futura espansione cross-platform.
 
 <div align="center">
-
+  <!-- [PLACEHOLDER: Immagine principale della nuova interfaccia Qt6] -->
+  <p><i>L'interfaccia moderna e scattante basata su Qt6</i></p>
 </div>
 
 ---
 
 ## ✨ Perché il Porting in C++?
 
-Il passaggio dal core Python al C++ non è stato solo per "sfida", ma per abbattere i limiti del Global Interpreter Lock (GIL) e gestire flussi di lavoro massivi su hardware di fascia alta (ottimizzato per 32+ thread):
+Il passaggio dal core Python al C++ non è stato solo per "sfida", ma per abbattere i limiti del Global Interpreter Lock (GIL) e gestire flussi di lavoro massivi su hardware di fascia alta:
 
-* **Multithreading Nativo**: Gestione granulare dei thread per FFmpeg. Il software satura intelligentemente la CPU senza bloccare l'I/O.
+* **Multithreading Nativo**: Gestione granulare dei thread tramite `QtConcurrent` ed `ExecutionEngine`. Il software satura intelligentemente la CPU senza bloccare l'I/O.
+* **Interfaccia Qt6 Moderna**: Una GUI nativa, leggera e reattiva che sostituisce completamente la vecchia dipendenza da Python.
 * **Zero Latency**: Lo scraping e il planning delle serie sono istantanei grazie alle librerie `CPR` e `nlohmann_json`.
-* **Gestione RAM Intelligente**: Utilizzo di `/dev/shm` per minimizzare l'usura dei dischi (SSD/NVMe) durante la conversione.
-* **Integrazione Systemd**: Un servizio leggerissimo che monitora le tue serie in background ogni 15 minuti con impatto minimo.
+* **Gestione RAM Intelligente**: Monitoraggio costante dell'uso della memoria e ottimizzazione dei processi FFmpeg.
+* **Integrazione Systemd & Tray**: Un servizio in background per monitoraggi automatici e una comoda icona nel vassoio di sistema per il controllo rapido.
 
 ---
 
@@ -23,7 +25,8 @@ Il passaggio dal core Python al C++ non è stato solo per "sfida", ma per abbatt
 
 * **OS**: Linux (Fedora, Ubuntu, Arch, etc.)
 * **Dipendenze Core**: `aria2c`, `ffmpeg` (devono essere presenti nel PATH).
-* **Build Tools**: `cmake`, `ninja` (consigliato), `gcc/g++` (supporto C++17).
+* **Librerie**: `Qt6` (Widgets, Concurrent), `libcurl`, `openssl`.
+* **Build Tools**: `cmake` (>= 3.17), `gcc/g++` (supporto C++17).
 
 ---
 
@@ -34,14 +37,13 @@ Il sistema include uno script di installazione "One-Click" (`install.sh`) che co
 ```bash
 chmod +x install.sh
 ./install.sh
-
 ```
 
 **Lo script esegue automaticamente:**
 
-1. Compilazione del binario ottimizzato.
+1. Compilazione del binario ottimizzato (Release mode).
 2. Installazione dell'eseguibile in `~/.local/bin/`.
-3. Copia dell'icona in `~/.local/share/icons/anidownloader_logo.png`.
+3. Configurazione degli asset e delle icone.
 4. Registrazione del file `.desktop` nel menu applicazioni.
 5. Attivazione del **Timer Systemd** per i controlli automatici.
 
@@ -51,54 +53,53 @@ chmod +x install.sh
 
 ```text
 AniDownloader_dev/
-├── include/                # Header files (.hpp) - Interfacce
-│   ├── core/               # Logica centrale: MediaProcessor, PlanningService, Series
-│   ├── config/             # Gestione configurazione: AppConfigManager, PathHelper
+├── include/                # Header files (.hpp)
+│   ├── core/               # Logica centrale: ExecutionEngine, MediaProcessor, Series
+│   ├── gui/                # Interfaccia Qt6: MainWindow, Dialogs, Custom Widgets
+│   ├── config/             # Gestione configurazione e percorsi
 │   └── scrapers/           # Definizioni degli scraper (AnimeW, AnimeU)
 ├── src/                    # Implementazioni (.cpp)
-│   ├── core/               # Implementazione logica di processing e pianificazione
-│   ├── config/             # Implementazione gestione percorsi e config
-│   ├── scrapers/           # Implementazione parser nativi
+│   ├── core/               # Logica di processing e gestione dati
+│   ├── gui/                # Implementazione UI e logica dei segnali/slot
+│   ├── config/             # Implementazione configurazione
+│   ├── scrapers/           # Parser nativi per i vari servizi
 │   └── main.cpp            # Entry point dell'applicazione
-├── external/               # Dipendenze esterne gestite localmente (es. nlohmann/json)
+├── external/               # Dipendenze esterne gestite tramite FetchContent
 ├── systemd_services/       # Automazione Linux (AniDownloader.service/timer)
-├── resources/              # Asset grafici (logo.png)
-├── legacy_python/          # Riferimenti del codice originale in Python
-│   ├── AniDownloaderGUI/   # Vecchia interfaccia PyQt6
-│   └── anidownloader_core/ # Vecchi scraper e logica Python
+├── resources/              # Asset grafici e icone
+├── legacy_python/          # Riferimenti storici del codice originale
 ├── install.sh              # Script per installazione e deploy rapido
-├── CMakeLists.txt          # Sistema di build principale
-└── README.md               # Questa documentazione
-
+└── CMakeLists.txt          # Sistema di build principale
 ```
 
 ---
 
 ## 🚀 Roadmap e Funzionalità Future (TODO)
 
-Il porting è in fase attiva. Ecco gli obiettivi prioritari:
-
 ### 🖥 Compatibilità e Porting
 
-* [ ] **Porting Completo a Windows**: Adattare il core per funzionare su Windows, gestendo i percorsi Windows-style e sostituendo systemd con il Task Scheduler.
-* [ ] **GUI C++ Leggera**: Sviluppo di un'interfaccia grafica nativa (ImGui o Qt6 C++) per eliminare la dipendenza da Python/PyQt6. **FATTO PER LINUX**
+* [ ] **Porting Completo a Windows**: Adattare il core per funzionare su Windows, gestendo i percorsi Windows-style e sostituendo systemd con il Task Scheduler. (In corso)
+* [x] **GUI C++ Nativa**: Sviluppata in Qt6 per massima velocità e integrazione.
+* [x] **Notifiche Desktop Native**: Integrazione con il sistema di notifiche Linux.
 
 ### 📡 Scrapers & Download
 
-* [ ] **Porting AnimeU Scraper**: Completare l'analisi per gestire il rendering JavaScript/Iframe senza dipendere da Selenium.
-* [ ] **Notifiche Desktop Native**: Integrazione con `libnotify` (Linux) e `Toast Notifications` (Windows). **FATTO PER LINUX**
+* [ ] **Porting AnimeU Scraper**: Completare il porting per la gestione di tutti i provider video.
+* [x] **Gestione Priorità**: Possibilità di definire la priorità di download per ogni serie.
 
 ### ⚙️ Engine Core
 
-* [ ] **Gestione Priorità**: Marcare serie specifiche come "Alta Priorità" per scavalcare la coda. **FATTO PER LINUX**
+* [x] **Tray Icon**: Controllo dell'applicazione e stato dei download dal vassoio di sistema.
+* [x] **Caching Immagini**: Sistema di cache per i poster delle serie per una UI più fluida.
 
 ---
 
-## 📊 Monitoraggio (Linux)
+## 📊 Monitoraggio e Log
 
-Monitora l'attività del servizio in background in tempo reale:
+Oltre alla GUI, puoi monitorare l'attività del servizio systemd in tempo reale:
 
 ```bash
 journalctl --user -u AniDownloader.service -f
-
 ```
+
+<!-- [PLACEHOLDER: Screenshot della gestione serie o dei log] -->
