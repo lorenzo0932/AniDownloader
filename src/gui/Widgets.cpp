@@ -1,160 +1,112 @@
 #include "gui/Widgets.hpp"
 #include <QApplication>
-#include <QStyle>
-#include <QPalette>
-#include <QAbstractItemView>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QLabel>
+#include <QTableWidget>
 
 namespace Gui {
 
-ProgressBarTableWidgetItem::ProgressBarTableWidgetItem(const QString& text, int priority, int progress, bool isActive, const QString& phase)
-    : QTableWidgetItem(text), m_priority(priority), m_progress(progress), m_isActive(isActive), m_phase(phase)
-{
+ProgressBarTableWidgetItem::ProgressBarTableWidgetItem(const QString& t, int p, int pr, bool a, const QString& ph)
+    : QTableWidgetItem(t), m_priority(p), m_progress(pr), m_isActive(a), m_phase(ph) {
     setTextAlignment(Qt::AlignCenter);
 }
 
-QVariant ProgressBarTableWidgetItem::data(int role) const {
-    if (role == Qt::DisplayRole) return QTableWidgetItem::data(role);
-    if (role == Qt::UserRole) return m_priority;
-    if (role == Qt::UserRole + 1) return m_progress;
-    if (role == Qt::UserRole + 2) return m_isActive;
-    if (role == Qt::UserRole + 3) return m_phase;
-    return QTableWidgetItem::data(role);
+QVariant ProgressBarTableWidgetItem::data(int r) const {
+    if (r == Qt::UserRole + 1) return m_progress;
+    if (r == Qt::UserRole + 2) return m_isActive;
+    if (r == Qt::UserRole + 3) return m_phase;
+    return QTableWidgetItem::data(r);
 }
 
-void ProgressBarTableWidgetItem::setData(int role, const QVariant& value) {
-    if (role == Qt::UserRole + 1) m_progress = value.toInt();
-    else if (role == Qt::UserRole + 2) m_isActive = value.toBool();
-    else if (role == Qt::UserRole + 3) m_phase = value.toString();
-    QTableWidgetItem::setData(role, value);
-}
-
-bool ProgressBarTableWidgetItem::operator<(const QTableWidgetItem& other) const {
-    const ProgressBarTableWidgetItem* otherPtr = dynamic_cast<const ProgressBarTableWidgetItem*>(&other);
-    if (otherPtr) {
-        return m_priority < otherPtr->m_priority;
+void ProgressBarTableWidgetItem::setData(int r, const QVariant& v) {
+    if (r == Qt::UserRole + 1) {
+        m_progress = v.toInt();
+    } else if (r == Qt::UserRole + 2) {
+        m_isActive = v.toBool();
+    } else if (r == Qt::UserRole + 3) {
+        m_phase = v.toString();
+    } else {
+        QTableWidgetItem::setData(r, v);
     }
+}
+
+// LOGICA ORDINAMENTO: Priority 0 (Download) va in alto, Priority 3 (Skip) va in basso
+bool ProgressBarTableWidgetItem::operator<(const QTableWidgetItem& other) const {
+    const auto* o = dynamic_cast<const ProgressBarTableWidgetItem*>(&other);
+    if (o) return this->m_priority < o->m_priority;
     return QTableWidgetItem::operator<(other);
 }
 
-void ProgressBarDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const {
-    QTableWidgetItem *item = nullptr;
-    const QAbstractItemView *view = qobject_cast<const QAbstractItemView*>(option.widget);
-    if (view) {
-        const QTableWidget *table = qobject_cast<const QTableWidget*>(view);
-        if (table) {
-            item = table->item(index.row(), index.column());
-        }
-    }
+void ProgressBarDelegate::paint(QPainter *p, const QStyleOptionViewItem &o, const QModelIndex &i) const {
+    auto *table = qobject_cast<const QTableWidget*>(o.widget);
+    if (!table) return;
 
-    ProgressBarTableWidgetItem *pbItem = dynamic_cast<ProgressBarTableWidgetItem*>(item);
+    auto *item = dynamic_cast<ProgressBarTableWidgetItem*>(table->item(i.row(), i.column()));
+    if (item && item->isActive()) {
+        p->save();
+        p->setRenderHint(QPainter::Antialiasing);
 
-    if (pbItem && pbItem->isActive()) {
-        // 1. Prepara il disegno della cella (selezione, alternanza colori riga)
-        QStyleOptionViewItem opt = option;
-        initStyleOption(&opt, index);
-        opt.text = ""; // Non vogliamo il testo di default
-        QApplication::style()->drawControl(QStyle::CE_ItemViewItem, &opt, painter, option.widget);
-
-        painter->save();
-        painter->setRenderHint(QPainter::Antialiasing);
-
-        // 2. Configurazione colori basata sul tema (stesso stile Python)
         bool isDark = qApp->palette().color(QPalette::Window).lightness() < 128;
-        QColor chunkColor = isDark ? QColor("#6200ea") : QColor("#b39ddb");
-        QColor barBgColor = isDark ? QColor(45, 45, 45) : QColor("#eeeeee");
-        QColor textColor = isDark ? QColor("#ffffff") : QColor("#212121");
+        QRect r = o.rect.adjusted(6, 6, -6, -6);
 
-        // 3. Coordinate della barra
-        QRect barRect = option.rect.adjusted(6, 6, -6, -6);
-        int progress = pbItem->progress();
-        int chunkWidth = (barRect.width() * progress) / 100;
+        p->setPen(Qt::NoPen);
+        p->setBrush(isDark ? QColor(45, 45, 45) : QColor(230, 230, 230));
+        p->drawRoundedRect(r, 5, 5);
 
-        // 4. Disegno Sfondo Barra (Arrotondato)
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(barBgColor);
-        painter->drawRoundedRect(barRect, 5, 5);
-
-        // 5. Disegno Chunk Progresso (Arrotondato)
-        if (chunkWidth > 0) {
-            QRect chunkRect = barRect;
-            chunkRect.setWidth(chunkWidth);
-            painter->setBrush(chunkColor);
-            painter->drawRoundedRect(chunkRect, 5, 5);
+        int w = r.width() * item->progress() / 100;
+        if (w > 0) {
+            QRect pr = r;
+            pr.setWidth(w);
+            p->setBrush(QColor("#6200ea"));
+            p->drawRoundedRect(pr, 5, 5);
         }
 
-        // 6. Disegno Testo (Fase e Percentuale)
-        QString displayPhase = "Elaborazione";
-        if (pbItem->phase() == "download") displayPhase = "Download";
-        else if (pbItem->phase() == "conversion") displayPhase = "Conversione";
-        QString textString = QString("%1 %2%").arg(displayPhase).arg(progress);
-
-        painter->setPen(textColor);
-        if (!isDark) {
-            QFont font = painter->font();
-            font.setBold(true);
-            painter->setFont(font);
-        }
-        painter->drawText(option.rect, Qt::AlignCenter, textString);
-
-        painter->restore();
+        p->setPen(isDark ? Qt::white : Qt::black);
+        p->drawText(o.rect, Qt::AlignCenter, QString("%1%").arg(item->progress()));
+        p->restore();
     } else {
-        QStyledItemDelegate::paint(painter, option, index);
+        QStyledItemDelegate::paint(p, o, i);
     }
 }
 
-StopConfirmationDialog::StopConfirmationDialog(QWidget *parent)
-    : QDialog(parent)
-{
-    setWindowTitle("Conferma Interruzione");
+StopConfirmationDialog::StopConfirmationDialog(QWidget *p) : QDialog(p) {
+    setWindowTitle("Conferma");
     setModal(true);
-    setMinimumWidth(450);
+    setMinimumWidth(400);
 
-    QVBoxLayout *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(20, 20, 20, 20);
-    layout->setSpacing(15);
+    auto *l = new QVBoxLayout(this);
+    l->addWidget(new QLabel("Vuoi interrompere il download?"));
 
-    QLabel *messageLabel = new QLabel(
-        "<b>ATTENZIONE: Stai per interrompere il processo.</b><br><br>"
-        "Questa operazione terminerà forzatamente tutti i download e le conversioni in corso.<br>"
-        "Tutti i file parziali e temporanei verranno eliminati.<br><br>"
-        "Sei sicuro di voler procedere?", this);
-    messageLabel->setWordWrap(true);
-    layout->addWidget(messageLabel);
+    m_dontShowAgainCheckbox = new QCheckBox("Non mostrare più");
+    l->addWidget(m_dontShowAgainCheckbox);
 
-    m_dontShowAgainCheckbox = new QCheckBox("Non mostrare più questo avviso", this);
-    m_dontShowAgainCheckbox->setCursor(Qt::PointingHandCursor);
-    layout->addWidget(m_dontShowAgainCheckbox);
-
-    QHBoxLayout *buttonLayout = new QHBoxLayout();
-    m_okButton = new QPushButton(QString("Attendi %1s...").arg(m_timerSeconds), this);
-    m_okButton->setObjectName("dangerButton");
+    m_okButton = new QPushButton("Attendi...");
     m_okButton->setEnabled(false);
-    connect(m_okButton, &QPushButton::clicked, this, &QDialog::accept);
+    m_okButton->setObjectName("dangerButton");
 
-    QPushButton *cancelButton = new QPushButton("Annulla", this);
-    connect(cancelButton, &QPushButton::clicked, this, &QDialog::reject);
+    auto *bl = new QHBoxLayout();
+    auto *c = new QPushButton("Annulla");
+    connect(c, &QPushButton::clicked, this, &QDialog::reject);
 
-    buttonLayout->addStretch();
-    buttonLayout->addWidget(cancelButton);
-    buttonLayout->addWidget(m_okButton);
-    layout->addLayout(buttonLayout);
+    bl->addStretch();
+    bl->addWidget(c);
+    bl->addWidget(m_okButton);
+    l->addLayout(bl);
 
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &StopConfirmationDialog::updateTimer);
     m_timer->start(1000);
+
+    connect(m_okButton, &QPushButton::clicked, this, &QDialog::accept);
 }
 
 void StopConfirmationDialog::updateTimer() {
-    m_timerSeconds--;
-    if (m_timerSeconds > 0) {
-        m_okButton->setText(QString("Attendi %1s...").arg(m_timerSeconds));
-    } else {
+    if (--m_timerSeconds <= 0) {
         m_timer->stop();
-        m_okButton->setText("OK, Interrompi");
+        m_okButton->setText("OK");
         m_okButton->setEnabled(true);
+    } else {
+        m_okButton->setText(QString("Attendi %1s...").arg(m_timerSeconds));
     }
 }
 
@@ -162,54 +114,35 @@ bool StopConfirmationDialog::dontShowAgain() const {
     return m_dontShowAgainCheckbox->isChecked();
 }
 
-CloseConfirmationDialog::CloseConfirmationDialog(bool autoCloseMode, QWidget *parent)
-    : QDialog(parent), m_autoCloseMode(autoCloseMode)
-{
-    setWindowTitle("Chiusura Applicazione");
+CloseConfirmationDialog::CloseConfirmationDialog(bool a, QWidget *p) : QDialog(p), m_autoCloseMode(a) {
+    setWindowTitle("Chiusura");
     setModal(true);
-    setMinimumWidth(450);
+    auto *l = new QVBoxLayout(this);
+    l->addWidget(new QLabel("Download in corso. Uscire comunque?"));
 
-    if (m_autoCloseMode) {
-        setWindowFlags(windowFlags() | Qt::CustomizeWindowHint);
-        setWindowFlags(windowFlags() & ~Qt::WindowCloseButtonHint);
+    if (!a) {
+        m_dontShowAgainCheckbox = new QCheckBox("Non mostrare più");
+        l->addWidget(m_dontShowAgainCheckbox);
     }
 
-    QVBoxLayout *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(20, 20, 20, 20);
-    layout->setSpacing(15);
-
-    QLabel *messageLabel = new QLabel(
-        "<b>ATTENZIONE: Download in corso.</b><br><br>"
-        "Tutti i file convertiti e scaricati che non sono stati completati verranno distrutti.<br><br>"
-        + QString(m_autoCloseMode ? "Chiusura automatica in corso..." : "Sei sicuro di voler uscire?"), this);
-    messageLabel->setWordWrap(true);
-    layout->addWidget(messageLabel);
-
-    if (!m_autoCloseMode) {
-        m_dontShowAgainCheckbox = new QCheckBox("Non mostrare più questo avviso", this);
-        m_dontShowAgainCheckbox->setCursor(Qt::PointingHandCursor);
-        layout->addWidget(m_dontShowAgainCheckbox);
-    } else {
-        m_dontShowAgainCheckbox = nullptr;
-    }
-
-    QHBoxLayout *buttonLayout = new QHBoxLayout();
-    m_okButton = new QPushButton(QString(m_autoCloseMode ? "Uscita tra %1s..." : "Attendi %1s...").arg(m_timerSeconds), this);
-    m_okButton->setObjectName("dangerButton");
+    m_okButton = new QPushButton("Attendi...");
     m_okButton->setEnabled(false);
+    m_okButton->setObjectName("dangerButton");
+
+    auto *bl = new QHBoxLayout();
     connect(m_okButton, &QPushButton::clicked, this, &QDialog::accept);
 
-    if (!m_autoCloseMode) {
-        QPushButton *cancelButton = new QPushButton("Annulla", this);
-        connect(cancelButton, &QPushButton::clicked, this, &QDialog::reject);
-        buttonLayout->addStretch();
-        buttonLayout->addWidget(cancelButton);
+    if (!a) {
+        auto *c = new QPushButton("Annulla");
+        connect(c, &QPushButton::clicked, this, &QDialog::reject);
+        bl->addStretch();
+        bl->addWidget(c);
     } else {
-        buttonLayout->addStretch();
+        bl->addStretch();
     }
 
-    buttonLayout->addWidget(m_okButton);
-    layout->addLayout(buttonLayout);
+    bl->addWidget(m_okButton);
+    l->addLayout(bl);
 
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &CloseConfirmationDialog::updateTimer);
@@ -217,22 +150,112 @@ CloseConfirmationDialog::CloseConfirmationDialog(bool autoCloseMode, QWidget *pa
 }
 
 void CloseConfirmationDialog::updateTimer() {
-    m_timerSeconds--;
-    if (m_timerSeconds > 0) {
-        m_okButton->setText(QString(m_autoCloseMode ? "Uscita tra %1s..." : "Attendi %1s...").arg(m_timerSeconds));
-    } else {
+    if (--m_timerSeconds <= 0) {
         m_timer->stop();
         if (m_autoCloseMode) {
             accept();
         } else {
-            m_okButton->setText("OK, Esci");
+            m_okButton->setText("OK");
             m_okButton->setEnabled(true);
         }
+    } else {
+        m_okButton->setText(QString("Attendi %1s...").arg(m_timerSeconds));
     }
 }
 
 bool CloseConfirmationDialog::dontShowAgain() const {
     return m_dontShowAgainCheckbox ? m_dontShowAgainCheckbox->isChecked() : false;
+}
+
+SlidingContainer::SlidingContainer(QWidget* v1, QWidget* v2, QWidget *parent)
+    : QWidget(parent), m_view1(v1), m_view2(v2) {
+    setObjectName("slidingContainer");
+    setAutoFillBackground(true);
+
+    m_view1->setParent(this);
+    m_view2->setParent(this);
+
+    m_animLayer1 = new QLabel(this);
+    m_animLayer2 = new QLabel(this);
+
+    m_animLayer1->hide();
+    m_animLayer2->hide();
+
+    m_view1->show();
+    m_view2->hide();
+}
+
+void SlidingContainer::paintEvent(QPaintEvent *) {
+    QPainter p(this);
+    p.fillRect(rect(), palette().window());
+}
+
+void SlidingContainer::slideToIndex(int index) {
+    if (index == m_currentIndex || m_isAnimating) return;
+    m_isAnimating = true;
+    int w = width(), h = height();
+
+    QPixmap p_curr(w, h);
+    p_curr.fill(palette().window().color());
+    if (m_currentIndex == 0) m_view1->render(&p_curr);
+    else m_view2->render(&p_curr);
+
+    QWidget *target = (index == 0) ? m_view1 : m_view2;
+    target->show();
+    target->setGeometry(0, 0, w, h);
+    target->repaint();
+    QApplication::processEvents();
+
+    QPixmap p_targ(w, h);
+    p_targ.fill(palette().window().color());
+    target->render(&p_targ);
+
+    m_view1->hide();
+    m_view2->hide();
+
+    m_animLayer1->setPixmap(p_curr);
+    m_animLayer2->setPixmap(p_targ);
+
+    m_animLayer1->setGeometry(0, 0, w, h);
+    m_animLayer2->setGeometry(index == 1 ? w : -w, 0, w, h);
+
+    m_animLayer1->show();
+    m_animLayer2->show();
+
+    auto *a1 = new QPropertyAnimation(m_animLayer1, "pos");
+    auto *a2 = new QPropertyAnimation(m_animLayer2, "pos");
+
+    a1->setDuration(450);
+    a2->setDuration(450);
+    a1->setEasingCurve(QEasingCurve::OutQuint);
+    a2->setEasingCurve(QEasingCurve::OutQuint);
+
+    a1->setEndValue(QPoint(index == 1 ? -w : w, 0));
+    a2->setEndValue(QPoint(0, 0));
+
+    auto *g = new QParallelAnimationGroup(this);
+    g->addAnimation(a1);
+    g->addAnimation(a2);
+
+    connect(g, &QParallelAnimationGroup::finished, this, [=]() {
+        m_animLayer1->hide();
+        m_animLayer2->hide();
+        if (index == 0) m_view1->show();
+        else m_view2->show();
+        m_currentIndex = index;
+        m_isAnimating = false;
+        emit animationFinished();
+        g->deleteLater();
+    });
+
+    g->start();
+}
+
+void SlidingContainer::resizeEvent(QResizeEvent *) {
+    if (!m_isAnimating) {
+        m_view1->setGeometry(0, 0, width(), height());
+        m_view2->setGeometry(0, 0, width(), height());
+    }
 }
 
 } // namespace Gui
