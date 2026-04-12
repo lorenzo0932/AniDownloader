@@ -1,45 +1,86 @@
 cmake_minimum_required(VERSION 3.17)
-project(AniDownloaderCpp)
+project(AniDownloaderCpp LANGUAGES CXX) # Specifica CXX per saltare i controlli sul compilatore C
 
+# --- STANDARD C++ ---
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF) # Disabilita estensioni specifiche (es. GNU), aumenta la portabilità
 
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
+# --- OTTIMIZZAZIONI C++ AVANZATE ---
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Abilita il database dei comandi di compilazione (utile per IDE come CLion, VS Code, Neovim)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # 1. Link Time Optimization (LTO / IPO)
+    # Fondamentale in C++ per ottimizzare le chiamate tra diversi file .cpp
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT lto_supported OUTPUT lto_error)
+    if(lto_supported)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
+
+    if(MSVC)
+        add_compile_options(/O2 /GL /MP) # Ottimizzazione massima e compilazione multi-core
+    else()
+        # 2. Ottimizzazioni GCC/Clang
+        # -O3: Massima ottimizzazione
+        # -march=native: Sfrutta istruzioni specifiche della tua CPU (AVX, SSE)
+        # -pipe: Usa i pipe invece dei file temporanei (compilazione più veloce)
+        # -fno-plt: Riduce l'overhead delle chiamate a librerie esterne
+        add_compile_options(-O3 -march=native -pipe -fno-plt)
+    endif()
+endif()
+
+# --- WARNINGS (Essenziali in C++ per evitare bug silenti) ---
+if(MSVC)
+    add_compile_options(/W4)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor)
+endif()
 
 # --- GESTIONE DIPENDENZE ---
 include(FetchContent)
 
-# 1. JSON Library
+# JSON (Header-only)
 FetchContent_Declare(
     json
     URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(json)
 
-# 2. CPR (C++ Requests - Per lo scraping reale)
+# CPR (C++ Requests - basato su libcurl)
+set(BUILD_CPR_TESTS OFF CACHE BOOL "" FORCE)
+set(CPR_ENABLE_SSL ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
     cpr
     GIT_REPOSITORY https://github.com/libcpr/cpr.git
     GIT_TAG 1.10.5
 )
-set(BUILD_CPR_TESTS OFF CACHE BOOL "" FORCE) # Velocizza la compilazione
 FetchContent_MakeAvailable(cpr)
 
-# 3. Threads
+# Qt6 & Threads
 find_package(Threads REQUIRED)
+find_package(Qt6 COMPONENTS Widgets Concurrent REQUIRED)
 
-# 4. Qt6
-find_package(Qt6 COMPONENTS Widgets REQUIRED)
+# --- SORGENTI ---
+# Ti consiglio di usare una variabile per i file header e una per i sorgenti
+set(HEADERS
+    include/gui/MainWindow.hpp
+    include/gui/DownloadWorker.hpp
+    include/gui/Styles.hpp
+    include/gui/Widgets.hpp
+    include/gui/SettingsDialog.hpp
+    include/gui/SeriesManagerWidget.hpp
+    include/gui/SeriesEditorDialog.hpp
+    include/core/ExecutionEngine.hpp
+    include/gui/ImageCache.hpp # Fondamentale per il MOC
+)
 
-# --- CONFIGURAZIONE PROGETTO ---
-# include_directories(include)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Sorgenti completi
-set(CORE_SOURCES
+set(SOURCES
     src/main.cpp
     src/core/SeriesRepository.cpp
     src/core/Series.cpp
@@ -51,26 +92,25 @@ set(CORE_SOURCES
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
     src/gui/MainWindow.cpp
-    include/gui/MainWindow.hpp
     src/gui/DownloadWorker.cpp
-    include/gui/DownloadWorker.hpp
     src/gui/Styles.cpp
-    include/gui/Styles.hpp
     src/gui/Widgets.cpp
-    include/gui/Widgets.hpp
     src/gui/SettingsDialog.cpp
-    include/gui/SettingsDialog.hpp
-    src/gui/SeriesManagerDialog.cpp
-    include/gui/SeriesManagerDialog.hpp
+    src/gui/SeriesManagerWidget.cpp
     src/gui/SeriesEditorDialog.cpp
-    include/gui/SeriesEditorDialog.hpp
-    src/core/ExecutionEngine.cpp 
-    include/core/ExecutionEngine.hpp
+    src/core/ExecutionEngine.cpp)
+
+# --- TARGET ---
+# Aggiungi WIN32 se vuoi che su Windows non appaia il terminale (GUI pura)
+add_executable(AniDownloader WIN32 ${SOURCES} ${HEADERS})
+
+# Attiva l'elaborazione automatica di Qt (MOC, RCC, UIC)
+set_target_properties(AniDownloader PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+    AUTOUIC ON
 )
 
-add_executable(AniDownloader ${CORE_SOURCES})
-
-# Aggiungi questa riga per rendere visibili sia la cartella include che src (per gli header locali)
 target_include_directories(AniDownloader PRIVATE include src)
 
 target_link_libraries(AniDownloader 
@@ -79,6 +119,10 @@ target_link_libraries(AniDownloader
     cpr::cpr
     Threads::Threads
     Qt6::Widgets
+    Qt6::Concurrent
 )
 
-install(TARGETS AniDownloader RUNTIME DESTINATION $ENV{HOME}/.local/bin)
+# --- INSTALLAZIONE ---
+if(UNIX AND NOT APPLE)
+    install(TARGETS AniDownloader RUNTIME DESTINATION bin)
+endif()
