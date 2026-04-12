@@ -60,7 +60,7 @@ cat <<EOF > "$APP_DIR/AniDownloader.desktop"
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=AniDownloader C++
+Name=AniDownloaderC++
 Comment=Download e Conversione Anime (C++)
 Exec=bash -c "$INSTALL_DIR/$BIN_NAME --burst"
 Path=$HOME
@@ -73,7 +73,7 @@ cat <<EOF > "$APP_DIR/AniDownloaderGUI.desktop"
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=AniDownloader C++
+Name=AniDownloaderGUI
 Comment=Download e Conversione Anime (C++)
 Exec=bash -c "$INSTALL_DIR/$BIN_NAME --gui"
 Path=$HOME
