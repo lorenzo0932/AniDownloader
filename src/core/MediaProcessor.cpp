@@ -100,7 +100,6 @@ double MediaProcessor::getVideoDuration(const std::string& filePath) {
 }
 
 bool MediaProcessor::verifyIntegrity(const std::string& filePath) {
-    // Verifichiamo solo il codice di uscita, ignorando i warning testuali di FFmpeg
     std::string verifyCmd = "ffmpeg -v error -i " + Q(filePath) + " -f null -";
     int status = runCommand(verifyCmd, nullptr);
     return (status == 0);
@@ -112,7 +111,7 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
     std::string expandedPath = ScraperUtils::expandTilde(series.path);
     std::string fullFile = (fs::path(expandedPath) / task.fileName).string();
 
-    // --- FASE 1: DOWNLOAD ---
+    // --- FASE 1: DOWNLOAD STANDARD CON ARIA2C ---
     m_progressCallback(series.name, "Download...");
     std::string dlCmd = "aria2c -x 16 -s 16 --summary-interval=1 --allow-overwrite=true --dir=" + Q(expandedPath) + 
                         " -o " + Q(task.fileName) + " " + Q(task.videoUrl);
@@ -129,7 +128,7 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
     }
     res.downloadTime = std::chrono::duration<double>(std::chrono::steady_clock::now() - startDl).count();
 
-    // --- FASE 2: CONVERSIONE ---
+    // --- FASE 2: CONVERSIONE STANDARD CON FFmpeg ---
     if (strategy.convertToH265) {
         m_progressCallback(series.name, "In coda...");
         {
@@ -232,8 +231,11 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
                         cur += parseUs(j.prog);
                     }
                     m_progressCallback(seriesName, "Conv " + std::to_string(std::min(99, (int)((cur * 100) / (duration * 1000000)))) + "%");
-                    if (allDone) break; std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                }
+                    if (allDone) {
+                    break; 
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }   
                 for (auto& j : jobs) if (j.f.get() != 0) throw std::runtime_error("Errore in un chunk");
 
                 m_progressCallback(seriesName, "Merging...");
@@ -249,12 +251,10 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
                 
                 m_progressCallback(seriesName, "Salvataggio...");
                 
-                // --- FIX: SPOSTAMENTO ROBUSTO (Gestione Cross-Device EXDEV) ---
                 std::error_code ec;
                 fs::rename(finalMergedInWork, inputPath, ec);
                 
                 if (ec) {
-                    // Se rename fallisce (partizioni diverse), usiamo copia + rimozione sorgente
                     fs::copy(finalMergedInWork, inputPath, fs::copy_options::overwrite_existing, ec);
                     if (ec) throw std::runtime_error("Impossibile copiare file sul disco finale: " + ec.message());
                 }
