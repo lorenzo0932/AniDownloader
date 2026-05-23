@@ -182,7 +182,14 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
             double duration = getVideoDuration(inputPath);
             if (duration <= 0) throw std::runtime_error("Impossibile leggere durata");
 
-            std::string nicePrefix = strategy.isBurstMode ? "" : "nice -n 15 ";
+            #ifndef _WIN32
+                // Configurazione per Linux / macOS
+                std::string nicePrefix = "nice -n 19 ";
+            #else
+                // Configurazione per Windows (bypassa la finestra di popup e forza priorità IDLE)
+                std::string nicePrefix = "start \"\" /b /low ";
+            #endif
+
             std::string baseArgs = "-c:v libx265 -crf 23 -preset veryfast -threads " + std::to_string(strategy.threadsPerFFmpeg) + 
                                    " -x265-params \"hist-scenecut=1\" -c:a copy";
 
