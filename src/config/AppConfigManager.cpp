@@ -74,43 +74,69 @@ ExecutionStrategy AppConfigManager::getExecutionStrategy(size_t pendingTasks, bo
     
     int userChunks = get<int>("num_chunks", 0);
 
-    // 1. Rilevamento Hardware (es. 32 thread)
+    // 1. Rilevamento Hardware reale
     unsigned int totalThreads = std::thread::hardware_concurrency();
     if (totalThreads == 0) totalThreads = 4;
 
     // 2. Budget Thread: Burst (85% CPU) vs Background (50% CPU)
     float usageFactor = burstMode ? 0.85f : 0.50f;
     int targetThreadsBudget = static_cast<int>(totalThreads * usageFactor);
+    if (targetThreadsBudget < 1) targetThreadsBudget = 1;
 
-    // 3. Parallelismo Video (Tasks)
-    if (burstMode) {
-        // Se ci sono più video, ne processiamo 2 contemporaneamente per saturare l'I/O
-        strategy.maxConcurrentTasks = (pendingTasks > 1) ? 2 : 1;
-    } else {
-        // In background sempre 1 solo video alla volta
+    // --- FIX DI SICUREZZA 1: SALVAGENTE PER MACCHINE LOW-END (< 6 Thread) ---
+    if (targetThreadsBudget < 6) {
         strategy.maxConcurrentTasks = 1;
+        strategy.chunksPerTask = 1;
+        strategy.threadsPerFFmpeg = targetThreadsBudget;
+        return strategy;
     }
 
-    // 4. Calcolo Dinamico Chunking (Logica "Sweet Spot")
+    // --- FIX DI SICUREZZA 2: LIMITATORE DI CONCORRENZA PER COERENZA DELLA CACHE (CCD) ---
+    // Evita che troppi file paralleli intasino l'I/O del disco e causino cache thrashing sui CCD.
+    int maxAllowedConcurrent = 2; // Default ottimo per PC consumer (Ryzen 5950X / i9)
+    if (totalThreads > 128) {
+        maxAllowedConcurrent = 12; // Per Server giganti (Xeon / EPYC)
+    } else if (totalThreads > 64) {
+        maxAllowedConcurrent = 6;  // Per workstation Threadripper
+    } else if (totalThreads > 32) {
+        maxAllowedConcurrent = 4;  // Per CPU high-end desktop
+    }
+
+    // --- LOGICA ADATTIVA FLUIDA ---
     if (userChunks == 0) {
-        // Quanti thread abbiamo a disposizione per ogni video nel budget?
-        float threadsAllocatedPerVideo = (float)targetThreadsBudget / strategy.maxConcurrentTasks;
-
-        /* 
-           x265 lavora meglio con 6-8 thread per istanza. 
-           Dividiamo i thread disponibili per il numero ideale di thread per processo (6.5)
-           per ottenere il numero di chunk necessari a saturare la CPU.
-        */
-        int calculatedChunks = std::round(threadsAllocatedPerVideo / 6.5f);
-        
-        // Limiti: min 1, max 8 (per non frammentare eccessivamente i file)
-        strategy.chunksPerTask = std::clamp(calculatedChunks, 1, 8);
-    } else {
-        // L'utente ha forzato un valore (es. 1, 2, 4...)
+        // Modalità Auto (Dinamica)
+        if (pendingTasks <= 1) {
+            // Un solo file in coda: concentriamo tutta la CPU su di esso
+            strategy.maxConcurrentTasks = 1;
+            strategy.chunksPerTask = std::clamp(targetThreadsBudget / 6, 1, 8);
+        } 
+        else {
+            // Più file in coda: calcolo della concorrenza ideale tramite radice quadrata
+            int idealConcurrent = static_cast<int>(std::sqrt(targetThreadsBudget));
+            if (idealConcurrent < 1) idealConcurrent = 1;
+            
+            // Applica il limite di sicurezza basato sulla cache/disco
+            idealConcurrent = std::min(idealConcurrent, maxAllowedConcurrent);
+            
+            // Imposta la concorrenza reale limitata dai task effettivamente pendenti
+            strategy.maxConcurrentTasks = std::min(idealConcurrent, static_cast<int>(pendingTasks));
+            
+            // Dividiamo i thread allocati per ogni file in chunk da ~6 thread ciascuno
+            int threadsPerFile = targetThreadsBudget / strategy.maxConcurrentTasks;
+            strategy.chunksPerTask = std::clamp(threadsPerFile / 6, 1, 4);
+        }
+    } 
+    else {
+        // L'utente ha forzato un valore fisso per i chunk
         strategy.chunksPerTask = userChunks;
+        
+        int idealConcurrent = targetThreadsBudget / (strategy.chunksPerTask * 6);
+        idealConcurrent = std::min(idealConcurrent, maxAllowedConcurrent);
+        if (idealConcurrent < 1) idealConcurrent = 1;
+        strategy.maxConcurrentTasks = std::min(idealConcurrent, static_cast<int>(pendingTasks));
     }
 
-    // 5. Calcolo finale threads per ogni comando FFmpeg
+    // 5. Calcolo finale dei thread effettivi per singolo comando FFmpeg
     int totalProcesses = strategy.maxConcurrentTasks * strategy.chunksPerTask;
     int t = targetThreadsBudget / totalProcesses;
     
@@ -119,7 +145,6 @@ ExecutionStrategy AppConfigManager::getExecutionStrategy(size_t pendingTasks, bo
 
     return strategy;
 }
-
 void AppConfigManager::logFinalResult(const std::string& seriesName, double dlTime, double convTime) const {
     try {
         fs::path logPath = get<std::string>("log_file_path", PathHelper::getLogFilePath().string());
