@@ -16,12 +16,11 @@ namespace Core {
         return home ? std::string(home) + path.substr(1) : path;
     }
 
-    // FUNZIONE CHIAVE: Protegge i percorsi per la shell Linux
-    // Trasforma /path/"Omae" in '/path/"Omae"'
+    // Helper statico per proteggere i percorsi per la shell Linux
     static std::string escapePath(const std::string& path) {
         std::string escaped = "'";
         for (char c : path) {
-            if (c == '\'') escaped += "'\\''"; // Gestisce l'apice singolo se presente
+            if (c == '\'') escaped += "'\\''";
             else escaped += c;
         }
         escaped += "'";
@@ -31,7 +30,9 @@ namespace Core {
     int ScraperUtils::getNextEpisodeNum(const std::string& seriesPath) {
         std::string fullPath = expandTilde(seriesPath);
         if (!fs::exists(fullPath)) return 1;
+        
         int maxEp = 0;
+        fs::path maxEpPath;
         static const std::regex epRegex(R"raw([._\s-]Ep[._\s-]?(\d+))raw", std::regex_constants::icase);
         try {
             for (const auto& entry : fs::directory_iterator(fullPath)) {
@@ -40,14 +41,31 @@ namespace Core {
                 std::smatch match;
                 if (std::regex_search(filename, match, epRegex)) {
                     int num = std::stoi(match[1].str());
-                    if (num < 2000 && num > maxEp) maxEp = num;
+                    if (num < 2000 && num > maxEp) {
+                        maxEp = num;
+                        maxEpPath = entry.path();
+                    }
                 }
             }
         } catch (...) {}
+        
+        // Se l'ultimo file locale è corrotto fisicamente, lo segnaliamo allo scraper
+        // ritornando maxEp (invece di maxEp + 1) in modo che cerchi l'URL online per riscaricarlo.
+        if (maxEp > 0 && !maxEpPath.empty()) {
+            std::string qPath = escapePath(maxEpPath.string());
+            // Controllo ffprobe ultra-veloce (millisecondi) per verificare che il container sia integro
+            std::string cmd = "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 " + qPath + " > /dev/null 2>&1";
+            if (std::system(cmd.c_str()) != 0) {
+                std::cout << "[AUTOCURA] Rilevato file corrotto durante lo scanning: " 
+                          << maxEpPath.filename().string() << ". Verrà pianificato il riscaricamento." << std::endl;
+                return maxEp; 
+            }
+        }
+        
         return maxEp + 1;
     }
 
-    std::string ScraperUtils::generateFilename(const std::string& downloadUrl, const std::string& seriesName, int epNum) {
+    std::string ScraperUtils::generateFilename(const std::string& downloadUrl, int epNum) {
         std::string urlFile = downloadUrl.substr(downloadUrl.find_last_of("/") + 1);
         if (urlFile.find("?") != std::string::npos) urlFile = urlFile.substr(0, urlFile.find("?"));
 
