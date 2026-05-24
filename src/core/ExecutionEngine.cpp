@@ -5,6 +5,8 @@
 #include <mutex>
 #include <algorithm>
 #include <filesystem>
+#include <thread>  // Per std::this_thread::sleep_for
+#include <chrono>  // Per std::chrono::milliseconds
 
 namespace Core {
 
@@ -20,6 +22,15 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
                          AnalysisCb onAnalysisDone) 
 {
     onStatus("Analisi parallelizzata in corso...");
+
+    // --- AVVIO AUTOMATICO CHROMEDRIVER (Se spento) ---
+    // Verifica se chromedriver è già attivo nel sistema operativo.
+    // Se non lo trova, lo avvia silenziosamente in background sulla porta 9515.
+    #ifndef _WIN32
+        std::system("pgrep -x chromedriver > /dev/null || chromedriver --port=9515 > /dev/null 2>&1 &");
+        // Piccolo ritardo (400ms) per permettere al server ChromeDriver di inizializzarsi
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    #endif
 
     std::vector<std::pair<Series, DownloadTask>> toProcess;
     std::mutex resultsMutex;
@@ -39,8 +50,17 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
             if (task.shouldProcess) {
                 toProcess.push_back({seriesCopy, task});
             } else {
-                // Notifichiamo esplicitamente che è stata saltata
-                if (onTaskSkipped) onTaskSkipped(s.name, "Già aggiornata");
+                // Se lo scraper è andato in errore (es. ChromeDriver non risponde),
+                // lo mostriamo chiaramente anziché nasconderlo sotto un finto "Già aggiornata"
+                if (!task.errorMessage.empty()) {
+                    if (onProgress) {
+                        onProgress(s.name, "❌ Errore: " + task.errorMessage);
+                    }
+                } else {
+                    if (onTaskSkipped) {
+                        onTaskSkipped(s.name, "Già aggiornata");
+                    }
+                }
             }
         }));
     }
