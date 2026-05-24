@@ -7,6 +7,6 @@ namespace Core {
     public:
         static std::string expandTilde(const std::string& path);
         static int getNextEpisodeNum(const std::string& seriesPath);
-        static std::string generateFilename(const std::string& downloadUrl, const std::string& seriesName, int episodeNumber);
+        static std::string generateFilename(const std::string& downloadUrl, int episodeNumber);
     };
 }
