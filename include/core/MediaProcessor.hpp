@@ -32,6 +32,10 @@ namespace Core {
 
         static void notifyStop(); // Sveglia tutti i thread in attesa del semaforo
 
+        // Metodi pubblici di pre-verifica dell'integrità
+        bool isMediaFileHealthy(const std::string& filePath);
+        std::string getVideoCodec(const std::string& filePath);
+
     private:
         ProgressCallback m_progressCallback;
         std::atomic<bool>& m_stopSignal;
@@ -44,7 +48,7 @@ namespace Core {
         bool convertAndVerify(const std::string& inputPath, const std::string& seriesName, 
                              const Config::ExecutionStrategy& strategy, double& outTime);
         
-        bool verifyIntegrity(const std::string& filePath);
+        bool verifyIntegrity(const std::string& filePath, double expectedDuration);
         void logError(const std::string& seriesName, const std::string& message);
         
         double getVideoDuration(const std::string& filePath);
