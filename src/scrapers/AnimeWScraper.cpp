@@ -26,9 +26,9 @@ static json webdriverCommand(const std::string& endpoint, const std::string& met
     }
     
     if (r.status_code != 200) {
-        std::cerr << "[DEBUG ERROR] WebDriver HTTP " << method << " " << endpoint 
-                  << " fallito con status " << r.status_code 
-                  << " | Risposta: " << r.text << std::endl;
+        // std::cerr << "[DEBUG ERROR] WebDriver HTTP " << method << " " << endpoint 
+        //           << " fallito con status " << r.status_code 
+        //           << " | Risposta: " << r.text << std::endl;
     }
     
     if (r.status_code == 200 && !r.text.empty()) {
@@ -68,7 +68,7 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
     DownloadTask task;
     task.shouldProcess = false;
 
-    std::cout << "[DEBUG] --- Inizio analisi statica per: " << series.name << " ---" << std::endl;
+    // std::cout << "[DEBUG] --- Inizio analisi statica per: " << series.name << " ---" << std::endl;
 
     // --- FASE 1: ANALISI STATICA VELOCE CON CPR (SENZA AVVIARE CHROME) ---
     cpr::Header staticHeaders = {
@@ -86,7 +86,7 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
 
     if (html.empty()) {
         task.errorMessage = "Errore: Impossibile scaricare l'HTML statico per la verifica preliminare.";
-        std::cerr << "[DEBUG ERROR] Richiesta statica fallita per: " << series.name << std::endl;
+        // std::cerr << "[DEBUG ERROR] Richiesta statica fallita per: " << series.name << std::endl;
         return task;
     }
 
@@ -110,7 +110,7 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
 
     if (found.empty()) {
         task.errorMessage = "Nessun episodio rilevato nell'HTML statico.";
-        std::cerr << "[DEBUG ERROR] Regex fallita o pagina vuota per: " << series.name << std::endl;
+        // std::cerr << "[DEBUG ERROR] Regex fallita o pagina vuota per: " << series.name << std::endl;
         return task;
     }
     std::sort(found.begin(), found.end(), [](const EpData& a, const EpData& b) { return a.n < b.n; });
@@ -127,13 +127,13 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
 
     // Prova del nove: Se siamo in pari, terminiamo SUBITO senza consumare risorse
     if (target.url.empty()) {
-        std::cout << "[DEBUG] " << series.name << " e' gia' in pari (Episodio su disco: " << nextNeeded - 1 << "). Salto avvio ChromeDriver." << std::endl;
+        // std::cout << "[DEBUG] " << series.name << " e' gia' in pari (Episodio su disco: " << nextNeeded - 1 << "). Salto avvio ChromeDriver." << std::endl;
         task.shouldProcess = false;
         return task;
     }
 
     // --- FASE 2: AVVIO CHROMEDRIVER (SOLO SE C'E' UN NUOVO EPISODIO) ---
-    std::cout << "[DEBUG] Rilevato nuovo episodio: Ep." << finalEpNum << ". Avvio ChromeDriver..." << std::endl;
+    // std::cout << "[DEBUG] Rilevato nuovo episodio: Ep." << finalEpNum << ". Avvio ChromeDriver..." << std::endl;
 
     json caps = {
         {"capabilities", {
@@ -170,11 +170,11 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
     try {
         // Navighiamo DIRETTAMENTE alla pagina dell'episodio calcolato, saltando la homepage della serie!
         std::string epUrl = (target.url.find("http") == 0) ? target.url : "https://www.animeworld.ac" + target.url;
-        std::cout << "[DEBUG] Navigo direttamente alla pagina dell'episodio: " << epUrl << std::endl;
+        // std::cout << "[DEBUG] Navigo direttamente alla pagina dell'episodio: " << epUrl << std::endl;
         webdriverCommand("/session/" + sessionId + "/url", "POST", {{"url", epUrl}});
         
         // Attesa e click su "Player alternativo"
-        std::cout << "[DEBUG] Attendo la presenza del pulsante 'Player alternativo'..." << std::endl;
+        // std::cout << "[DEBUG] Attendo la presenza del pulsante 'Player alternativo'..." << std::endl;
         std::string altBtnId = "";
         for (int i = 0; i < 5; ++i) {
             json altSearch = webdriverCommand("/session/" + sessionId + "/elements", "POST", {
@@ -188,15 +188,15 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
         }
 
         if (!altBtnId.empty()) {
-            std::cout << "[DEBUG] Clicco sul pulsante 'Player alternativo'..." << std::endl;
+            // std::cout << "[DEBUG] Clicco sul pulsante 'Player alternativo'..." << std::endl;
             webdriverCommand("/session/" + sessionId + "/element/" + altBtnId + "/click", "POST", json::object());
             std::this_thread::sleep_for(std::chrono::seconds(2)); 
         } else {
-            std::cout << "[DEBUG WARNING] Pulsante 'Player alternativo' non trovato. Procedo comunque." << std::endl;
+            // std::cout << "[DEBUG WARNING] Pulsante 'Player alternativo' non trovato. Procedo comunque." << std::endl;
         }
 
         // Attesa caricamento Iframe
-        std::cout << "[DEBUG] Attendo che l'iframe del player sia disponibile nel DOM..." << std::endl;
+        // std::cout << "[DEBUG] Attendo che l'iframe del player sia disponibile nel DOM..." << std::endl;
         std::string frameId = "";
         for (int i = 0; i < 10; ++i) {
             json iframeSearch = webdriverCommand("/session/" + sessionId + "/elements", "POST", {
@@ -210,14 +210,14 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
         }
 
         if (!frameId.empty()) {
-            std::cout << "[DEBUG] Eseguo click virtuale sull'iframe per avviare la riproduzione..." << std::endl;
+            // std::cout << "[DEBUG] Eseguo click virtuale sull'iframe per avviare la riproduzione..." << std::endl;
             webdriverCommand("/session/" + sessionId + "/element/" + frameId + "/click", "POST", json::object());
         } else {
-            std::cout << "[DEBUG WARNING] Iframe non rilevato in tempo. Avvio comunque lo sniffer..." << std::endl;
+            // std::cout << "[DEBUG WARNING] Iframe non rilevato in tempo. Avvio comunque lo sniffer..." << std::endl;
         }
 
         // Fase di Sniffing di Rete (Metodo IDM)
-        std::cout << "[DEBUG] Avvio lo sniffer di rete per intercettare il flusso video..." << std::endl;
+        // std::cout << "[DEBUG] Avvio lo sniffer di rete per intercettare il flusso video..." << std::endl;
         std::string dlUrl = "";
         
         for (int i = 0; i < 15; ++i) {
@@ -235,13 +235,13 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
                     std::string candidateUrl = extractUrlFromLog(msgStr);
                     if (!candidateUrl.empty()) {
                         dlUrl = candidateUrl;
-                        std::cout << "[DEBUG IDM] -> INTERCETTATO VIDEO HTTP: " << dlUrl << std::endl;
+                        // std::cout << "[DEBUG IDM] -> INTERCETTATO VIDEO HTTP: " << dlUrl << std::endl;
                         break;
                     }
                 }
             }
             if (!dlUrl.empty()) break;
-            std::cout << "[DEBUG] Tentativo " << i + 1 << " - Nessun file .mp4 o .m3u8 intercettato." << std::endl;
+            // std::cout << "[DEBUG] Tentativo " << i + 1 << " - Nessun file .mp4 o .m3u8 intercettato." << std::endl;
         }
 
         if (dlUrl.empty()) {
@@ -251,18 +251,18 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
         task.shouldProcess = true;
         task.videoUrl = dlUrl;
         task.episodeNumber = finalEpNum;
-        task.fileName = ScraperUtils::generateFilename(task.videoUrl, series.name, finalEpNum);
+        task.fileName = ScraperUtils::generateFilename(task.videoUrl, finalEpNum);
         
-        std::cout << "[DEBUG] Task completato per il download del file: " << task.fileName << std::endl;
+        // std::cout << "[DEBUG] Task completato per il download del file: " << task.fileName << std::endl;
 
     } catch (const std::exception& e) {
         task.shouldProcess = false;
         task.errorMessage = e.what();
-        std::cerr << "[DEBUG EXCEPTION] Scraper fallito con errore: " << e.what() << std::endl;
+        // std::cerr << "[DEBUG EXCEPTION] Scraper fallito con errore: " << e.what() << std::endl;
     }
 
     webdriverCommand("/session/" + sessionId, "DELETE");
-    std::cout << "[DEBUG] --- Fine scraping per: " << series.name << " ---" << std::endl;
+    // std::cout << "[DEBUG] --- Fine scraping per: " << series.name << " ---" << std::endl;
     return task;
 }
 
