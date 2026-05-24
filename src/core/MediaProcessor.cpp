@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <random>
 #include <system_error>
+#include <cmath> // Per std::abs nel calcolo delle tolleranze di durata
 
 namespace fs = std::filesystem;
 
@@ -99,37 +100,128 @@ double MediaProcessor::getVideoDuration(const std::string& filePath) {
     try { return std::stod(output); } catch (...) { return 0.0; }
 }
 
-bool MediaProcessor::verifyIntegrity(const std::string& filePath) {
-    std::string verifyCmd = "ffmpeg -v error -i " + Q(filePath) + " -f null -";
+std::string MediaProcessor::getVideoCodec(const std::string& filePath) {
+    std::string cmd = "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 " + Q(filePath);
+    std::string output;
+    runCommand(cmd, [&](const std::string& line) { output += line; });
+    
+    // Rimuove eventuali ritorni a capo per normalizzare la stringa restituita
+    output.erase(std::remove(output.begin(), output.end(), '\n'), output.end());
+    output.erase(std::remove(output.begin(), output.end(), '\r'), output.end());
+    return output;
+}
+
+bool MediaProcessor::isMediaFileHealthy(const std::string& filePath) {
+    if (!fs::exists(filePath)) return false;
+    
+    // Un file video valido deve essere almeno di 1MB
+    if (fs::file_size(filePath) < 1048576) return false;
+
+    // Eseguiamo il demuxing veloce sul container per vedere se il file è troncato
+    std::string verifyCmd = "ffmpeg -v error -xerror -i " + Q(filePath) + " -c copy -f null -";
     int status = runCommand(verifyCmd, nullptr);
+    
     return (status == 0);
+}
+
+bool MediaProcessor::verifyIntegrity(const std::string& filePath, double expectedDuration) {
+    double actualDuration = getVideoDuration(filePath);
+    
+    // Tolleranza del 2% con minimo di 10 secondi per prevenire falsi positivi
+    double tolerance = std::max(10.0, expectedDuration * 0.02);
+
+    if (std::abs(actualDuration - expectedDuration) > tolerance) {
+        logError(filePath, "Verifica fallita: file troncato. Durata attesa: " + 
+                 formatFloat(expectedDuration) + "s, Durata reale: " + formatFloat(actualDuration) + "s");
+        return false;
+    }
+
+    // Demuxing rapido con gestione rigida degli errori (-xerror)
+    std::string verifyCmd = "ffmpeg -v error -xerror -i " + Q(filePath) + " -c copy -f null -";
+    int status = runCommand(verifyCmd, nullptr);
+    
+    if (status != 0) {
+        logError(filePath, "Verifica fallita: rilevata corruzione del container o pacchetti invalidi (exit status " + std::to_string(status) + ")");
+        return false;
+    }
+
+    return true;
 }
 
 ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series& series, const Config::ExecutionStrategy& strategy) {
     ProcessResult res;
-    auto startDl = std::chrono::steady_clock::now();
     std::string expandedPath = ScraperUtils::expandTilde(series.path);
     std::string fullFile = (fs::path(expandedPath) / task.fileName).string();
+    std::string aria2File = fullFile + ".aria2";
 
-    // --- FASE 1: DOWNLOAD STANDARD CON ARIA2C ---
-    m_progressCallback(series.name, "Download...");
-    std::string dlCmd = "aria2c -x 16 -s 16 --summary-interval=1 --allow-overwrite=true --dir=" + Q(expandedPath) + 
-                        " -o " + Q(task.fileName) + " " + Q(task.videoUrl);
-    
-    static const std::regex dlRegex(R"raw(\((\d+)%\))raw");
-    int status = runCommand(dlCmd, [&](const std::string& line) {
-        std::smatch m; if (std::regex_search(line, m, dlRegex)) m_progressCallback(series.name, "DL " + m[1].str() + "%");
-    });
+    bool needsDownload = true;
+    bool needsConversion = strategy.convertToH265;
 
-    if (status != 0) {
-        res.errorMessage = "Errore Aria2";
-        logError(series.name, "Download fallito");
-        return res;
+    // --- PRE-CHECK: RISOLUZIONE CRASH DI SISTEMA E COERENZA CODIFICA ---
+    if (fs::exists(fullFile)) {
+        m_progressCallback(series.name, "Verifica file esistente...");
+
+        if (fs::exists(aria2File)) {
+            // Caso 1: Trovato file .aria2 (download precedentemente interrotto)
+            m_progressCallback(series.name, "Rilevato download incompleto, rimozione residui...");
+            std::error_code ec;
+            fs::remove(fullFile, ec);
+            fs::remove(aria2File, ec);
+        } 
+        else if (!isMediaFileHealthy(fullFile)) {
+            // Caso 2: Il file video esistente è corrotto o troncato da un arresto anomalo
+            m_progressCallback(series.name, "Rilevato file corrotto, rimozione in corso...");
+            std::error_code ec;
+            fs::remove(fullFile, ec);
+        } 
+        else {
+            // Caso 3: Il file è sano. Controlliamo se rispetta lo stato di codifica desiderato
+            std::string codec = getVideoCodec(fullFile);
+            
+            if (strategy.convertToH265) {
+                if (codec == "hevc" || codec == "h265") {
+                    m_progressCallback(series.name, "✅ Già completato (H265)");
+                    res.success = true;
+                    return res;
+                } else {
+                    // Il file originale (H264) è sano, ma manca la conversione.
+                    // Saltiamo il download e procediamo direttamente a convertire!
+                    m_progressCallback(series.name, "Avvio conversione su file esistente...");
+                    needsDownload = false;
+                }
+            } else {
+                // Conversione non richiesta e file integro già presente
+                m_progressCallback(series.name, "✅ Già completato");
+                res.success = true;
+                return res;
+            }
+        }
     }
-    res.downloadTime = std::chrono::duration<double>(std::chrono::steady_clock::now() - startDl).count();
 
-    // --- FASE 2: CONVERSIONE STANDARD CON FFmpeg ---
-    if (strategy.convertToH265) {
+    // --- FASE 1: DOWNLOAD CON ARIA2C ---
+    auto startDl = std::chrono::steady_clock::now();
+    if (needsDownload) {
+        m_progressCallback(series.name, "Download...");
+        std::string dlCmd = "aria2c -x 16 -s 16 --summary-interval=1 --allow-overwrite=true --dir=" + Q(expandedPath) + 
+                            " -o " + Q(task.fileName) + " " + Q(task.videoUrl);
+        
+        static const std::regex dlRegex(R"raw(\((\d+)%\))raw");
+        int status = runCommand(dlCmd, [&](const std::string& line) {
+            std::smatch m; if (std::regex_search(line, m, dlRegex)) m_progressCallback(series.name, "DL " + m[1].str() + "%");
+        });
+
+        if (status != 0) {
+            res.errorMessage = "Errore Aria2";
+            logError(series.name, "Download fallito");
+            return res;
+        }
+        res.downloadTime = std::chrono::duration<double>(std::chrono::steady_clock::now() - startDl).count();
+    } else {
+        res.downloadTime = 0.0;
+    }
+
+    // --- FASE 2: CONVERSIONE CON FFmpeg ---
+    if (needsConversion) {
         m_progressCallback(series.name, "In coda...");
         {
             std::unique_lock<std::mutex> lock(s_convMutex);
@@ -150,6 +242,8 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
             res.errorMessage = "Errore Conversione";
             return res;
         }
+    } else {
+        res.conversionTime = 0.0;
     }
 
     res.success = true;
@@ -183,10 +277,8 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
             if (duration <= 0) throw std::runtime_error("Impossibile leggere durata");
 
             #ifndef _WIN32
-                // Configurazione per Linux / macOS
                 std::string nicePrefix = "nice -n 19 ";
             #else
-                // Configurazione per Windows (bypassa la finestra di popup e forza priorità IDLE)
                 std::string nicePrefix = "start \"\" /b /low ";
             #endif
 
@@ -238,9 +330,7 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
                         cur += parseUs(j.prog);
                     }
                     m_progressCallback(seriesName, "Conv " + std::to_string(std::min(99, (int)((cur * 100) / (duration * 1000000)))) + "%");
-                    if (allDone) {
-                    break; 
-                    }
+                    if (allDone) break; 
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }   
                 for (auto& j : jobs) if (j.f.get() != 0) throw std::runtime_error("Errore in un chunk");
@@ -254,7 +344,7 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
             }
 
             m_progressCallback(seriesName, "Verifica...");
-            if (verifyIntegrity(finalMergedInWork.string())) {
+            if (verifyIntegrity(finalMergedInWork.string(), duration)) {
                 
                 m_progressCallback(seriesName, "Salvataggio...");
                 
