@@ -117,6 +117,7 @@ namespace Gui {
         QLabel *m_overallStatusLabel;
         QProgressBar *m_globalProgressBar;
         QMap<QString, int> m_seriesProgressMap;
+        int m_totalSeriesCount = 0;
 
         // --- SYSTEM TRAY ---
         QSystemTrayIcon *m_trayIcon;

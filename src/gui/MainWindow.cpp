@@ -215,9 +215,10 @@ void MainWindow::initDownloadView(QWidget *p) {
     tl->addLayout(dl);
 
     m_globalProgressBar = new QProgressBar(p);
-    m_globalProgressBar->setRange(0, 0);
+    m_globalProgressBar->setRange(0, 100);
     m_globalProgressBar->setValue(0);
     m_globalProgressBar->setVisible(false);
+    m_globalProgressBar->setTextVisible(true);
     m_globalProgressBar->setFixedHeight(ScaleHelper::px(22));
     tl->addWidget(m_globalProgressBar);
 
@@ -277,13 +278,10 @@ void MainWindow::updateSeriesStatus(const QString& name, const QString& msg) {
         }
     }
 
-    if (!m_seriesProgressMap.isEmpty()) {
+    if (m_totalSeriesCount > 0) {
         int sum = 0;
         for (int v : m_seriesProgressMap) sum += v;
-        int avg = sum / m_seriesProgressMap.size();
-        if (m_globalProgressBar->maximum() == 0) {
-            m_globalProgressBar->setRange(0, 100);
-        }
+        int avg = sum / m_totalSeriesCount;
         m_globalProgressBar->setValue(avg);
     }
 
@@ -297,7 +295,10 @@ void MainWindow::startDownload() {
     setUiStateForDownload(true);
     m_logOutput->clear();
     m_seriesProgressMap.clear();
-    m_globalProgressBar->setRange(0, 0);
+    m_totalSeriesCount = static_cast<int>(m_seriesData.size());
+    for (const auto& s : m_seriesData)
+        m_seriesProgressMap[QString::fromStdString(s.name)] = 0;
+    m_globalProgressBar->setRange(0, 100);
     m_globalProgressBar->setValue(0);
     m_globalProgressBar->setVisible(true);
 
