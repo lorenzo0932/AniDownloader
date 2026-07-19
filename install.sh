@@ -104,6 +104,12 @@ systemctl --user enable --now AniDownloader.timer
 # Aggiorna il database delle app per far apparire subito l'icona nel menu
 update-desktop-database "$APP_DIR" 2>/dev/null
 
+# 8. Installa uninstaller
+echo "📂 Installazione uninstaller..."
+cp -f uninstall.sh "$INSTALL_DIR/uninstall.sh"
+chmod +x "$INSTALL_DIR/uninstall.sh"
+echo "✅ Uninstaller disponibile in $INSTALL_DIR/uninstall.sh"
+
 echo "---"
 echo "✅ Installazione completata con successo!"
 echo "💡 Se non vedi subito l'icona o la modifica nel menu, prova a disconnetterti e riconnetterti (Logout)."
