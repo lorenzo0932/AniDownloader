@@ -1,5 +1,10 @@
 #include "gui/DownloadWorker.hpp"
 #include "core/ExecutionEngine.hpp"
+#ifndef _WIN32
+    #include <unistd.h>
+#else
+    #include <windows.h>
+#endif
 
 namespace Gui {
 
@@ -46,7 +51,20 @@ void DownloadWorker::run() {
 
 void DownloadWorker::requestStop() {
     m_stopSignal = true;
-    std::system("killall -9 aria2c ffmpeg ffprobe 2>/dev/null");
+    
+#ifndef _WIN32
+    // Ottiene il PID del processo corrente ed elimina esclusivamente i suoi processi figli diretti (aria2c, ffmpeg, ffprobe, ecc.)
+    // lasciando intatti i processi degli altri programmi di sistema.
+    pid_t myPid = getpid();
+    std::string killCmd = "pids=$(pgrep -P " + std::to_string(myPid) + " 2>/dev/null); for pid in $pids; do pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; done";
+    std::system(killCmd.c_str());
+#else
+    // Su Windows, facciamo la stessa operazione mirata con taskkill filtrando per PPID (Parent Process ID)
+    DWORD myPid = GetCurrentProcessId();
+    std::string killCmd = "taskkill /F /FI \"PPID eq " + std::to_string(myPid) + "\" /T >nul 2>&1";
+    std::system(killCmd.c_str());
+#endif
+
     Core::MediaProcessor::notifyStop();
 }
 
