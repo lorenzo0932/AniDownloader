@@ -1,4 +1,5 @@
 #include "gui/SettingsDialog.hpp"
+#include "gui/ScaleHelper.hpp"
 #include <QFileDialog>
 #include <QStyle>
 #include <QMessageBox>
@@ -11,8 +12,8 @@ SettingsDialog::SettingsDialog(Config::AppConfigManager *configManager, QSetting
 {
     setWindowTitle("Impostazioni AniDownloader");
     setModal(true);
-    resize(600, 550);
-    setMinimumWidth(500);
+    resize(ScaleHelper::px(600), ScaleHelper::px(550));
+    setMinimumWidth(ScaleHelper::px(500));
 
     // 1. CARICAMENTO DATI IMMEDIATO (Sicurezza logica)
     // Leggiamo i valori subito: così se saveSettings() viene chiamato 
@@ -30,8 +31,8 @@ SettingsDialog::SettingsDialog(Config::AppConfigManager *configManager, QSetting
 
     QWidget *contentWidget = new QWidget();
     QVBoxLayout *contentLayout = new QVBoxLayout(contentWidget);
-    contentLayout->setSpacing(20);
-    contentLayout->setContentsMargins(20, 20, 20, 20);
+    contentLayout->setSpacing(ScaleHelper::px(20));
+    contentLayout->setContentsMargins(ScaleHelper::px(20), ScaleHelper::px(20), ScaleHelper::px(20), ScaleHelper::px(20));
 
     initPathsSection(contentLayout);
     initVideoSection(contentLayout);
@@ -65,13 +66,15 @@ SettingsDialog::SettingsDialog(Config::AppConfigManager *configManager, QSetting
 void SettingsDialog::initPathsSection(QVBoxLayout *contentLayout) {
     QGroupBox *group = new QGroupBox("Gestione File e Percorsi", this);
     QVBoxLayout *layout = new QVBoxLayout(group);
-    layout->setSpacing(10);
+    layout->setSpacing(ScaleHelper::px(10));
 
     layout->addWidget(new QLabel("File Database Serie (JSON):"));
     QHBoxLayout *jsonRow = new QHBoxLayout();
-    m_jsonPathEdit = new QLineEdit(); // Inizialmente vuoto
+    m_jsonPathEdit = new QLineEdit();
+    m_jsonPathEdit->setToolTip("Percorso del file di configurazione JSON delle serie");
     QPushButton *jsonBtn = new QPushButton("...");
-    jsonBtn->setFixedWidth(40);
+    jsonBtn->setFixedWidth(ScaleHelper::px(40));
+    jsonBtn->setToolTip("Sfoglia per selezionare il file JSON");
     connect(jsonBtn, &QPushButton::clicked, this, &SettingsDialog::browseJson);
     jsonRow->addWidget(m_jsonPathEdit);
     jsonRow->addWidget(jsonBtn);
@@ -79,9 +82,11 @@ void SettingsDialog::initPathsSection(QVBoxLayout *contentLayout) {
 
     layout->addWidget(new QLabel("Cartella di Destinazione (Output):"));
     QHBoxLayout *outRow = new QHBoxLayout();
-    m_outputDirEdit = new QLineEdit(); // Inizialmente vuoto
+    m_outputDirEdit = new QLineEdit();
+    m_outputDirEdit->setToolTip("Cartella di destinazione per i file scaricati");
     QPushButton *outBtn = new QPushButton("...");
-    outBtn->setFixedWidth(40);
+    outBtn->setFixedWidth(ScaleHelper::px(40));
+    outBtn->setToolTip("Sfoglia per selezionare la cartella di output");
     connect(outBtn, &QPushButton::clicked, this, &SettingsDialog::browseOutput);
     outRow->addWidget(m_outputDirEdit);
     outRow->addWidget(outBtn);
@@ -93,14 +98,15 @@ void SettingsDialog::initPathsSection(QVBoxLayout *contentLayout) {
 void SettingsDialog::initVideoSection(QVBoxLayout *contentLayout) {
     QGroupBox *group = new QGroupBox("Codifica e Prestazioni Video", this);
     QVBoxLayout *layout = new QVBoxLayout(group);
-    layout->setSpacing(10);
+    layout->setSpacing(ScaleHelper::px(10));
 
     m_h265Checkbox = new QCheckBox("Abilita compressione H.265 (HEVC)");
+    m_h265Checkbox->setToolTip("Converti automaticamente in H.265 dopo il download");
     layout->addWidget(m_h265Checkbox);
 
     QLabel *h265Desc = new QLabel("Riduce le dimensioni del file (~50%) mantenendo la qualità.");
     h265Desc->setWordWrap(true);
-    h265Desc->setStyleSheet("color: #b0b0b0; font-size: 9pt; margin-left: 24px;");
+    h265Desc->setStyleSheet(QString("color: #b0b0b0; font-size: %1pt; margin-left: %2px;").arg(ScaleHelper::fontSize(0.9)).arg(ScaleHelper::px(24)));
     layout->addWidget(h265Desc);
 
     QFrame *line = new QFrame();
@@ -119,7 +125,8 @@ void SettingsDialog::initVideoSection(QVBoxLayout *contentLayout) {
     m_chunkSpin = new QSpinBox();
     m_chunkSpin->setRange(0, 32);
     m_chunkSpin->setSpecialValueText("Auto");
-    m_chunkSpin->setFixedWidth(80);
+    m_chunkSpin->setFixedWidth(ScaleHelper::px(80));
+    m_chunkSpin->setToolTip("Numero di segmenti per la codifica parallela (0 = Auto)");
     chunkCtrlLayout->addWidget(m_chunkSpin);
     chunkCtrlLayout->addStretch();
     layout->addLayout(chunkCtrlLayout);
@@ -146,12 +153,14 @@ void SettingsDialog::initVideoSection(QVBoxLayout *contentLayout) {
 void SettingsDialog::initAppSection(QVBoxLayout *contentLayout) {
     QGroupBox *group = new QGroupBox("Comportamento e Avvisi", this);
     QVBoxLayout *layout = new QVBoxLayout(group);
-    layout->setSpacing(10);
+    layout->setSpacing(ScaleHelper::px(10));
 
     m_confirmStopCheckbox = new QCheckBox("Mostra conferma prima di interrompere un download");
+    m_confirmStopCheckbox->setToolTip("Chiedi conferma prima di interrompere un download attivo");
     layout->addWidget(m_confirmStopCheckbox);
 
     m_confirmCloseCheckbox = new QCheckBox("Mostra conferma prima di chiudere l'app (durante un download)");
+    m_confirmCloseCheckbox->setToolTip("Chiedi conferma prima di chiudere durante un download");
     layout->addWidget(m_confirmCloseCheckbox);
 
     QFrame *line = new QFrame();
@@ -160,11 +169,12 @@ void SettingsDialog::initAppSection(QVBoxLayout *contentLayout) {
     layout->addWidget(line);
 
     m_autoCleanupCheckbox = new QCheckBox("Pulizia Automatica dei file parziali");
+    m_autoCleanupCheckbox->setToolTip("Rimuovi i file parziali quando il download viene interrotto");
     layout->addWidget(m_autoCleanupCheckbox);
 
     QLabel *cleanupDesc = new QLabel("Rimuove automaticamente i file temporanei (.aria2) e i segmenti video in caso di interruzione o chiusura forzata.");
     cleanupDesc->setWordWrap(true);
-    cleanupDesc->setStyleSheet("color: #b0b0b0; font-size: 9pt; margin-left: 24px;");
+    cleanupDesc->setStyleSheet(QString("color: #b0b0b0; font-size: %1pt; margin-left: %2px;").arg(ScaleHelper::fontSize(0.9)).arg(ScaleHelper::px(24)));
     layout->addWidget(cleanupDesc);
 
     contentLayout->addWidget(group);
@@ -174,7 +184,7 @@ void SettingsDialog::initButtons(QVBoxLayout *mainLayout) {
     QWidget *container = new QWidget();
     container->setObjectName("settingsFooter");
     QHBoxLayout *btnLayout = new QHBoxLayout(container);
-    btnLayout->setContentsMargins(20, 15, 20, 15);
+    btnLayout->setContentsMargins(ScaleHelper::px(20), ScaleHelper::px(15), ScaleHelper::px(20), ScaleHelper::px(15));
 
     QPushButton *saveBtn = new QPushButton("Salva Modifiche");
     saveBtn->setObjectName("primaryButton");

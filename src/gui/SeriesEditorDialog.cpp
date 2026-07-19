@@ -1,5 +1,6 @@
 #include "gui/SeriesEditorDialog.hpp"
 #include "gui/ImageCache.hpp"
+#include "gui/ScaleHelper.hpp"
 #include "scrapers/ScraperUtils.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -10,6 +11,7 @@
 #include <QGroupBox>
 #include <QDir>
 #include <QTimer>
+#include <QStyle>
 #include <filesystem>
 
 namespace Gui {
@@ -19,11 +21,29 @@ SeriesEditorDialog::SeriesEditorDialog(const Core::Series& seriesData, bool isNe
 {
     QString title = isNew ? "Aggiungi Nuova Serie" : QString("Modifica: %1").arg(QString::fromStdString(seriesData.name));
     setWindowTitle(title);
-    setMinimumSize(500, 600);
+    setMinimumSize(ScaleHelper::px(500), ScaleHelper::px(600));
 
     initUi();
 
-    // Popolamento differito per fluidità
+    m_fetchNameTimer = new QTimer(this);
+    m_fetchNameTimer->setSingleShot(true);
+    m_fetchNameTimer->setInterval(1200);
+    connect(m_fetchNameTimer, &QTimer::timeout, this, &SeriesEditorDialog::autoFetchName);
+
+    connect(m_seriesPageUrlInput, &QLineEdit::textChanged, this, [this](const QString& text) {
+        Q_UNUSED(text);
+        if (!m_userEditedName && m_nameInput->text().isEmpty()) {
+            m_fetchNameTimer->start();
+        }
+    });
+
+    connect(m_nameInput, &QLineEdit::textChanged, this, [this](const QString& text) {
+        if (!text.isEmpty()) m_userEditedName = true;
+        m_fetchNameTimer->stop();
+    });
+
+    connect(m_fetchNameBtn, &QPushButton::clicked, this, &SeriesEditorDialog::manualFetchName);
+
     QTimer::singleShot(0, this, &SeriesEditorDialog::populateFields);
 }
 
@@ -31,9 +51,9 @@ void SeriesEditorDialog::initUi() {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
 
     m_imageLabel = new QLabel(this);
-    m_imageLabel->setFixedSize(220, 320); 
+    m_imageLabel->setFixedSize(ScaleHelper::px(220), ScaleHelper::px(320)); 
     m_imageLabel->setAlignment(Qt::AlignCenter);
-    m_imageLabel->setStyleSheet("border: 1px solid #444; background-color: #121212; border-radius: 4px;");
+    m_imageLabel->setStyleSheet(QString("border: %1px solid #444; background-color: #121212; border-radius: %2px;").arg(ScaleHelper::px(1)).arg(ScaleHelper::px(4)));
     
     QHBoxLayout *imageContainer = new QHBoxLayout();
     imageContainer->addStretch();
@@ -47,7 +67,9 @@ void SeriesEditorDialog::initUi() {
     QGroupBox *serviceGroupBox = new QGroupBox("Servizio di Download", this);
     QHBoxLayout *serviceLayout = new QHBoxLayout(serviceGroupBox);
     m_rbAnimeW = new QRadioButton("AnimeW Scraper", serviceGroupBox);
+    m_rbAnimeW->setToolTip("Scraper per AnimeWorld (animeworld.ac)");
     m_rbAnimeU = new QRadioButton("AnimeU Scraper", serviceGroupBox);
+    m_rbAnimeU->setToolTip("Scraper per AnimeUnity (animeunity.to)");
     m_serviceButtonGroup = new QButtonGroup(this);
     m_serviceButtonGroup->addButton(m_rbAnimeW, 1);
     m_serviceButtonGroup->addButton(m_rbAnimeU, 2);
@@ -55,17 +77,31 @@ void SeriesEditorDialog::initUi() {
     serviceLayout->addWidget(m_rbAnimeU);
     formLayout->addRow(serviceGroupBox);
 
-    m_nameInput = new QLineEdit(this);
-    formLayout->addRow("Nome:", m_nameInput);
+    QWidget *nameContainer = new QWidget(this);
+    QHBoxLayout *nameLayout = new QHBoxLayout(nameContainer);
+    nameLayout->setContentsMargins(0, 0, 0, 0);
+    m_nameInput = new QLineEdit(nameContainer);
+    m_nameInput->setToolTip("Nome leggibile della serie (recuperato automaticamente dall'URL)");
+    m_fetchNameBtn = new QPushButton(nameContainer);
+    m_fetchNameBtn->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    int fetchIconSize = ScaleHelper::px(14);
+    m_fetchNameBtn->setIconSize(QSize(fetchIconSize, fetchIconSize));
+    m_fetchNameBtn->setToolTip("Recupera il nome dalla pagina web");
+    m_fetchNameBtn->setFixedSize(ScaleHelper::px(30), ScaleHelper::px(24));
+    m_fetchNameBtn->setObjectName("fetchNameButton");
+    nameLayout->addWidget(m_nameInput);
+    nameLayout->addWidget(m_fetchNameBtn);
+    formLayout->addRow("Nome:", nameContainer);
 
     QWidget *pathContainer = new QWidget(this);
     QHBoxLayout *pathLayout = new QHBoxLayout(pathContainer);
     pathLayout->setContentsMargins(0, 0, 0, 0);
     m_pathInput = new QLineEdit(pathContainer);
+    m_pathInput->setToolTip("Cartella locale dove salvare gli episodi");
     QPushButton *pathBrowseBtn = new QPushButton("Sfoglia...", pathContainer);
+    pathBrowseBtn->setToolTip("Seleziona la cartella di destinazione");
     
     connect(pathBrowseBtn, &QPushButton::clicked, this, &SeriesEditorDialog::browseSeriesPath);
-    // Caricamento sincrono istantaneo al cambio testo
     connect(m_pathInput, &QLineEdit::textChanged, this, &SeriesEditorDialog::loadPoster);
     
     pathLayout->addWidget(m_pathInput);
@@ -73,16 +109,20 @@ void SeriesEditorDialog::initUi() {
     formLayout->addRow("Percorso Cartella:", pathContainer);
 
     m_seriesPageUrlInput = new QLineEdit(this);
+    m_seriesPageUrlInput->setToolTip("URL della pagina della serie sul sito di streaming");
     formLayout->addRow("URL Pagina Serie:", m_seriesPageUrlInput);
 
     m_continueCheckbox = new QCheckBox(this);
+    m_continueCheckbox->setToolTip("Continua la numerazione dagli episodi già scaricati");
     formLayout->addRow("Continua numerazione:", m_continueCheckbox);
 
     m_highPriorityCheckbox = new QCheckBox(this);
-    formLayout->addRow("Alta Priorità:", m_highPriorityCheckbox);
+    m_highPriorityCheckbox->setToolTip("Esegui questa serie prima delle altre");
+    formLayout->addRow("Alta Priorit\u00e0:", m_highPriorityCheckbox);
 
     m_passedEpisodesInput = new QSpinBox(this);
     m_passedEpisodesInput->setRange(0, 9999);
+    m_passedEpisodesInput->setToolTip("Numero di episodi già visti su altri servizi");
     formLayout->addRow("Episodi Passati:", m_passedEpisodesInput);
 
     mainLayout->addWidget(formWidget);
@@ -91,6 +131,7 @@ void SeriesEditorDialog::initUi() {
     QHBoxLayout *buttonLayout = new QHBoxLayout();
     m_deleteButton = new QPushButton("Elimina Serie", this);
     m_deleteButton->setObjectName("dangerButton");
+    m_deleteButton->setToolTip("Elimina questa serie dall'elenco");
     connect(m_deleteButton, &QPushButton::clicked, this, &SeriesEditorDialog::deleteSeries);
     if (m_isNew) m_deleteButton->hide();
 
@@ -137,7 +178,6 @@ void Gui::SeriesEditorDialog::loadPoster() {
     if (!std::filesystem::exists(imgPath)) imgPath = seriesPath.parent_path() / "folder.jpg";
 
     if (std::filesystem::exists(imgPath)) {
-        // Sincrono: l'immagine appare all'istante mentre scrivi o selezioni
         m_imageLabel->setPixmap(ImageCache::instance().get(QString::fromStdString(imgPath.string()), 220, 320));
     } else {
         m_imageLabel->clear();
@@ -151,6 +191,51 @@ void SeriesEditorDialog::browseSeriesPath() {
     if (!selectedDir.isEmpty()) {
         m_pathInput->setText(selectedDir);
     }
+}
+
+void SeriesEditorDialog::autoFetchName() {
+    QString url = m_seriesPageUrlInput->text().trimmed();
+    if (url.isEmpty() || m_userEditedName) return;
+    performNameFetch(url);
+}
+
+void SeriesEditorDialog::manualFetchName() {
+    QString url = m_seriesPageUrlInput->text().trimmed();
+    if (url.isEmpty()) return;
+
+    if (QMessageBox::question(this, "Recupera Nome",
+        "Vuoi recuperare il nome della serie dalla pagina web?") == QMessageBox::Yes) {
+        m_userEditedName = false;
+        performNameFetch(url);
+    }
+}
+
+void SeriesEditorDialog::performNameFetch(const QString& url) {
+    if (m_fetchInProgress) return;
+    m_fetchInProgress = true;
+    m_fetchNameBtn->setEnabled(false);
+    m_nameInput->setPlaceholderText("Recupero nome...");
+
+    std::string urlStr = url.toStdString();
+    m_fetchFuture = std::async(std::launch::async, [urlStr]() {
+        return Core::ScraperUtils::fetchSeriesNameFromUrl(urlStr);
+    });
+
+    QTimer *pollTimer = new QTimer(this);
+    connect(pollTimer, &QTimer::timeout, this, [this, pollTimer]() {
+        if (m_fetchFuture.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+            pollTimer->stop();
+            pollTimer->deleteLater();
+            std::string name = m_fetchFuture.get();
+            m_fetchInProgress = false;
+            m_fetchNameBtn->setEnabled(true);
+            m_nameInput->setPlaceholderText("");
+            if (!name.empty() && m_nameInput->text().isEmpty()) {
+                m_nameInput->setText(QString::fromStdString(name));
+            }
+        }
+    });
+    pollTimer->start(50);
 }
 
 void SeriesEditorDialog::saveChanges() {

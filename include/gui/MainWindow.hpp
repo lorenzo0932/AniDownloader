@@ -12,13 +12,18 @@
 #include <QMenu>
 #include <QSettings>
 #include <QTimer>
+#include <QProgressBar>
+#include <QMap>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <memory>
 #include <vector>
 
 #include "config/AppConfigManager.hpp"
 #include "core/SeriesRepository.hpp"
 #include "core/Series.hpp"
-#include "gui/Widgets.hpp"              // Ora contiene SlidingContainer
+#include "gui/Widgets.hpp"
+#include "gui/SlidingContainer.hpp"
 #include "gui/SeriesManagerWidget.hpp"   // La nuova vista manager
 #include "gui/DownloadWorker.hpp"        // Il tuo worker per il download
 
@@ -34,6 +39,8 @@ namespace Gui {
     protected:
         void closeEvent(QCloseEvent *event) override;
         void changeEvent(QEvent *event) override;
+        void dragEnterEvent(QDragEnterEvent *event) override;
+        void dropEvent(QDropEvent *event) override;
 
     private slots:
         // Slot per il controllo dei download
@@ -108,6 +115,8 @@ namespace Gui {
         QTextEdit *m_logOutput;
         QSplitter *m_mainSplitter;
         QLabel *m_overallStatusLabel;
+        QProgressBar *m_globalProgressBar;
+        QMap<QString, int> m_seriesProgressMap;
 
         // --- SYSTEM TRAY ---
         QSystemTrayIcon *m_trayIcon;

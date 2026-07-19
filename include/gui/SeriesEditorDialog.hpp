@@ -8,6 +8,9 @@
 #include <QRadioButton>
 #include <QButtonGroup>
 #include <QLabel>
+#include <QPushButton>
+#include <QTimer>
+#include <future>
 #include "core/Series.hpp"
 
 namespace Gui {
@@ -25,11 +28,14 @@ namespace Gui {
         void browseSeriesPath();
         void saveChanges();
         void deleteSeries();
-        void loadPoster(); // Caricamento diretto istantaneo
+        void loadPoster();
+        void autoFetchName();
+        void manualFetchName();
 
     private:
         void initUi();
         void populateFields();
+        void performNameFetch(const QString& url);
 
         Core::Series m_seriesData;
         Core::Series m_resultData;
@@ -47,6 +53,12 @@ namespace Gui {
         QCheckBox *m_highPriorityCheckbox;
         QSpinBox *m_passedEpisodesInput;
         QPushButton *m_deleteButton;
+
+        QTimer *m_fetchNameTimer;
+        QPushButton *m_fetchNameBtn;
+        bool m_userEditedName = false;
+        bool m_fetchInProgress = false;
+        std::future<std::string> m_fetchFuture;
     };
 
 }

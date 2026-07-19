@@ -1,11 +1,8 @@
-#ifndef STYLES_HPP
-#define STYLES_HPP
+#pragma once
 
 #include <QString>
 
 namespace Gui {
-    extern const QString DARK_THEME_QSS;
-    extern const QString LIGHT_THEME_QSS;
+    QString getDarkTheme();
+    QString getLightTheme();
 }
-
-#endif // STYLES_HPP

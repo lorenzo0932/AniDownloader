@@ -17,6 +17,7 @@ namespace Gui {
 
     public:
         explicit SeriesManagerWidget(Core::SeriesRepository *repository, QWidget *parent = nullptr);
+        void addSeriesWithUrl(const QString& url);
 
     signals:
         // Questo segnale avviserà la MainWindow ogni volta che aggiungiamo/eliminiamo/modifichiamo

@@ -1,5 +1,6 @@
 #include "gui/MainWindow.hpp"
 #include "gui/Styles.hpp"
+#include "gui/ScaleHelper.hpp"
 #include "gui/Widgets.hpp"
 #include "gui/SettingsDialog.hpp"
 #include "gui/SeriesManagerWidget.hpp"
@@ -14,14 +15,17 @@
 #include <QScreen>
 #include <QStyle>
 #include <QMessageBox>
-#include <QDesktopServices>
-#include <QScrollBar>
 #include <QPalette>
 #include <QEvent>
 #include <QCloseEvent>
 #include <QRegularExpression>
 #include <QButtonGroup>
-#include <QScroller>
+#include <QMimeData>
+#include <QUrl>
+#include <QFile>
+#include <QDesktopServices>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 namespace Gui {
 
@@ -31,6 +35,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     setAttribute(Qt::WA_TranslucentBackground, false);
     setAutoFillBackground(true);
+    setAcceptDrops(true);
 
     m_configManager = std::make_unique<Config::AppConfigManager>();
     m_settings = std::make_unique<QSettings>(
@@ -52,10 +57,13 @@ MainWindow::MainWindow(QWidget *parent)
 
     QScreen *screen = QGuiApplication::primaryScreen();
     QRect screenGeometry = screen->geometry();
-    setGeometry((screenGeometry.width() - 1100) / 2, (screenGeometry.height() - 750) / 2, 1100, 750);
-    setMinimumSize(850, 600);
+    setGeometry((screenGeometry.width() - ScaleHelper::px(1100)) / 2, (screenGeometry.height() - ScaleHelper::px(750)) / 2, ScaleHelper::px(1100), ScaleHelper::px(750));
+    setMinimumSize(ScaleHelper::px(850), ScaleHelper::px(600));
 
     loadSeriesDataIntoTable();
+    if (m_tableWidget->model()->rowCount() > 0) {
+        m_tableWidget->selectRow(0);
+    }
     restoreGeometryAndState();
 
     // Controllo aggiornamenti asincrono
@@ -86,7 +94,7 @@ void MainWindow::initUi() {
     // --- NAVBAR ---
     QWidget *topNavBar = new QWidget(this);
     topNavBar->setObjectName("topNavBar");
-    topNavBar->setFixedHeight(60);
+    topNavBar->setFixedHeight(ScaleHelper::px(60));
     QHBoxLayout *navLayout = new QHBoxLayout(topNavBar);
     navLayout->setContentsMargins(0, 0, 0, 0);
     navLayout->setSpacing(0);
@@ -97,12 +105,14 @@ void MainWindow::initUi() {
     m_tabDownloadBtn->setCheckable(true);
     m_tabDownloadBtn->setChecked(true);
     m_tabDownloadBtn->setCursor(Qt::PointingHandCursor);
+    m_tabDownloadBtn->setToolTip("Vista download e aggiornamenti");
 
     m_tabManagerBtn = new QPushButton("GESTIONE SERIE", this);
     m_tabManagerBtn->setObjectName("navTabButton");
     m_tabManagerBtn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_tabManagerBtn->setCheckable(true);
     m_tabManagerBtn->setCursor(Qt::PointingHandCursor);
+    m_tabManagerBtn->setToolTip("Gestisci l'elenco delle serie");
 
     QButtonGroup *navGroup = new QButtonGroup(this);
     navGroup->addButton(m_tabDownloadBtn, 0);
@@ -132,37 +142,42 @@ void MainWindow::initUi() {
 
 void MainWindow::initDownloadView(QWidget *p) {
     QVBoxLayout *l = new QVBoxLayout(p);
-    l->setContentsMargins(15, 15, 15, 15);
+    l->setContentsMargins(ScaleHelper::px(15), ScaleHelper::px(15), ScaleHelper::px(15), ScaleHelper::px(15));
     QWidget *tc = new QWidget(p);
     QVBoxLayout *tl = new QVBoxLayout(tc);
     tl->setContentsMargins(0, 0, 0, 0);
     QHBoxLayout *bl = new QHBoxLayout();
-    bl->setSpacing(12);
+    bl->setSpacing(ScaleHelper::px(12));
 
     m_startButton = new QPushButton("Avvia Download", p);
     m_startButton->setObjectName("primaryButton");
-    m_startButton->setFixedSize(160, 45);
+    m_startButton->setMinimumSize(ScaleHelper::px(160), ScaleHelper::px(45));
+    m_startButton->setToolTip("Avvia il download di tutti gli episodi mancanti");
     connect(m_startButton, &QPushButton::clicked, this, &MainWindow::startDownload);
 
     m_stopButton = new QPushButton("Ferma Download", p);
     m_stopButton->setObjectName("dangerButton");
-    m_stopButton->setFixedSize(160, 45);
+    m_stopButton->setMinimumSize(ScaleHelper::px(160), ScaleHelper::px(45));
     m_stopButton->setEnabled(false);
+    m_stopButton->setToolTip("Interrompi il download e la conversione in corso");
     connect(m_stopButton, &QPushButton::clicked, this, &MainWindow::stopDownload);
 
     m_refreshButton = new QPushButton("Aggiorna Serie", p);
-    m_refreshButton->setMinimumSize(140, 45);
+    m_refreshButton->setMinimumSize(ScaleHelper::px(140), ScaleHelper::px(45));
     m_refreshButton->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    m_refreshButton->setToolTip("Aggiorna la lista episodi da tutti i servizi");
     connect(m_refreshButton, &QPushButton::clicked, this, &MainWindow::refreshSeries);
 
     m_resetSortButton = new QPushButton("Reset Ordine", p);
-    m_resetSortButton->setMinimumSize(140, 45);
+    m_resetSortButton->setMinimumSize(ScaleHelper::px(140), ScaleHelper::px(45));
     m_resetSortButton->setIcon(style()->standardIcon(QStyle::SP_DialogResetButton));
+    m_resetSortButton->setToolTip("Ripristina l'ordine predefinito della tabella");
     connect(m_resetSortButton, &QPushButton::clicked, this, &MainWindow::resetTableSort);
 
     m_settingsButton = new QPushButton(p);
-    m_settingsButton->setFixedSize(45, 45);
+    m_settingsButton->setFixedSize(ScaleHelper::px(45), ScaleHelper::px(45));
     m_settingsButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    m_settingsButton->setToolTip("Impostazioni applicazione");
     connect(m_settingsButton, &QPushButton::clicked, this, &MainWindow::openSettings);
 
     bl->addWidget(m_startButton);
@@ -172,7 +187,7 @@ void MainWindow::initDownloadView(QWidget *p) {
     bl->addWidget(m_resetSortButton);
     bl->addWidget(m_settingsButton);
     tl->addLayout(bl);
-    tl->addSpacing(15);
+    tl->addSpacing(ScaleHelper::px(15));
 
     m_tableWidget = new QTableWidget(p);
     m_tableWidget->setColumnCount(2);
@@ -184,14 +199,14 @@ void MainWindow::initDownloadView(QWidget *p) {
     m_tableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     m_tableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_tableWidget->setColumnWidth(1, 230);
+    m_tableWidget->setColumnWidth(1, ScaleHelper::px(230));
     m_tableWidget->setItemDelegateForColumn(1, new ProgressBarDelegate(this));
     connect(m_tableWidget, &QTableWidget::itemSelectionChanged, this, &MainWindow::onSeriesSelected);
 
     m_imageLabel = new QLabel(p);
-    m_imageLabel->setFixedSize(220, 320);
+    m_imageLabel->setFixedSize(ScaleHelper::px(220), ScaleHelper::px(320));
     m_imageLabel->setAlignment(Qt::AlignCenter);
-    m_imageLabel->setStyleSheet("border: 2px solid gray; border-radius: 6px;");
+    m_imageLabel->setStyleSheet(QString("border: %1px solid gray; border-radius: %2px;").arg(ScaleHelper::px(2)).arg(ScaleHelper::px(6)));
     m_imageLabel->setText("Nessuna Immagine");
 
     QHBoxLayout *dl = new QHBoxLayout();
@@ -199,8 +214,16 @@ void MainWindow::initDownloadView(QWidget *p) {
     dl->addWidget(m_imageLabel);
     tl->addLayout(dl);
 
+    m_globalProgressBar = new QProgressBar(p);
+    m_globalProgressBar->setRange(0, 0);
+    m_globalProgressBar->setValue(0);
+    m_globalProgressBar->setVisible(false);
+    m_globalProgressBar->setFixedHeight(ScaleHelper::px(22));
+    tl->addWidget(m_globalProgressBar);
+
     m_logOutput = new QTextEdit(p);
     m_logOutput->setReadOnly(true);
+    m_logOutput->setToolTip("Log dettagliato delle operazioni di download e conversione");
     m_mainSplitter = new QSplitter(Qt::Vertical, p);
     m_mainSplitter->addWidget(tc);
     m_mainSplitter->addWidget(m_logOutput);
@@ -209,7 +232,7 @@ void MainWindow::initDownloadView(QWidget *p) {
     l->addWidget(m_mainSplitter);
 
     m_overallStatusLabel = new QLabel("Pronto.", p);
-    m_overallStatusLabel->setStyleSheet("font-size: 10pt; font-weight: bold;");
+    m_overallStatusLabel->setStyleSheet(QString("font-size: %1pt; font-weight: bold;").arg(ScaleHelper::fontSize(1.0)));
     l->addWidget(m_overallStatusLabel);
 }
 
@@ -243,10 +266,27 @@ void MainWindow::updateSeriesStatus(const QString& name, const QString& msg) {
                 item->setData(Qt::UserRole + 1, p);
                 item->setData(Qt::UserRole + 2, isActive);
                 item->setPriority(newPriority);
+
+                if (isActive && p > 0) {
+                    m_seriesProgressMap[name] = p;
+                } else if (newPriority >= 2) {
+                    m_seriesProgressMap[name] = 100;
+                }
             }
             break;
         }
     }
+
+    if (!m_seriesProgressMap.isEmpty()) {
+        int sum = 0;
+        for (int v : m_seriesProgressMap) sum += v;
+        int avg = sum / m_seriesProgressMap.size();
+        if (m_globalProgressBar->maximum() == 0) {
+            m_globalProgressBar->setRange(0, 100);
+        }
+        m_globalProgressBar->setValue(avg);
+    }
+
     m_tableWidget->sortItems(1, Qt::AscendingOrder);
 }
 
@@ -256,6 +296,10 @@ void MainWindow::startDownload() {
 
     setUiStateForDownload(true);
     m_logOutput->clear();
+    m_seriesProgressMap.clear();
+    m_globalProgressBar->setRange(0, 0);
+    m_globalProgressBar->setValue(0);
+    m_globalProgressBar->setVisible(true);
 
     m_downloadThread = new QThread(this);
     m_downloadWorker = new DownloadWorker(m_seriesData, m_jsonFilePath.toStdString(), m_logFilePath.toStdString(), m_outputDir.toStdString());
@@ -277,13 +321,25 @@ void MainWindow::startDownload() {
 
 void MainWindow::onDownloadFinished() {
     setUiStateForDownload(false);
-    updateOverallStatus(m_overallStatusLabel->text().contains("Interruzione") ? "Processo interrotto." : "Processo completato.");
-    
+    m_globalProgressBar->setVisible(false);
+    m_seriesProgressMap.clear();
+    bool interrupted = m_overallStatusLabel->text().contains("Interruzione");
+    QString statusMsg = interrupted ? "Processo interrotto." : "Processo completato.";
+    updateOverallStatus(statusMsg);
+    if (m_trayIcon && m_trayIcon->isVisible()) {
+        m_trayIcon->showMessage(
+            interrupted ? "Interrutto" : "Completato",
+            statusMsg,
+            interrupted ? QSystemTrayIcon::Warning : QSystemTrayIcon::Information,
+            5000
+        );
+    }
+
     if (m_downloadThread) {
         m_downloadThread->quit();
         m_downloadThread->wait();
         m_downloadThread->deleteLater();
-        m_downloadThread = nullptr; // Fondamentale!
+        m_downloadThread = nullptr;
         m_downloadWorker = nullptr;
     }
 }
@@ -367,6 +423,9 @@ void MainWindow::handleWorkerError(const QString& n, const QString& e) {
     if (n == "GLOBAL" || n == "DEPENDENCIES") QMessageBox::critical(this, "Errore", e);
     updateSeriesStatus(n, "❌ Errore");
     m_logOutput->append("ERRORE [" + n + "]: " + e);
+    if (m_trayIcon && m_trayIcon->isVisible()) {
+        m_trayIcon->showMessage("Errore", n + " — " + e, QSystemTrayIcon::Critical, 5000);
+    }
 }
 
 void MainWindow::handleSeriesFinished(const QString& n, const QString& p, double d, double c) {
@@ -380,6 +439,9 @@ void MainWindow::handleSeriesFinished(const QString& n, const QString& p, double
 void MainWindow::handleTaskSkipped(const QString& n, const QString& r) {
     m_logOutput->append("🚫 SKIPPED [" + n + "]: " + r);
     updateSeriesStatus(n, "🚫 Saltato");
+    if (m_trayIcon && m_trayIcon->isVisible()) {
+        m_trayIcon->showMessage("Saltato", n + " — " + r, QSystemTrayIcon::Information, 3000);
+    }
 }
 
 void MainWindow::updateOverallStatus(const QString& s) {
@@ -521,7 +583,123 @@ void MainWindow::onTrayIconActivated(QSystemTrayIcon::ActivationReason r) {
 }
 
 void MainWindow::applyTheme() {
-    qApp->setStyleSheet(qApp->palette().color(QPalette::Window).lightness() < 128 ? DARK_THEME_QSS : LIGHT_THEME_QSS);
+    qApp->setStyleSheet(qApp->palette().color(QPalette::Window).lightness() < 128 ? getDarkTheme() : getLightTheme());
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent *event) {
+    const QMimeData *mime = event->mimeData();
+    if (mime->hasUrls()) {
+        for (const QUrl &url : mime->urls()) {
+            if (url.isLocalFile() && url.toLocalFile().endsWith(".json")) {
+                event->acceptProposedAction();
+                return;
+            }
+            if (url.scheme() == "http" || url.scheme() == "https") {
+                event->acceptProposedAction();
+                return;
+            }
+        }
+    } else if (mime->hasText()) {
+        QString text = mime->text().trimmed();
+        if (text.startsWith("http://") || text.startsWith("https://")) {
+            event->acceptProposedAction();
+            return;
+        }
+    }
+    event->ignore();
+}
+
+void MainWindow::dropEvent(QDropEvent *event) {
+    const QMimeData *mime = event->mimeData();
+
+    QString droppedText;
+    if (mime->hasUrls()) {
+        for (const QUrl &url : mime->urls()) {
+            if (url.isLocalFile()) {
+                QString filePath = url.toLocalFile();
+                if (filePath.endsWith(".json")) {
+                    QFile file(filePath);
+                    if (!file.open(QIODevice::ReadOnly)) {
+                        QMessageBox::critical(this, "Errore", "Impossibile leggere il file: " + filePath);
+                        return;
+                    }
+                    QByteArray fileData = file.readAll();
+                    file.close();
+
+                    nlohmann::json jsonArray;
+                    try {
+                        jsonArray = nlohmann::json::parse(fileData.toStdString());
+                    } catch (...) {
+                        QMessageBox::warning(this, "Formato Non Valido",
+                            "Il file non contiene un JSON valido.");
+                        return;
+                    }
+
+                    if (!jsonArray.is_array() || jsonArray.empty()) {
+                        QMessageBox::warning(this, "File Vuoto",
+                            "Il file non contiene alcuna serie.");
+                        return;
+                    }
+
+                    QStringList seriesNames;
+                    for (const auto& item : jsonArray) {
+                        if (item.contains("name")) {
+                            seriesNames << QString::fromStdString(item["name"].get<std::string>());
+                        }
+                    }
+
+                    QString preview;
+                    int count = static_cast<int>(std::min(static_cast<qint64>(seriesNames.size()), static_cast<qint64>(15)));
+                    for (int i = 0; i < count; ++i) {
+                        preview += "\u2022 " + seriesNames[i] + "\n";
+                    }
+                    if (seriesNames.size() > 15) {
+                        preview += QString("\u2022 ... e altre %1 serie\n").arg(seriesNames.size() - 15);
+                    }
+
+                    int oldCount = m_seriesData.size();
+                    QMessageBox::StandardButton reply = QMessageBox::warning(this,
+                        "Sovrascrittura Configurazione",
+                        QString("\u26A0\uFE0F Sovrascrittura configurazione\n\n"
+                                "Stai per importare un file con %1 serie (%2 attuali):\n\n%3"
+                                "Le serie attuali verranno sovrascritte. Continuare?")
+                                .arg(seriesNames.size()).arg(oldCount).arg(preview),
+                        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+
+                    if (reply == QMessageBox::Yes) {
+                        QFile::copy(filePath, m_jsonFilePath);
+                        m_seriesRepository->invalidateCache();
+                        loadSeriesDataIntoTable();
+                    }
+                    event->acceptProposedAction();
+                    return;
+                }
+            } else if (url.scheme() == "http" || url.scheme() == "https") {
+                droppedText = url.toString();
+                break;
+            }
+        }
+    } else if (mime->hasText()) {
+        droppedText = mime->text().trimmed();
+    }
+
+    if (!droppedText.isEmpty() && (droppedText.startsWith("http://") || droppedText.startsWith("https://"))) {
+        QMessageBox::StandardButton reply = QMessageBox::question(this,
+            "Aggiungi Serie",
+            QString("Vuoi aggiungere una serie con questo link?\n\n%1").arg(droppedText),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+
+        if (reply == QMessageBox::Yes) {
+            m_tabManagerBtn->click();
+            QTimer::singleShot(300, this, [this, droppedText]() {
+                m_managerView->addSeriesWithUrl(droppedText);
+            });
+        }
+        event->acceptProposedAction();
+        return;
+    }
+
+    event->ignore();
 }
 
 } // namespace Gui

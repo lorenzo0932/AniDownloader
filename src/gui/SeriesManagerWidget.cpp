@@ -1,6 +1,7 @@
 #include "gui/SeriesManagerWidget.hpp"
 #include "gui/SeriesEditorDialog.hpp"
 #include "gui/ImageCache.hpp"
+#include "gui/ScaleHelper.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -24,7 +25,7 @@ SeriesManagerWidget::SeriesManagerWidget(Core::SeriesRepository *repository, QWi
 
 void SeriesManagerWidget::initUi() {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(20, 20, 20, 20); // Margini puliti per il pannello
+    mainLayout->setContentsMargins(ScaleHelper::px(20), ScaleHelper::px(20), ScaleHelper::px(20), ScaleHelper::px(20));
 
     QHBoxLayout *displayLayout = new QHBoxLayout();
     m_tableWidget = new QTableWidget(this);
@@ -40,8 +41,8 @@ void SeriesManagerWidget::initUi() {
     // Evita il ricalcolo per ogni singola cella. Impostiamo dimensioni fisse/interattive.
     header->setSectionResizeMode(3, QHeaderView::Interactive);
     header->setSectionResizeMode(4, QHeaderView::Interactive);
-    m_tableWidget->setColumnWidth(3, 80);
-    m_tableWidget->setColumnWidth(4, 100);
+    m_tableWidget->setColumnWidth(3, ScaleHelper::px(80));
+    m_tableWidget->setColumnWidth(4, ScaleHelper::px(100));
 
     m_tableWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -53,9 +54,9 @@ void SeriesManagerWidget::initUi() {
     displayLayout->addWidget(m_tableWidget);
 
     m_imageLabel = new QLabel("Seleziona una serie", this);
-    m_imageLabel->setFixedSize(200, 300);
+    m_imageLabel->setFixedSize(ScaleHelper::px(200), ScaleHelper::px(300));
     m_imageLabel->setAlignment(Qt::AlignCenter);
-    m_imageLabel->setStyleSheet("border: 1px solid #ccc; background-color: #f0f0f0; color: black;");
+    m_imageLabel->setStyleSheet(QString("border: %1px solid #ccc; background-color: #f0f0f0; color: black; border-radius: %2px;").arg(ScaleHelper::px(1)).arg(ScaleHelper::px(4)));
     displayLayout->addWidget(m_imageLabel);
     
     mainLayout->addLayout(displayLayout);
@@ -64,12 +65,14 @@ void SeriesManagerWidget::initUi() {
     controlLayout->addWidget(new QLabel("Cerca:"));
     m_searchInput = new QLineEdit(this);
     m_searchInput->setPlaceholderText("Cerca per nome...");
+    m_searchInput->setToolTip("Filtra le serie per nome");
     connect(m_searchInput, &QLineEdit::textChanged, this, &SeriesManagerWidget::filterSeries);
     controlLayout->addWidget(m_searchInput);
     controlLayout->addStretch(1);
 
     QPushButton *resetSortBtn = new QPushButton("Ripristina Ordine", this);
     resetSortBtn->setIcon(style()->standardIcon(QStyle::SP_DialogResetButton));
+    resetSortBtn->setToolTip("Ripristina l'ordine predefinito della tabella");
     connect(resetSortBtn, &QPushButton::clicked, this, &SeriesManagerWidget::resetTableSort);
     controlLayout->addWidget(resetSortBtn);
     mainLayout->addLayout(controlLayout);
@@ -77,15 +80,19 @@ void SeriesManagerWidget::initUi() {
     // BOTTONIERA INFERIORE (Rimossi i bottoni "Annulla" e "Salva/Chiudi")
     QHBoxLayout *buttonLayout = new QHBoxLayout();
     QPushButton *addBtn = new QPushButton("Aggiungi Serie", this);
-    addBtn->setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 8px;");
+    addBtn->setObjectName("addSeriesButton");
+    addBtn->setToolTip("Aggiungi una nuova serie all'elenco");
     connect(addBtn, &QPushButton::clicked, this, &SeriesManagerWidget::addSeries);
 
     QPushButton *editBtn = new QPushButton("Modifica Selezionata", this);
-    editBtn->setStyleSheet("padding: 8px;");
+    editBtn->setObjectName("editSeriesButton");
+    editBtn->setToolTip("Modifica i dati della serie selezionata");
     connect(editBtn, &QPushButton::clicked, this, &SeriesManagerWidget::openSeriesEditor);
 
     QPushButton *removeBtn = new QPushButton("Rimuovi Selezionata", this);
-    removeBtn->setStyleSheet("background-color: #f44336; color: white; font-weight: bold; padding: 8px;");
+    removeBtn->setObjectName("removeSeriesButton");
+    removeBtn->setToolTip("Rimuovi la serie selezionata dall'elenco");
+    removeBtn->setToolTip("Rimuovi la serie selezionata dall'elenco");
     connect(removeBtn, &QPushButton::clicked, this, &SeriesManagerWidget::removeSelectedSeries);
 
     buttonLayout->addWidget(addBtn);
@@ -176,7 +183,19 @@ void SeriesManagerWidget::addSeries() {
     SeriesEditorDialog editor({}, true, this);
     if (editor.exec() == QDialog::Accepted) {
         m_seriesData.push_back(editor.resultData());
-        saveCurrentSeriesData(); // Salva ed emette il segnale!
+        saveCurrentSeriesData();
+        filterSeries();
+    }
+}
+
+void SeriesManagerWidget::addSeriesWithUrl(const QString& url) {
+    Core::Series s;
+    s.seriesPageUrl = url.toStdString();
+    s.continueSeries = true;
+    SeriesEditorDialog editor(s, true, this);
+    if (editor.exec() == QDialog::Accepted) {
+        m_seriesData.push_back(editor.resultData());
+        saveCurrentSeriesData();
         filterSeries();
     }
 }
