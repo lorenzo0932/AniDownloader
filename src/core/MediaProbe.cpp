@@ -39,7 +39,7 @@ double getVideoDuration(const std::string& filePath, std::atomic<bool>& stopSign
     {
         std::lock_guard<std::mutex> lock(s_cacheMutex);
         auto it = s_cache.find(filePath);
-        if (it != s_cache.end() && isCacheValid(filePath, it->second)) {
+        if (it != s_cache.end() && isCacheValid(filePath, it->second) && it->second.duration > 0) {
             return it->second.duration;
         }
     }
@@ -67,7 +67,7 @@ std::string getVideoCodec(const std::string& filePath, std::atomic<bool>& stopSi
     {
         std::lock_guard<std::mutex> lock(s_cacheMutex);
         auto it = s_cache.find(filePath);
-        if (it != s_cache.end() && isCacheValid(filePath, it->second)) {
+        if (it != s_cache.end() && isCacheValid(filePath, it->second) && !it->second.codec.empty()) {
             return it->second.codec;
         }
     }
