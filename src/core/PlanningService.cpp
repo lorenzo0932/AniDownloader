@@ -21,6 +21,15 @@ namespace Core {
     };
 
     static std::string escapePath(const std::string& path) {
+#ifdef _WIN32
+        std::string escaped = "\"";
+        for (char c : path) {
+            if (c == '"') escaped += "\\\"";
+            else escaped += c;
+        }
+        escaped += "\"";
+        return escaped;
+#else
         std::string escaped = "'";
         for (char c : path) {
             if (c == '\'') escaped += "'\\''";
@@ -28,6 +37,7 @@ namespace Core {
         }
         escaped += "'";
         return escaped;
+#endif
     }
 
     static FileState checkFileState(const std::string& filePath) {
@@ -44,13 +54,23 @@ namespace Core {
         std::string probeCmd = "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 " + qPath;
         
         std::string codec;
-        FILE* pipe = popen((probeCmd + " 2>/dev/null").c_str(), "r");
-        if (pipe) {
+#ifdef _WIN32
+        auto popen_compat = _popen;
+        auto pclose_compat = _pclose;
+#else
+        auto popen_compat = popen;
+        auto pclose_compat = pclose;
+#endif
+
+        FILE* rawPipe = popen_compat((probeCmd + " 2>/dev/null").c_str(), "r");
+        if (rawPipe) {
+            std::unique_ptr<FILE, decltype(pclose_compat)> pipe(rawPipe, pclose_compat);
             char buffer[128];
-            if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            if (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
                 codec = buffer;
             }
-            int status = pclose(pipe);
+            pipe.release();
+            int status = pclose_compat(rawPipe);
             state.healthy = (status == 0); 
         } else {
             state.healthy = false;

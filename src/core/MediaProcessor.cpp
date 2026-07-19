@@ -3,6 +3,7 @@
     #include <unistd.h>
 #else
     #include <process.h>
+    #include <windows.h>
 #endif
 
 #include "core/MediaProcessor.hpp"
@@ -38,6 +39,17 @@ void MediaProcessor::notifyStop() {
 }
 
 static std::string Q(const std::string& p) {
+#ifdef _WIN32
+    // Su Windows, usiamo i doppi apici per proteggere i percorsi con spazi nella shell cmd.exe
+    std::string escaped = "\"";
+    for (char c : p) {
+        if (c == '"') escaped += "\\\"";
+        else escaped += c;
+    }
+    escaped += "\"";
+    return escaped;
+#else
+    // Su POSIX, usiamo gli apici singoli (più sicuro contro shell injection)
     std::string escaped = "'";
     for (char c : p) {
         if (c == '\'') escaped += "'\\''";
@@ -45,6 +57,7 @@ static std::string Q(const std::string& p) {
     }
     escaped += "'";
     return escaped;
+#endif
 }
 
 static std::string formatFloat(double value) {
@@ -72,17 +85,39 @@ void MediaProcessor::logError(const std::string& seriesName, const std::string& 
 
 int MediaProcessor::runCommand(const std::string& cmd, std::function<void(const std::string&)> onLineRead) {
     std::string fullCmd = cmd + " 2>&1";
-    FILE* pipe = popen(fullCmd.c_str(), "r");
-    if (!pipe) return -1;
+#ifdef _WIN32
+    auto popen_compat = _popen;
+    auto pclose_compat = _pclose;
+#else
+    auto popen_compat = popen;
+    auto pclose_compat = pclose;
+#endif
+
+    FILE* rawPipe = popen_compat(fullCmd.c_str(), "r");
+    if (!rawPipe) return -1;
+
+    // Gestione RAII del pipe tramite std::unique_ptr con custom deleter
+    std::unique_ptr<FILE, decltype(pclose_compat)> pipe(rawPipe, pclose_compat);
+    
     char buffer[512];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
         if (m_stopSignal) break;
         if (onLineRead) onLineRead(std::string(buffer));
     }
-    return pclose(pipe);
+    
+    pipe.release();
+    return pclose_compat(rawPipe);
 }
 
 double MediaProcessor::getRamUsagePercent() {
+#ifdef _WIN32
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    if (GlobalMemoryStatusEx(&memInfo)) {
+        return static_cast<double>(memInfo.dwMemoryLoad);
+    }
+    return 100.0;
+#else
     std::ifstream meminfo("/proc/meminfo");
     if (!meminfo.is_open()) return 100.0;
     std::string line; long total = 1, available = 0;
@@ -91,6 +126,7 @@ double MediaProcessor::getRamUsagePercent() {
         if (line.find("MemAvailable:") == 0) std::sscanf(line.c_str(), "MemAvailable: %ld", &available);
     }
     return ((double)(total - available) / total) * 100.0;
+#endif
 }
 
 double MediaProcessor::getVideoDuration(const std::string& filePath) {
