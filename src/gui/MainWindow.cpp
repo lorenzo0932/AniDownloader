@@ -5,6 +5,7 @@
 #include "gui/SeriesManagerWidget.hpp"
 #include "gui/ImageCache.hpp"
 #include "config/PathHelper.hpp"
+#include "core/UpdateChecker.hpp"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -13,6 +14,7 @@
 #include <QScreen>
 #include <QStyle>
 #include <QMessageBox>
+#include <QDesktopServices>
 #include <QScrollBar>
 #include <QPalette>
 #include <QEvent>
@@ -55,6 +57,21 @@ MainWindow::MainWindow(QWidget *parent)
 
     loadSeriesDataIntoTable();
     restoreGeometryAndState();
+
+    // Controllo aggiornamenti asincrono
+    Core::UpdateChecker::checkForUpdates(ANIDOWNLOADER_VERSION, [this](const Core::UpdateInfo& info) {
+        if (!info.updateAvailable) return;
+        QMetaObject::invokeMethod(this, [this, info]() {
+            QMessageBox::StandardButton reply = QMessageBox::information(this,
+                "Aggiornamento Disponibile",
+                QString("Nuova versione %1 disponibile.\n\nVuoi aprire la pagina di download?")
+                    .arg(QString::fromStdString(info.latestVersion)),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (reply == QMessageBox::Yes) {
+                QDesktopServices::openUrl(QUrl(QString::fromStdString(info.downloadUrl)));
+            }
+        });
+    });
 }
 
 MainWindow::~MainWindow() {}
