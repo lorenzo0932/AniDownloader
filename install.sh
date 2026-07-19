@@ -17,10 +17,27 @@ echo "🛑 Fermo eventuali servizi in esecuzione..."
 systemctl --user stop AniDownloader.timer AniDownloader.service 2>/dev/null
 
 # 1. Compilazione
-echo "📦 Compilazione in corso con Ninja..."
-mkdir -p build && cd build
-cmake .. -G Ninja
-ninja
+echo "📦 Compilazione in corso..."
+BUILD_DIR="build"
+if command -v ninja &>/dev/null; then
+    GENERATOR="Ninja"
+    BUILD_CMD="ninja"
+else
+    GENERATOR="Unix Makefiles"
+    BUILD_CMD="make -j$(nproc)"
+fi
+# Rimuovi cache CMake se il generatore è cambiato
+if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
+    CURRENT_GEN=$(grep CMAKE_MAKE_PROGRAM "$BUILD_DIR/CMakeCache.txt" 2>/dev/null | head -1)
+    if echo "$CURRENT_GEN" | grep -q "ninja" && [ "$GENERATOR" = "Unix Makefiles" ]; then
+        rm -rf "$BUILD_DIR"
+    elif echo "$CURRENT_GEN" | grep -q "make" && [ "$GENERATOR" = "Ninja" ]; then
+        rm -rf "$BUILD_DIR"
+    fi
+fi
+mkdir -p "$BUILD_DIR" && cd "$BUILD_DIR"
+cmake .. -G "$GENERATOR" -DCMAKE_BUILD_TYPE=Release
+$BUILD_CMD
 if [ $? -ne 0 ]; then
     echo "❌ Errore durante la compilazione. Verifica le dipendenze."
     exit 1
