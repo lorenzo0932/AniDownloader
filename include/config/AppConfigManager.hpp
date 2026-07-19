@@ -34,13 +34,14 @@ namespace Config {
         void set(const std::string& key, const nlohmann::json& value);
         nlohmann::json getAll() const;
 
+        int getMaxNetworkRetries() const;
+        int getRetryDelayMs() const;
+
         /**
          * @brief Genera la strategia ottimale basata sulla CPU rilevata e sulle impostazioni utente.
          * Applica la logica "Sweet Spot" per x265 (6-8 thread per processo).
          */
         ExecutionStrategy getExecutionStrategy(size_t pendingTasks, bool burstMode) const;
-
-        void logFinalResult(const std::string& seriesName, double dlTime, double convTime) const;
 
     private:
         std::filesystem::path m_configPath;

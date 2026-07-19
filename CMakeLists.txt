@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.17)
-project(AniDownloaderCpp LANGUAGES CXX) # Specifica CXX per saltare i controlli sul compilatore C
+project(AniDownloaderCpp VERSION 2.0.0 LANGUAGES CXX)
 
 # --- STANDARD C++ ---
 set(CMAKE_CXX_STANDARD 17)
@@ -64,7 +64,7 @@ FetchContent_MakeAvailable(cpr)
 
 # Qt6 & Threads
 find_package(Threads REQUIRED)
-find_package(Qt6 COMPONENTS Widgets Concurrent REQUIRED)
+find_package(Qt6 COMPONENTS Widgets REQUIRED)
 
 # --- SORGENTI ---
 # Ti consiglio di usare una variabile per i file header e una per i sorgenti
@@ -72,12 +72,17 @@ set(HEADERS
     include/gui/MainWindow.hpp
     include/gui/DownloadWorker.hpp
     include/gui/Styles.hpp
+    include/gui/ScaleHelper.hpp
     include/gui/Widgets.hpp
+    include/gui/SlidingContainer.hpp
     include/gui/SettingsDialog.hpp
     include/gui/SeriesManagerWidget.hpp
     include/gui/SeriesEditorDialog.hpp
     include/core/ExecutionEngine.hpp
-    include/gui/ImageCache.hpp # Fondamentale per il MOC
+    include/core/ProcessUtils.hpp
+    include/core/MediaProbe.hpp
+    include/core/UpdateChecker.hpp
+    include/gui/ImageCache.hpp
 )
 
 set(SOURCES
@@ -94,15 +99,20 @@ set(SOURCES
     src/gui/MainWindow.cpp
     src/gui/DownloadWorker.cpp
     src/gui/Styles.cpp
+    src/gui/ScaleHelper.cpp
     src/gui/Widgets.cpp
+    src/gui/SlidingContainer.cpp
     src/gui/SettingsDialog.cpp
     src/gui/SeriesManagerWidget.cpp
     src/gui/SeriesEditorDialog.cpp
-    src/core/ExecutionEngine.cpp)
+    src/core/ExecutionEngine.cpp
+    src/core/Logger.cpp
+    src/core/ProcessUtils.cpp
+    src/core/MediaProbe.cpp
+    src/core/UpdateChecker.cpp)
 
 # --- TARGET ---
-# Aggiungi WIN32 se vuoi che su Windows non appaia il terminale (GUI pura)
-add_executable(AniDownloader WIN32 ${SOURCES} ${HEADERS})
+add_executable(AniDownloader $<$<PLATFORM_ID:Windows>:WIN32> ${SOURCES} ${HEADERS})
 
 # Attiva l'elaborazione automatica di Qt (MOC, RCC, UIC)
 set_target_properties(AniDownloader PROPERTIES
@@ -119,10 +129,8 @@ target_link_libraries(AniDownloader
     cpr::cpr
     Threads::Threads
     Qt6::Widgets
-    Qt6::Concurrent
 )
 
-# --- INSTALLAZIONE ---
-if(UNIX AND NOT APPLE)
-    install(TARGETS AniDownloader RUNTIME DESTINATION bin)
-endif()
+target_compile_definitions(AniDownloader PRIVATE
+    ANIDOWNLOADER_VERSION="${PROJECT_VERSION}"
+)

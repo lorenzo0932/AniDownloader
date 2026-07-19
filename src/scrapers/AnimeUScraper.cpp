@@ -1,9 +1,11 @@
 #include "scrapers/AnimeUScraper.hpp"
 #include "scrapers/ScraperUtils.hpp"
+#include "core/Logger.hpp"
 #include <cpr/cpr.h>
 #include <regex>
-#include <iostream>
 #include <algorithm>
+#include <thread>
+#include <chrono>
 
 namespace Core {
 
@@ -12,16 +14,20 @@ DownloadTask AnimeUScraper::planSeriesTask(const Series& series) {
     task.shouldProcess = false;
 
     try {
-        cpr::Response r = cpr::Get(cpr::Url{series.seriesPageUrl}, 
-                                 cpr::Header{{"User-Agent", "Mozilla/5.0"}},
-                                 cpr::VerifySsl{false});
+        cpr::Session session;
+        session.SetVerifySsl(cpr::VerifySsl{false});
+        session.SetHeader({{"User-Agent", ScraperUtils::platformUserAgent()}});
 
-        if (r.status_code != 200) return task;
+        cpr::Response seriesPageResp = ScraperUtils::httpGetWithRetry(
+            cpr::Url{series.seriesPageUrl},
+            {{"User-Agent", ScraperUtils::platformUserAgent()}},
+            3, 2000
+        );
+        if (seriesPageResp.status_code != 200) return task;
 
-        // USARE R"raw(...)raw" PER EVITARE ERRORI DI SINTASSI NELLE REGEX
         std::regex epRegex(R"raw(class="episode-item"[^>]*href="([^"]+)"[^>]*>.*?(\d+))raw");
         
-        auto words_begin = std::sregex_iterator(r.text.begin(), r.text.end(), epRegex);
+        auto words_begin = std::sregex_iterator(seriesPageResp.text.begin(), seriesPageResp.text.end(), epRegex);
         auto words_end = std::sregex_iterator();
 
         struct Ep { int n; std::string u; };
@@ -40,34 +46,37 @@ DownloadTask AnimeUScraper::planSeriesTask(const Series& series) {
         for (const auto& ep : eps) {
             int local = series.continueSeries ? (ep.n + series.passedEpisodes) : ep.n;
             if (local >= next) {
-                // IL LINK TROVATO NON È IL VIDEO DIRETTO.
-                // DOBBIAMO ANDARE SULLA PAGINA DELL'EPISODIO, TROVARE L'IFRAME, CARICARE L'IFRAME 
-                // E ESTRARRE 'window.downloadUrl'.
-                
-                cpr::Response epPage = cpr::Get(cpr::Url{ep.u}, 
-                                             cpr::Header{{"User-Agent", "Mozilla/5.0"}},
-                                             cpr::VerifySsl{false});
+                cpr::Response epPage = ScraperUtils::httpGetWithRetry(
+                    cpr::Url{ep.u},
+                    {{"User-Agent", ScraperUtils::platformUserAgent()}},
+                    3, 2000
+                );
                 
                 if (epPage.status_code != 200) continue;
 
-                // Cerca l'iframe con id="embed"
                 std::regex iframeRegex(R"raw(<iframe[^>]*id="embed"[^>]*src="([^"]+)")raw");
                 std::smatch iframeMatch;
-                if (!std::regex_search(epPage.text, iframeMatch, iframeRegex)) continue;
+                if (!std::regex_search(epPage.text, iframeMatch, iframeRegex)) {
+                    Logger::warn(series.name + ": Ep " + std::to_string(ep.n) + " - iframe non trovato");
+                    continue;
+                }
 
                 std::string iframeUrl = iframeMatch[1].str();
                 
-                // Ora carichiamo l'URL dell'iframe
-                cpr::Response iframePage = cpr::Get(cpr::Url{iframeUrl}, 
-                                                 cpr::Header{{"User-Agent", "Mozilla/5.0"}},
-                                                 cpr::VerifySsl{false});
+                cpr::Response iframePage = ScraperUtils::httpGetWithRetry(
+                    cpr::Url{iframeUrl},
+                    {{"User-Agent", ScraperUtils::platformUserAgent()}},
+                    3, 2000
+                );
                 
                 if (iframePage.status_code != 200) continue;
 
-                // Cerchiamo window.downloadUrl = "..."
                 std::regex dlRegex(R"raw(window\.downloadUrl\s*=\s*"([^"]+)")raw");
                 std::smatch dlMatch;
-                if (!std::regex_search(iframePage.text, dlMatch, dlRegex)) continue;
+                if (!std::regex_search(iframePage.text, dlMatch, dlRegex)) {
+                    Logger::warn(series.name + ": Ep " + std::to_string(ep.n) + " - download URL non trovato");
+                    continue;
+                }
 
                 task.videoUrl = dlMatch[1].str();
                 task.episodeNumber = local;

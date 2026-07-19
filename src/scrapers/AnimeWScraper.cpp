@@ -1,10 +1,10 @@
 #include "scrapers/AnimeWScraper.hpp"
 #include "scrapers/ScraperUtils.hpp"
+#include "core/Logger.hpp"
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <chrono>
-#include <iostream>
 #include <regex>
 
 using json = nlohmann::json;
@@ -72,13 +72,15 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
 
     // --- FASE 1: ANALISI STATICA VELOCE CON CPR (SENZA AVVIARE CHROME) ---
     cpr::Header staticHeaders = {
-        {"User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"},
+        {"User-Agent", ScraperUtils::platformUserAgent()},
         {"Referer", "https://www.animeworld.so/"}
     };
     
     std::string html = "";
     try {
-        cpr::Response r = cpr::Get(cpr::Url{series.seriesPageUrl}, staticHeaders, cpr::VerifySsl{false}, cpr::Timeout{10000});
+        cpr::Response r = ScraperUtils::httpGetWithRetry(
+            cpr::Url{series.seriesPageUrl}, staticHeaders, 3, 2000
+        );
         if (r.status_code == 200) {
             html = r.text;
         }
@@ -149,7 +151,7 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
                         "--autoplay-policy=no-user-gesture-required",
                         "--disable-blink-features=AutomationControlled",
                         "--mute-audio",
-                        "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                        "--user-agent=" + ScraperUtils::platformUserAgent()
                     }},
                     {"excludeSwitches", {"enable-automation"}},
                     {"perfLoggingPrefs", {
@@ -163,12 +165,23 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
         }}
     };
     
-    json sessionRes = webdriverCommand("/session", "POST", caps);
-    if (!sessionRes.contains("value") || !sessionRes["value"].contains("sessionId")) {
+    json sessionRes = json();
+    std::string sessionId;
+    for (int attempt = 1; attempt <= 3; ++attempt) {
+        sessionRes = webdriverCommand("/session", "POST", caps);
+        if (sessionRes.contains("value") && sessionRes["value"].contains("sessionId")) {
+            sessionId = sessionRes["value"]["sessionId"].get<std::string>();
+            break;
+        }
+        if (attempt < 3) {
+            Core::Logger::warn("ChromeDriver session fallita, tentativo " + std::to_string(attempt) + "/3");
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+    }
+    if (sessionId.empty()) {
         task.errorMessage = "Impossibile connettersi a ChromeDriver locale (Porta 9515).";
         return task;
     }
-    std::string sessionId = sessionRes["value"]["sessionId"].get<std::string>();
 
     try {
         // Navighiamo DIRETTAMENTE alla pagina dell'episodio calcolato, saltando la homepage della serie!

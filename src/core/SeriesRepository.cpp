@@ -1,7 +1,7 @@
 #include "core/SeriesRepository.hpp"
+#include "core/Logger.hpp"
 #include <fstream>
-#include <iostream>
-#include <nlohmann/json.hpp> // Assicurati che sia incluso
+#include <nlohmann/json.hpp>
 
 namespace Core {
 
@@ -31,7 +31,7 @@ namespace Core {
             inFile >> jsonArray;
             m_cache = jsonArray.get<std::vector<Series>>();
         } catch (const std::exception& e) {
-            std::cerr << "Errore caricamento dati: " << e.what() << std::endl;
+            Logger::error("Errore caricamento dati: " + std::string(e.what()));
             static const std::vector<Series> emptyFallback;
             return emptyFallback;
         }
@@ -52,7 +52,7 @@ namespace Core {
                 m_cache = seriesData; // Aggiorna la cache solo dopo il successo
             }
         } catch (const std::exception& e) {
-            std::cerr << "Errore salvataggio dati: " << e.what() << std::endl;
+            Logger::error("Errore salvataggio dati: " + std::string(e.what()));
         }
     }
 

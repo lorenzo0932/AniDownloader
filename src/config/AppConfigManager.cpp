@@ -1,11 +1,9 @@
 #include "config/AppConfigManager.hpp"
 #include "config/PathHelper.hpp"
+#include "core/Logger.hpp"
 #include <fstream>
-#include <iostream>
 #include <thread>
 #include <algorithm>
-#include <chrono>
-#include <iomanip>
 #include <cmath>
 
 namespace Config {
@@ -15,7 +13,9 @@ AppConfigManager::AppConfigManager(fs::path configPath)
     : m_configPath(configPath) {
     try {
         fs::create_directories(PathHelper::getConfigDir());
-    } catch (...) {}
+    } catch (const std::exception& e) {
+        Core::Logger::error("Impossibile creare cartella config: " + std::string(e.what()));
+    }
     loadConfig();
 }
 
@@ -27,7 +27,9 @@ nlohmann::json AppConfigManager::getDefaultConfig() {
         {"is_json_path_customized", false},
         {"convert_to_h265", true},
         {"num_chunks", 0},              // 0 = Modalità Auto (Dinamica)
-        {"auto_cleanup_on_close", true} // Pulizia file parziali
+        {"auto_cleanup_on_close", true}, // Pulizia file parziali
+        {"max_network_retries", 3},      // Retry HTTP/aria2c
+        {"retry_delay_ms", 2000}         // Delay iniziale tra retry (exponential backoff)
     };
 }
 
@@ -44,7 +46,8 @@ void AppConfigManager::loadConfig() {
         for (auto& [key, value] : defaults.items()) {
             if (!m_config.contains(key)) m_config[key] = value;
         }
-    } catch (...) {
+    } catch (const std::exception& e) {
+        Core::Logger::error("Errore parsing config JSON: " + std::string(e.what()));
         m_config = getDefaultConfig();
         saveConfig(m_config);
     }
@@ -55,7 +58,9 @@ void AppConfigManager::saveConfig(const nlohmann::json& configData) {
         fs::create_directories(m_configPath.parent_path());
         std::ofstream f(m_configPath);
         f << configData.dump(4);
-    } catch (...) {}
+    } catch (const std::exception& e) {
+        Core::Logger::error("Impossibile salvare config: " + std::string(e.what()));
+    }
 }
 
 void AppConfigManager::set(const std::string& key, const nlohmann::json& value) {
@@ -64,6 +69,9 @@ void AppConfigManager::set(const std::string& key, const nlohmann::json& value) 
 }
 
 nlohmann::json AppConfigManager::getAll() const { return m_config; }
+
+int AppConfigManager::getMaxNetworkRetries() const { return get<int>("max_network_retries", 3); }
+int AppConfigManager::getRetryDelayMs() const { return get<int>("retry_delay_ms", 2000); }
 
 // --- LOGICA DI CALCOLO STRATEGIA ADATTIVA ---
 
@@ -145,19 +153,6 @@ ExecutionStrategy AppConfigManager::getExecutionStrategy(size_t pendingTasks, bo
 
     return strategy;
 }
-void AppConfigManager::logFinalResult(const std::string& seriesName, double dlTime, double convTime) const {
-    try {
-        fs::path logPath = get<std::string>("log_file_path", PathHelper::getLogFilePath().string());
-        std::ofstream logFile(logPath, std::ios::app);
-        
-        if (logFile.is_open()) {
-            auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            logFile << "[" << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S") << "] "
-                    << std::left << std::setw(45) << seriesName 
-                    << " | DL: " << std::fixed << std::setprecision(2) << std::setw(8) << dlTime << "s"
-                    << " | Conv: " << std::setw(8) << convTime << "s" << std::endl;
-        }
-    } catch (...) {}
-}
+
 
 } // namespace Config

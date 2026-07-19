@@ -1,7 +1,6 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <thread>
 #include <mutex>
 #include <map>
 #include <atomic>
@@ -9,10 +8,18 @@
 #include <chrono>
 #include "core/SeriesRepository.hpp"
 #include "core/ExecutionEngine.hpp"
+#include "core/Logger.hpp"
 #include "config/AppConfigManager.hpp"
+#include "config/PathHelper.hpp"
 #include "gui/MainWindow.hpp"
+#include "gui/ScaleHelper.hpp"
 #include <QApplication>
+#include <QGuiApplication>
 #include <QSurfaceFormat>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 using namespace Core;
 
@@ -65,8 +72,13 @@ int main(int argc, char* argv[]) {
     }
 
     if (guiMode) {
+        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+            Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+
         QApplication app(argc, argv);
         app.setDesktopSettingsAware(true);
+
+        Gui::ScaleHelper::init();
 
         Gui::MainWindow window;
         window.show();
@@ -74,7 +86,20 @@ int main(int argc, char* argv[]) {
     }
 
     // --- LOGICA CLI ---
+#ifdef _WIN32
+    // Abilita Virtual Terminal Processing per supportare ANSI escape codes su Windows 10+
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hOut, &dwMode)) {
+            dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+            SetConsoleMode(hOut, dwMode);
+        }
+    }
+#endif
+
     Config::AppConfigManager configManager;
+    Core::Logger::init(configManager.get<std::string>("log_file_path", Config::PathHelper::getLogFilePath().string()));
     SeriesRepository repo(configManager.get<std::string>("json_file_path", ""));
     auto seriesList = repo.loadSeriesData();
     

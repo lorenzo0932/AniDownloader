@@ -1,5 +1,6 @@
 #include "core/ExecutionEngine.hpp"
 #include "core/PlanningService.hpp"
+#include "core/Logger.hpp"
 #include "scrapers/ScraperUtils.hpp"
 #include <future>
 #include <mutex>
@@ -84,7 +85,7 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
 
     std::atomic<size_t> nextIndex(0);
     std::vector<std::future<void>> workers;
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < strategy.maxConcurrentTasks; ++i) {
         workers.push_back(std::async(std::launch::async, [&]() {
             while (true) {
                 size_t idx = nextIndex.fetch_add(1);
@@ -107,7 +108,7 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
 
                 TaskReport report{item.first.name, res.success, res.downloadTime, res.conversionTime, res.errorMessage};
                 if (res.success) {
-                    m_config.logFinalResult(report.name, report.dlTime, report.convTime);
+                    Core::Logger::result(report.name, report.dlTime, report.convTime);
                 }
                 if (onTaskFinished) onTaskFinished(report);
             }
