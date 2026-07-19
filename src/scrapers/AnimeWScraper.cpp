@@ -133,6 +133,9 @@ DownloadTask AnimeWScraper::planSeriesTask(const Series& series) {
     }
 
     // --- FASE 2: AVVIO CHROMEDRIVER (SOLO SE C'E' UN NUOVO EPISODIO) ---
+    // Regolazione dinamica della concorrenza degli scraper basata sull'hardware della CPU
+    ScraperSemaphoreGuard scraperGuard;
+    
     // std::cout << "[DEBUG] Rilevato nuovo episodio: Ep." << finalEpNum << ". Avvio ChromeDriver..." << std::endl;
 
     json caps = {
