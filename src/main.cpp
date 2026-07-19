@@ -6,8 +6,10 @@
 #include <atomic>
 #include <iomanip>
 #include <chrono>
+#include <csignal>
 #include "core/SeriesRepository.hpp"
 #include "core/ExecutionEngine.hpp"
+#include "core/MediaProcessor.hpp"
 #include "core/Logger.hpp"
 #include "config/AppConfigManager.hpp"
 #include "config/PathHelper.hpp"
@@ -28,6 +30,23 @@ std::mutex g_statusMutex;
 std::map<std::string, std::string> g_statusMap;
 std::vector<TaskReport> g_reports;
 auto g_startTime = std::chrono::steady_clock::now();
+std::atomic<bool> *g_stopPtr = nullptr;
+
+static void cliSignalHandler(int) {
+    if (g_stopPtr) *g_stopPtr = true;
+    #ifndef _WIN32
+        pid_t myPid = getpid();
+        std::string killCmd = "pids=$(pgrep -P " + std::to_string(myPid) +
+            " 2>/dev/null); for pid in $pids; do pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; done";
+        std::system(killCmd.c_str());
+    #else
+        DWORD myPid = GetCurrentProcessId();
+        std::string killCmd = "taskkill /F /FI \"PPID eq " + std::to_string(myPid) +
+            "\" /T >nul 2>&1";
+        std::system(killCmd.c_str());
+    #endif
+    MediaProcessor::notifyStop();
+}
 
 /**
  * @brief Aggiorna la dashboard nel terminale.
@@ -113,6 +132,19 @@ int main(int argc, char* argv[]) {
     
     ExecutionEngine engine(configManager);
     std::atomic<bool> stop(false);
+    g_stopPtr = &stop;
+    #ifndef _WIN32
+        struct sigaction sa{};
+        sa.sa_handler = cliSignalHandler;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGINT, &sa, nullptr);
+        sigaction(SIGTERM, &sa, nullptr);
+    #else
+        SetConsoleCtrlHandler([](DWORD) -> BOOL {
+            cliSignalHandler(0);
+            return TRUE;
+        }, TRUE);
+    #endif
 
     engine.run(seriesList, burstMode, stop,
         // 4. ProgressCb
