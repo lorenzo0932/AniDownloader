@@ -57,6 +57,7 @@ namespace Gui {
         void handleTaskSkipped(const QString& seriesName, const QString& reason);
         void updateOverallStatus(const QString& status);
         void onDownloadFinished();
+        void onProgressDelayTimer();
         
         // UI Interaction
         void onSeriesSelected();
@@ -117,7 +118,9 @@ namespace Gui {
         QLabel *m_overallStatusLabel;
         QProgressBar *m_globalProgressBar;
         QMap<QString, int> m_seriesProgressMap;
-        int m_totalSeriesCount = 0;
+        QMap<QString, int> m_seriesPhaseMode;
+        bool m_globalProgressActive = false;
+        QTimer *m_progressDelayTimer;
 
         // --- SYSTEM TRAY ---
         QSystemTrayIcon *m_trayIcon;

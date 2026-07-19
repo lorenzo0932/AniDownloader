@@ -47,6 +47,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_themeDebounceTimer->setSingleShot(true);
     connect(m_themeDebounceTimer, &QTimer::timeout, this, &MainWindow::applyThemeOnEvent);
 
+    m_progressDelayTimer = new QTimer(this);
+    m_progressDelayTimer->setSingleShot(true);
+    connect(m_progressDelayTimer, &QTimer::timeout, this, &MainWindow::onProgressDelayTimer);
+
     loadConfigPaths();
     m_seriesRepository = std::make_unique<Core::SeriesRepository>(m_jsonFilePath.toStdString());
     checkSeriesFile();
@@ -219,6 +223,7 @@ void MainWindow::initDownloadView(QWidget *p) {
     m_globalProgressBar->setValue(0);
     m_globalProgressBar->setVisible(false);
     m_globalProgressBar->setTextVisible(true);
+    m_globalProgressBar->setFormat("%p%");
     m_globalProgressBar->setFixedHeight(ScaleHelper::px(22));
     tl->addWidget(m_globalProgressBar);
 
@@ -254,35 +259,59 @@ void MainWindow::updateSeriesStatus(const QString& name, const QString& msg) {
         newPriority = 3;
     }
 
+    int p = 0;
+    QRegularExpression re("(\\d+)%");
+    QRegularExpressionMatch m = re.match(msg);
+    if (m.hasMatch()) p = m.captured(1).toInt();
+
     for (int i = 0; i < m_tableWidget->rowCount(); ++i) {
         if (m_tableWidget->item(i, 0)->text() == name) {
             auto *item = dynamic_cast<ProgressBarTableWidgetItem*>(m_tableWidget->item(i, 1));
             if (item) {
-                int p = 0;
-                QRegularExpression re("(\\d+)%");
-                QRegularExpressionMatch m = re.match(msg);
-                if (m.hasMatch()) p = m.captured(1).toInt();
-
                 item->setText(isActive ? msg.split(" - ").at(0) : msg);
                 item->setData(Qt::UserRole + 1, p);
                 item->setData(Qt::UserRole + 2, isActive);
                 item->setPriority(newPriority);
-
-                if (isActive && p > 0) {
-                    m_seriesProgressMap[name] = p;
-                } else if (newPriority >= 2) {
-                    m_seriesProgressMap[name] = 100;
-                }
             }
             break;
         }
     }
 
-    if (m_totalSeriesCount > 0) {
-        int sum = 0;
-        for (int v : m_seriesProgressMap) sum += v;
-        int avg = sum / m_totalSeriesCount;
-        m_globalProgressBar->setValue(avg);
+    if (newPriority == 3 || newPriority == 1) {
+        m_seriesProgressMap.remove(name);
+        m_seriesPhaseMode.remove(name);
+    } else if (msg.startsWith("MODE:")) {
+        QString mode = msg.mid(5);
+        if (mode == "DL") m_seriesPhaseMode[name] = 0;
+        else if (mode == "BOTH") m_seriesPhaseMode[name] = 1;
+        else if (mode == "CONV") m_seriesPhaseMode[name] = 2;
+        m_seriesProgressMap[name] = 0;
+    } else {
+        int mode = m_seriesPhaseMode.value(name, 1);
+        if (statusLower.contains("dl") && p > 0) {
+            if (mode == 1)
+                m_seriesProgressMap[name] = p / 2;
+            else
+                m_seriesProgressMap[name] = p;
+        } else if (statusLower.contains("conv") && p > 0) {
+            if (mode == 1)
+                m_seriesProgressMap[name] = 50 + p / 2;
+            else
+                m_seriesProgressMap[name] = p;
+        } else if (newPriority == 2) {
+            m_seriesProgressMap[name] = 100;
+        }
+    }
+
+    if (!m_seriesProgressMap.isEmpty()) {
+        if (!m_globalProgressActive) {
+            if (!m_progressDelayTimer->isActive())
+                m_progressDelayTimer->start(1500);
+        } else {
+            int sum = 0;
+            for (int v : m_seriesProgressMap) sum += v;
+            m_globalProgressBar->setValue(sum / m_seriesProgressMap.size());
+        }
     }
 
     m_tableWidget->sortItems(1, Qt::AscendingOrder);
@@ -295,10 +324,9 @@ void MainWindow::startDownload() {
     setUiStateForDownload(true);
     m_logOutput->clear();
     m_seriesProgressMap.clear();
-    m_totalSeriesCount = static_cast<int>(m_seriesData.size());
-    for (const auto& s : m_seriesData)
-        m_seriesProgressMap[QString::fromStdString(s.name)] = 0;
-    m_globalProgressBar->setRange(0, 100);
+    m_globalProgressActive = false;
+    m_progressDelayTimer->stop();
+    m_globalProgressBar->setRange(0, 0);
     m_globalProgressBar->setValue(0);
     m_globalProgressBar->setVisible(true);
 
@@ -323,18 +351,13 @@ void MainWindow::startDownload() {
 void MainWindow::onDownloadFinished() {
     setUiStateForDownload(false);
     m_globalProgressBar->setVisible(false);
+    m_globalProgressActive = false;
+    m_progressDelayTimer->stop();
     m_seriesProgressMap.clear();
+    m_seriesPhaseMode.clear();
     bool interrupted = m_overallStatusLabel->text().contains("Interruzione");
     QString statusMsg = interrupted ? "Processo interrotto." : "Processo completato.";
     updateOverallStatus(statusMsg);
-    if (m_trayIcon && m_trayIcon->isVisible()) {
-        m_trayIcon->showMessage(
-            interrupted ? "Interrutto" : "Completato",
-            statusMsg,
-            interrupted ? QSystemTrayIcon::Warning : QSystemTrayIcon::Information,
-            5000
-        );
-    }
 
     if (m_downloadThread) {
         m_downloadThread->quit();
@@ -342,6 +365,16 @@ void MainWindow::onDownloadFinished() {
         m_downloadThread->deleteLater();
         m_downloadThread = nullptr;
         m_downloadWorker = nullptr;
+    }
+}
+
+void MainWindow::onProgressDelayTimer() {
+    m_globalProgressActive = true;
+    m_globalProgressBar->setRange(0, 100);
+    if (!m_seriesProgressMap.isEmpty()) {
+        int sum = 0;
+        for (int v : m_seriesProgressMap) sum += v;
+        m_globalProgressBar->setValue(sum / m_seriesProgressMap.size());
     }
 }
 
@@ -440,9 +473,6 @@ void MainWindow::handleSeriesFinished(const QString& n, const QString& p, double
 void MainWindow::handleTaskSkipped(const QString& n, const QString& r) {
     m_logOutput->append("🚫 SKIPPED [" + n + "]: " + r);
     updateSeriesStatus(n, "🚫 Saltato");
-    if (m_trayIcon && m_trayIcon->isVisible()) {
-        m_trayIcon->showMessage("Saltato", n + " — " + r, QSystemTrayIcon::Information, 3000);
-    }
 }
 
 void MainWindow::updateOverallStatus(const QString& s) {

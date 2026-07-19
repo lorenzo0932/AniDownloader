@@ -73,6 +73,13 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
         }
     }
 
+    if (needsDownload && needsConversion)
+        m_progressCallback(series.name, "MODE:BOTH");
+    else if (needsDownload)
+        m_progressCallback(series.name, "MODE:DL");
+    else
+        m_progressCallback(series.name, "MODE:CONV");
+
     // --- FASE 1: DOWNLOAD CON ARIA2C ---
     auto startDl = std::chrono::steady_clock::now();
     if (needsDownload) {
