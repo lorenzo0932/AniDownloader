@@ -30,6 +30,9 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
         std::system("pgrep -x chromedriver > /dev/null || chromedriver --port=9515 > /dev/null 2>&1 &");
         // Piccolo ritardo (400ms) per permettere al server ChromeDriver di inizializzarsi
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    #else
+        std::system("tasklist /FI \"IMAGENAME eq chromedriver.exe\" 2>NUL | find /I /N \"chromedriver.exe\" >NUL || start /B chromedriver --port=9515 >NUL 2>&1");
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
     #endif
 
     std::vector<std::pair<Series, DownloadTask>> toProcess;
