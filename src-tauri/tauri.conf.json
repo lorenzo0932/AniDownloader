@@ -1,0 +1,40 @@
+{
+  "productName": "AniDownloader",
+  "version": "2.0.0",
+  "identifier": "com.anidownloader.app",
+  "build": {
+    "frontendDist": "../web/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "cd ../web && npm run dev",
+    "beforeBuildCommand": "cd ../web && npm install && npm run build"
+  },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["binaries/AniDownloader"],
+    "targets": ["deb", "appimage", "msi", "dmg"]
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AniDownloader",
+        "width": 1100,
+        "height": 750,
+        "minWidth": 850,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/32x32.png",
+      "iconAsTemplate": true
+    }
+  }
+}

@@ -128,10 +128,41 @@ target_compile_definitions(AniDownloader PRIVATE
     ANIDOWNLOADER_VERSION="${PROJECT_VERSION}"
 )
 
-# ─── COPIA FRONTEND IN build/frontend/ ───
+# ─── TARGET TRIPLE PER SIDECAR TAURI ───
+if(WIN32)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(TAURI_TARGET "x86_64-pc-windows-msvc")
+    else()
+        set(TAURI_TARGET "i686-pc-windows-msvc")
+    endif()
+elseif(APPLE)
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+        set(TAURI_TARGET "aarch64-apple-darwin")
+    else()
+        set(TAURI_TARGET "x86_64-apple-darwin")
+    endif()
+else()
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+        set(TAURI_TARGET "aarch64-unknown-linux-gnu")
+    else()
+        set(TAURI_TARGET "x86_64-unknown-linux-gnu")
+    endif()
+endif()
+
+# ─── COPIA FRONTEND IN build/frontend/ (per modalità --web standalone) ───
 add_custom_command(TARGET AniDownloader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/web/dist"
         "${CMAKE_BINARY_DIR}/frontend"
     COMMENT "Copying frontend to build/frontend/"
+)
+
+# ─── COPIA SIDECAR IN src-tauri/binaries/ (per Tauri) ───
+add_custom_command(TARGET AniDownloader POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_SOURCE_DIR}/src-tauri/binaries"
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE:AniDownloader>"
+        "${CMAKE_SOURCE_DIR}/src-tauri/binaries/AniDownloader-${TAURI_TARGET}$<$<PLATFORM_ID:Windows>:.exe>"
+    COMMENT "Copying sidecar to src-tauri/binaries/AniDownloader-${TAURI_TARGET}"
 )
