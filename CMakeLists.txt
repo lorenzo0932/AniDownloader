@@ -72,23 +72,11 @@ FetchContent_MakeAvailable(httplib)
 # OpenSSL (per AES-256-GCM e PBKDF2)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
-# Qt6 & Threads
+# Threads
 find_package(Threads REQUIRED)
-find_package(Qt6 COMPONENTS Widgets REQUIRED)
 
 # --- SORGENTI ---
-# Ti consiglio di usare una variabile per i file header e una per i sorgenti
 set(HEADERS
-    include/gui/MainWindow.hpp
-    include/gui/DownloadWorker.hpp
-    include/gui/Styles.hpp
-    include/gui/ScaleHelper.hpp
-    include/gui/Widgets.hpp
-    include/gui/SlidingContainer.hpp
-    include/gui/SettingsDialog.hpp
-    include/gui/SeriesManagerWidget.hpp
-    include/gui/SeriesEditorDialog.hpp
-    include/gui/ImageCache.hpp
     include/core/ExecutionEngine.hpp
     include/core/ProcessUtils.hpp
     include/core/MediaProbe.hpp
@@ -111,15 +99,6 @@ set(SOURCES
     src/scrapers/ScraperUtils.cpp
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
-    src/gui/MainWindow.cpp
-    src/gui/DownloadWorker.cpp
-    src/gui/Styles.cpp
-    src/gui/ScaleHelper.cpp
-    src/gui/Widgets.cpp
-    src/gui/SlidingContainer.cpp
-    src/gui/SettingsDialog.cpp
-    src/gui/SeriesManagerWidget.cpp
-    src/gui/SeriesEditorDialog.cpp
     src/core/ExecutionEngine.cpp
     src/core/Logger.cpp
     src/core/ProcessUtils.cpp
@@ -134,13 +113,6 @@ set(SOURCES
 # --- TARGET ---
 add_executable(AniDownloader $<$<PLATFORM_ID:Windows>:WIN32> ${SOURCES} ${HEADERS})
 
-# Attiva l'elaborazione automatica di Qt (MOC, RCC, UIC)
-set_target_properties(AniDownloader PROPERTIES
-    AUTOMOC ON
-    AUTORCC ON
-    AUTOUIC ON
-)
-
 target_include_directories(AniDownloader PRIVATE include src)
 
 target_link_libraries(AniDownloader 
@@ -149,7 +121,6 @@ target_link_libraries(AniDownloader
     cpr::cpr
     httplib::httplib
     Threads::Threads
-    Qt6::Widgets
     OpenSSL::Crypto
 )
 

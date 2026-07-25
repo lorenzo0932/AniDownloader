@@ -15,11 +15,6 @@
 #include "config/AppConfigManager.hpp"
 #include "config/PathHelper.hpp"
 #include "web/WebServer.hpp"
-#include "gui/MainWindow.hpp"
-#include "gui/ScaleHelper.hpp"
-#include <QApplication>
-#include <QGuiApplication>
-#include <QSurfaceFormat>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -73,17 +68,7 @@ void refreshTerminal(bool burst) {
 }
 
 int main(int argc, char* argv[]) {
-    // --- OTTIMIZZAZIONI HARDWARE UI (Qt 6) ---
-    // In Qt 6, l'HighDPI è attivo di default, non serve richiamarlo.
-    
-    // Configuriamo la superficie di rendering per la massima fluidità
-    QSurfaceFormat format;
-    format.setSamples(4);      // Anti-aliasing hardware
-    format.setSwapInterval(1); // Abilita V-Sync
-    QSurfaceFormat::setDefaultFormat(format);
-
     bool burstMode = false;
-    bool guiMode = false;
     bool webMode = false;
     int webPort = 8989;
 
@@ -91,7 +76,6 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--burst") burstMode = true;
-        if (arg == "--gui") guiMode = true;
         if (arg == "--web") webMode = true;
         if (arg == "--port" && i + 1 < argc) {
             webPort = std::stoi(argv[++i]);
@@ -141,20 +125,6 @@ int main(int argc, char* argv[]) {
         server->stop();
         if (serverThread.joinable()) serverThread.join();
         return 0;
-    }
-
-    if (guiMode) {
-        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
-            Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
-
-        QApplication app(argc, argv);
-        app.setDesktopSettingsAware(true);
-
-        Gui::ScaleHelper::init();
-
-        Gui::MainWindow window;
-        window.show();
-        return app.exec();
     }
 
     // --- LOGICA CLI ---

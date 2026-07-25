@@ -180,28 +180,7 @@ if (Test-Path $IconSource) {
     Copy-Item -Path $IconSource -Destination $IconDest -Force
 }
 
-# ─── 9. windeployqt ───
-Write-Host "Copio DLL Qt..." -ForegroundColor Yellow
-$windeployqt = $null
-$qtPaths = @(
-    "$env:QT_ROOT_DIR\bin\windeployqt.exe",
-    "$env:Qt6_DIR\..\..\..\bin\windeployqt.exe",
-    "C:\Qt\6*\msvc*\bin\windeployqt.exe",
-    "$env:LOCALAPPDATA\Qt\6*\msvc*\bin\windeployqt.exe"
-)
-foreach ($pattern in $qtPaths) {
-    $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($found) { $windeployqt = $found.FullName; break }
-}
-if (-not $windeployqt) {
-    $windeployqt = (Get-Command windeployqt.exe -ErrorAction SilentlyContinue).Source
-}
-if ($windeployqt) {
-    & $windeployqt "$InstallDir\$BinName" --dir $InstallDir 2>$null
-    Write-Host "  DLL Qt copiate."
-} else {
-    Write-Host "  windeployqt non trovato. Copia manuale necessaria." -ForegroundColor DarkYellow
-}
+
 
 # ─── 10. Shortcut Menu Start ───
 Write-Host "Creazione shortcut..." -ForegroundColor Yellow

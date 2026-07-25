@@ -31,24 +31,6 @@ check_pkgconfig() {
 check_cmd cmake "build system"
 check_cmd ninja "build tool (alternativa: make)"
 
-if pkg-config --exists Qt6Core 2>/dev/null; then
-    :
-elif command -v qt6-config &>/dev/null; then
-    :
-elif [ -d /usr/include/qt6 ] || [ -d /usr/include/x86_64-linux-gnu/qt6 ]; then
-    :
-else
-    if command -v dpkg &>/dev/null; then
-        MISSING="$MISSING  - Qt6 (installa: sudo apt install qt6-base-dev libqt6widgets6)\n"
-    elif command -v pacman &>/dev/null; then
-        MISSING="$MISSING  - Qt6 (installa: sudo pacman -S qt6-base)\n"
-    elif command -v dnf &>/dev/null; then
-        MISSING="$MISSING  - Qt6 (installa: sudo dnf install qt6-qtbase-devel)\n"
-    else
-        MISSING="$MISSING  - Qt6 (package qt6-base-dev/qt6-qtbase-devel)\n"
-    fi
-fi
-
 check_pkgconfig libcurl "libcurl (sviluppo): libcurl4-openssl-dev / libcurl-devel"
 check_pkgconfig openssl "OpenSSL (sviluppo): libssl-dev / openssl-devel"
 
