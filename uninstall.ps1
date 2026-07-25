@@ -2,69 +2,116 @@
 .SYNOPSIS
     Disinstalla AniDownloader da Windows.
 .DESCRIPTION
-    Rimuove l'eseguibile, le DLL, gli shortcut e il task scheduler.
-    Chiede se mantenere i file di configurazione (series_data.json, config.json).
+    Menu interattivo: scegli cosa rimuovere (solo binario, solo servizi, tutto).
 #>
 
 $ErrorActionPreference = "Stop"
 
-# --- CONFIGURAZIONE ---
+# ─── CONFIG ───
 $AppName     = "AniDownloader"
 $BinName     = "AniDownloader.exe"
 $InstallDir  = "$env:LOCALAPPDATA\$AppName"
 $ShortcutDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\$AppName"
 $ConfigDir   = "$env:APPDATA\$AppName"
 $TaskName    = "AniDownloader_AutoCheck"
+$WebTaskName = "AniDownloader_WebServer"
 
-Write-Host "--- Disinstallazione $AppName ---" -ForegroundColor Cyan
+# ─── 1. Menu ───
+Clear-Host
+Write-Host @"
 
-# 0. Domanda: mantenere la configurazione?
-$keepConfig = Read-Host "Mantenere la configurazione? (serie, config) [S/n]"
-$keepConfig = $keepConfig.Trim().ToLower()
-if ($keepConfig -eq "") { $keepConfig = "s" }
+╔══════════════════════════════════════════════════════════════╗
+║           AniDownloader — Uninstaller (Windows)              ║
+╚══════════════════════════════════════════════════════════════╝
 
-# 1. Ferma il processo se in esecuzione
+Scegli cosa rimuovere:
+
+  1) Solo il binario
+     Rimuove eseguibile, DLL, shortcut Menu Start e icona.
+     Mantiene: Attività Pianificate, configurazione (config.json,
+     series_data.json).
+     Utile per reinstallare senza perdere dati.
+
+  2) Solo i servizi
+     Rimuove le Attività Pianificate (timer e web).
+     Mantiene: binario e configurazione.
+     Utile se non vuoi più l'esecuzione automatica.
+
+  3) Tutto
+     Rimuove binario, DLL, shortcut, Attività Pianificate,
+     configurazione (config.json, series_data.json).
+     ⚠️  I dati sono IRRECUPERABILI senza backup.
+
+  0) Annulla
+
+"@
+
+$choice = Read-Host "Scelta [0-3]"
+Write-Host ""
+
+switch ($choice) {
+    "0" { Write-Host "Annullato."; exit 0 }
+    "1" { $MODE = "binary" }
+    "2" { $MODE = "services" }
+    "3" { $MODE = "all" }
+    default { Write-Host "Scelta non valida." -ForegroundColor Red; exit 1 }
+}
+
+$FERMA_SERVIZI = ($MODE -eq "services") -or ($MODE -eq "all")
+$RIMUOVI_BINARIO = ($MODE -eq "binary") -or ($MODE -eq "all")
+$RIMUOVI_CONFIG = ($MODE -eq "all")
+
+# ─── 2. Ferma processi ───
 Write-Host "Fermo processi in esecuzione..." -ForegroundColor Yellow
-$running = Get-Process -Name "AniDownloader" -ErrorAction SilentlyContinue
+$running = Get-Process -Name $AppName -ErrorAction SilentlyContinue
 if ($running) {
-    Stop-Process -Name "AniDownloader" -Force
+    Stop-Process -Name $AppName -Force
     Start-Sleep -Seconds 2
 }
 
-# 2. Rimuovi task scheduler
-Write-Host "Rimuovo task scheduler..." -ForegroundColor Yellow
-if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-}
-
-# 3. Rimuovi cartella installazione (exe, DLL, icona, log, uninstaller)
-Write-Host "Rimuovo eseguibile e dipendenze..." -ForegroundColor Yellow
-if (Test-Path $InstallDir) {
-    Remove-Item -Path $InstallDir -Recurse -Force
-}
-
-# 4. Rimuovi shortcut Menu Start
-Write-Host "Rimuovo shortcut..." -ForegroundColor Yellow
-if (Test-Path $ShortcutDir) {
-    Remove-Item -Path $ShortcutDir -Recurse -Force
-}
-
-# 5. Configurazione
-if ($keepConfig -eq "s") {
-    Write-Host ""
-    Write-Host "Configurazione mantenuta in $ConfigDir" -ForegroundColor Green
-} else {
-    Write-Host "Rimuovo configurazione..." -ForegroundColor Yellow
-    if (Test-Path $ConfigDir) {
-        Remove-Item -Path $ConfigDir -Recurse -Force
+# ─── 3. Rimuovi Attività Pianificate ───
+if ($FERMA_SERVIZI) {
+    Write-Host "Rimuovo Attività Pianificate..." -ForegroundColor Yellow
+    foreach ($tn in @($TaskName, $WebTaskName)) {
+        if (Get-ScheduledTask -TaskName $tn -ErrorAction SilentlyContinue) {
+            Stop-ScheduledTask -TaskName $tn -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $tn -Confirm:$false
+            Write-Host "  Rimossa: $tn"
+        }
     }
 }
 
-# 6. Riepilogo
-Write-Host ""
-Write-Host "--- Disinstallazione completata! ---" -ForegroundColor Green
-if ($keepConfig -eq "s") {
-    Write-Host "La configurazione e' stata mantenuta."
-    Write-Host "  $ConfigDir"
+# ─── 4. Rimuovi binario ───
+if ($RIMUOVI_BINARIO) {
+    Write-Host "Rimuovo eseguibile e dipendenze..." -ForegroundColor Yellow
+    if (Test-Path $InstallDir) {
+        Remove-Item -Path $InstallDir -Recurse -Force
+        Write-Host "  Rimossa: $InstallDir"
+    }
+
+    Write-Host "Rimuovo shortcut Menu Start..." -ForegroundColor Yellow
+    if (Test-Path $ShortcutDir) {
+        Remove-Item -Path $ShortcutDir -Recurse -Force
+        Write-Host "  Rimossa: $ShortcutDir"
+    }
 }
+
+# ─── 5. Rimuovi configurazione ───
+if ($RIMUOVI_CONFIG) {
+    Write-Host "Rimuovo configurazione..." -ForegroundColor Yellow
+    if (Test-Path $ConfigDir) {
+        Remove-Item -Path $ConfigDir -Recurse -Force
+        Write-Host "  Rimossa: $ConfigDir"
+    }
+}
+
+# ─── 7. Riepilogo ───
+Write-Host ""
+Write-Host "╔═══════════════════════════════════════════════╗" -ForegroundColor Green
+Write-Host "║  Disinstallazione completata!                 ║" -ForegroundColor Green
+Write-Host "╚═══════════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host ""
+if ($FERMA_SERVIZI) { Write-Host "  Attività Pianificate: rimosse" }
+if ($RIMUOVI_BINARIO) { Write-Host "  Binario:              rimosso" }
+if (-not $RIMUOVI_CONFIG) { Write-Host "  Configurazione:       mantenuta ($ConfigDir)" }
+Write-Host ""
