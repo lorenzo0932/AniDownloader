@@ -1,8 +1,13 @@
 # Build artifacts
 build/
+build_debug/
 dist/
 *.spec
 *.log
+
+# Web frontend
+web/dist/
+web/node_modules/
 
 # Python artifacts
 __pycache__/

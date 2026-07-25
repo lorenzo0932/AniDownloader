@@ -62,6 +62,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(cpr)
 
+# cpp-httplib (Header-only HTTP/WebSocket server)
+FetchContent_Declare(
+    httplib
+    URL https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.18.1.tar.gz
+)
+FetchContent_MakeAvailable(httplib)
+
+# OpenSSL (per AES-256-GCM e PBKDF2)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+
 # Qt6 & Threads
 find_package(Threads REQUIRED)
 find_package(Qt6 COMPONENTS Widgets REQUIRED)
@@ -70,12 +80,14 @@ find_package(Qt6 COMPONENTS Widgets REQUIRED)
 # Ti consiglio di usare una variabile per i file header e una per i sorgenti
 set(HEADERS
     include/gui/MainWindow.hpp
+    include/gui/Sidebar.hpp
+    include/gui/StatusWidget.hpp
+    include/gui/LogsWidget.hpp
+    include/gui/SeriesDetailDialog.hpp
     include/gui/DownloadWorker.hpp
     include/gui/Styles.hpp
     include/gui/ScaleHelper.hpp
     include/gui/Widgets.hpp
-    include/gui/SlidingContainer.hpp
-    include/gui/SettingsDialog.hpp
     include/gui/SeriesManagerWidget.hpp
     include/gui/SeriesEditorDialog.hpp
     include/core/ExecutionEngine.hpp
@@ -83,6 +95,11 @@ set(HEADERS
     include/core/MediaProbe.hpp
     include/core/UpdateChecker.hpp
     include/gui/ImageCache.hpp
+    include/core/FileUtils.hpp
+    include/core/LogUtils.hpp
+    include/core/SeriesUtils.hpp
+    include/web/CryptoUtils.hpp
+    include/web/WebServer.hpp
 )
 
 set(SOURCES
@@ -97,19 +114,26 @@ set(SOURCES
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
     src/gui/MainWindow.cpp
+    src/gui/Sidebar.cpp
+    src/gui/StatusWidget.cpp
+    src/gui/LogsWidget.cpp
+    src/gui/SeriesDetailDialog.cpp
     src/gui/DownloadWorker.cpp
     src/gui/Styles.cpp
     src/gui/ScaleHelper.cpp
     src/gui/Widgets.cpp
-    src/gui/SlidingContainer.cpp
-    src/gui/SettingsDialog.cpp
     src/gui/SeriesManagerWidget.cpp
     src/gui/SeriesEditorDialog.cpp
     src/core/ExecutionEngine.cpp
     src/core/Logger.cpp
     src/core/ProcessUtils.cpp
     src/core/MediaProbe.cpp
-    src/core/UpdateChecker.cpp)
+    src/core/UpdateChecker.cpp
+    src/core/FileUtils.cpp
+    src/core/LogUtils.cpp
+    src/core/SeriesUtils.cpp
+    src/web/CryptoUtils.cpp
+    src/web/WebServer.cpp)
 
 # --- TARGET ---
 add_executable(AniDownloader $<$<PLATFORM_ID:Windows>:WIN32> ${SOURCES} ${HEADERS})
@@ -127,10 +151,20 @@ target_link_libraries(AniDownloader
     PRIVATE 
     nlohmann_json::nlohmann_json
     cpr::cpr
+    httplib::httplib
     Threads::Threads
     Qt6::Widgets
+    OpenSSL::Crypto
 )
 
 target_compile_definitions(AniDownloader PRIVATE
     ANIDOWNLOADER_VERSION="${PROJECT_VERSION}"
+)
+
+# ─── COPIA FRONTEND IN build/frontend/ ───
+add_custom_command(TARGET AniDownloader POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/web/dist"
+        "${CMAKE_BINARY_DIR}/frontend"
+    COMMENT "Copying frontend to build/frontend/"
 )

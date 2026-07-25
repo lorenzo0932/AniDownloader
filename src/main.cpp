@@ -7,12 +7,14 @@
 #include <iomanip>
 #include <chrono>
 #include <csignal>
+#include <thread>
 #include "core/SeriesRepository.hpp"
 #include "core/ExecutionEngine.hpp"
 #include "core/MediaProcessor.hpp"
 #include "core/Logger.hpp"
 #include "config/AppConfigManager.hpp"
 #include "config/PathHelper.hpp"
+#include "web/WebServer.hpp"
 #include "gui/MainWindow.hpp"
 #include "gui/ScaleHelper.hpp"
 #include <QApplication>
@@ -82,12 +84,63 @@ int main(int argc, char* argv[]) {
 
     bool burstMode = false;
     bool guiMode = false;
+    bool webMode = false;
+    int webPort = 8989;
 
     // Parsing argomenti
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--burst") burstMode = true;
         if (arg == "--gui") guiMode = true;
+        if (arg == "--web") webMode = true;
+        if (arg == "--port" && i + 1 < argc) {
+            webPort = std::stoi(argv[++i]);
+        }
+    }
+
+    if (webMode) {
+        Config::AppConfigManager configManager;
+        Core::Logger::init(configManager.get<std::string>(
+            "log_file_path", Config::PathHelper::getLogFilePath().string()));
+
+        auto server = std::make_shared<Web::WebServer>(configManager, webPort);
+
+        std::atomic<bool> running{true};
+        std::thread serverThread([server, &running]() {
+            if (!server->start()) {
+                Core::Logger::error("Failed to start web server");
+                running = false;
+            }
+        });
+
+#ifndef _WIN32
+        struct sigaction sa{};
+        sa.sa_handler = [](int) {
+            exit(0);
+        };
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGINT, &sa, nullptr);
+        sigaction(SIGTERM, &sa, nullptr);
+#else
+        SetConsoleCtrlHandler([](DWORD) -> BOOL {
+            exit(0);
+            return TRUE;
+        }, TRUE);
+#endif
+
+        int finalPort = server->activePort();
+        auto lanIp = Web::WebServer::getLanIp();
+        std::cout << "Web UI: http://localhost:" << finalPort << "\n";
+        if (lanIp != "0.0.0.0" && lanIp != "127.0.0.1")
+            std::cout << "Web UI (LAN): http://" << lanIp << ":" << finalPort << "\n";
+
+        while (running.load()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+
+        server->stop();
+        if (serverThread.joinable()) serverThread.join();
+        return 0;
     }
 
     if (guiMode) {
