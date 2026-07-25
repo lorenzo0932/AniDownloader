@@ -1,6 +1,8 @@
 # Build artifacts
 build/
 build_debug/
+build-asan/
+build-debug/
 dist/
 *.spec
 *.log
@@ -8,6 +10,10 @@ dist/
 # Web frontend
 web/dist/
 web/node_modules/
+
+# IDE / Config personali
+opencode.json
+AGENTS.md
 
 # Python artifacts
 __pycache__/

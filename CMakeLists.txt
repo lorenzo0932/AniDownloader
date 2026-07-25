@@ -80,21 +80,19 @@ find_package(Qt6 COMPONENTS Widgets REQUIRED)
 # Ti consiglio di usare una variabile per i file header e una per i sorgenti
 set(HEADERS
     include/gui/MainWindow.hpp
-    include/gui/Sidebar.hpp
-    include/gui/StatusWidget.hpp
-    include/gui/LogsWidget.hpp
-    include/gui/SeriesDetailDialog.hpp
     include/gui/DownloadWorker.hpp
     include/gui/Styles.hpp
     include/gui/ScaleHelper.hpp
     include/gui/Widgets.hpp
+    include/gui/SlidingContainer.hpp
+    include/gui/SettingsDialog.hpp
     include/gui/SeriesManagerWidget.hpp
     include/gui/SeriesEditorDialog.hpp
+    include/gui/ImageCache.hpp
     include/core/ExecutionEngine.hpp
     include/core/ProcessUtils.hpp
     include/core/MediaProbe.hpp
     include/core/UpdateChecker.hpp
-    include/gui/ImageCache.hpp
     include/core/FileUtils.hpp
     include/core/LogUtils.hpp
     include/core/SeriesUtils.hpp
@@ -114,14 +112,12 @@ set(SOURCES
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
     src/gui/MainWindow.cpp
-    src/gui/Sidebar.cpp
-    src/gui/StatusWidget.cpp
-    src/gui/LogsWidget.cpp
-    src/gui/SeriesDetailDialog.cpp
     src/gui/DownloadWorker.cpp
     src/gui/Styles.cpp
     src/gui/ScaleHelper.cpp
     src/gui/Widgets.cpp
+    src/gui/SlidingContainer.cpp
+    src/gui/SettingsDialog.cpp
     src/gui/SeriesManagerWidget.cpp
     src/gui/SeriesEditorDialog.cpp
     src/core/ExecutionEngine.cpp

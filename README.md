@@ -1,35 +1,25 @@
 # AniDownloader 2.0
 
-Una riscrittura completa in **C++17** con **Qt6** del sistema AniDownloader. Massima velocità, efficienza e integrazione nativa con Linux e Windows.
+Una riscrittura completa in **C++17** del sistema AniDownloader. Massima velocità, efficienza e integrazione nativa con Linux e Windows.
 
-<div align="center">
-
-<!-- [PLACEHOLDER: GIF principale dell'interfaccia 2.0] -->
-<!-- Inserire qui la GIF che mostra il flusso completo: planning → download parallelo → conversione -->
-
-*L'interfaccia moderna basata su Qt6 con supporto DPIAware, temi dark/light e controllo completo dei download.*
-
-</div>
+Dual UI: **Web Interface** (Svelte 5 SPA) o **GUI Qt6 Nativa**.
 
 ---
 
 ## Funzionalità
 
-* **Interfaccia Grafica Nativa Qt6**: GUI moderna con temi dark/light, scroll fluidi e controlli reattivi. Supporto completo per qualsiasi risoluzione e dimensione del font di sistema (DPI-aware).
-* **Download Parallelo ad alte prestazioni**: `ExecutionEngine` multi-thread con controllo granulare della concorrenza. Satura la CPU e la rete senza bloccare l'interfaccia.
-* **Conversione Automatica H.265**: Trascodifica HEVC post-download per risparmiare spazio (~50%) mantenendo la qualità video.
+* **Web UI moderna** (Svelte 5): dashboard download real-time con SSE, gestione serie CRUD con griglia di card e poster, configurazione temi dark/light, log viewer. Accessibile da browser locale o remoto.
+* **GUI Qt6 Nativa** (opzionale): temi dark/light, DPI-aware, tray icon, notifiche desktop, drag & drop.
+* **Download Parallelo ad alte prestazioni**: `ExecutionEngine` multi-thread con controllo granulare della concorrenza.
+* **Conversione Automatica H.265**: Trascodifica HEVC post-download per risparmiare spazio (~50%).
 * **Scrapers Nativi**: Parser C++ per AnimeWorld e AnimeUnity. Nessuna dipendenza Python.
-* **Retry di Rete Automatico**: Riprova automatica con exponential backoff su errori HTTP, fallimenti di download aria2c e sessioni ChromeDriver. Configurabile da file config.
-* **Notifiche Desktop**: Balloon notification native per completamento, errori e skip. Il tray icon informa dello stato senza dover tener aperta la finestra.
-* **Aggiornamenti Automatici**: Controllo all'avvio tramite GitHub API con confronto versione semver. Notifica l'utente con link diretto alla release.
-* **Multiple Fonti di Download**: Struttura dati pronta per fonti alternate per la stessa serie (campo JSON `alternate_sources`).
-* **Gestione Serie Avanzata**: Supporto per serie multi-stagione con numerazione continua e episodi passati.
-* **Monitoraggio Real-Time**: Barre di progresso per serie, stato dettagliato nel log, indicatore RAM.
-* **Tray Icon**: Controllo rapido dall'icona di sistema.
-* **Drag & Drop**: Trascina URL per aggiungere serie o file JSON per importare l'elenco.
-* **Dual Mode (GUI & CLI)**: Interfaccia grafica o esecuzione da terminale/script.
-* **Automazione Systemd**: File `.service` e `.timer` pronti per l'uso su Linux.
-* **Installazione Cross-Platform**: Script `install.sh` (Linux) e `install.ps1` (Windows) con configurazione automatica.
+* **Retry di Rete Automatico**: Exponential backoff su errori HTTP, aria2c e ChromeDriver.
+* **Notifiche Desktop**: Native per completamento, errori e skip.
+* **Aggiornamenti Automatici**: GitHub API con confronto semver.
+* **Gestione Serie Avanzata**: Multi-stagione, numerazione continua, episodi passati, fonti multiple.
+* **Monitoraggio Real-Time**: Progresso live via SSE (Web UI) o barre (Qt GUI).
+* **Automazione Systemd**: Servizio `.service` e `.timer` per esecuzione periodica.
+* **Installazione Cross-Platform**: Script per Linux e Windows.
 
 <div align="center">
 
@@ -66,11 +56,12 @@ winget install aria2
 
 * **CMake** >= 3.17
 * **Compilatore C++17** (GCC, Clang, MSVC)
-* **Qt6** (Widgets)
+* **Qt6** (Widgets, solo per modalità `--gui`)
+* **Node.js** >= 18 (per build frontend Web UI)
 * **Ninja** (consigliato, opzionale)
 * **OpenSSL** / **libcurl** (gestite automaticamente via FetchContent)
 
-Le librerie **nlohmann_json** e **cpr** sono scaricate automaticamente durante il build tramite CMake FetchContent.
+Le librerie **nlohmann_json**, **cpr** e **cpp-httplib** sono scaricate automaticamente durante il build tramite CMake FetchContent.
 
 ---
 
@@ -111,15 +102,18 @@ Gli script di disinstallazione chiedono se mantenere la configurazione prima di 
 ## Compilazione da Sorgente
 
 ```bash
-git clone https://github.com/lorenzoAni/AniDownloader.git
+git clone https://github.com/lorenzo0932/AniDownloader.git
 cd AniDownloader
-git checkout dev
 
+# 1. Build frontend Web UI (Svelte 5)
+cd web && npm install && npm run build && cd ..
+
+# 2. Build backend C++
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-L'eseguibile verrà generato nella cartella `build/`.
+L'eseguibile e il frontend compilato (`build/frontend/`) vengono generati automaticamente.
 
 ---
 
@@ -178,39 +172,47 @@ Il file di configurazione globale (`config.json`) supporta i seguenti campi aggi
 
 ## Utilizzo
 
-### Modalità Grafica (Raccomandata)
+### Web UI (Raccomandata)
+
+```bash
+./build/AniDownloader --web
+# Web UI: http://localhost:8989
+```
+
+Accessibile da qualsiasi browser sulla rete locale. Interfaccia completa con dashboard download in tempo reale, gestione serie, configurazione e log.
+
+### Web UI (Porta Personalizzata)
+
+```bash
+./build/AniDownloader --web --port 9090
+```
+
+### Modalità CLI
+
+```bash
+./build/AniDownloader                # Normale
+./build/AniDownloader --burst        # Massima concorrenza
+```
+
+### Modalità GUI Qt6
 
 ```bash
 ./build/AniDownloader --gui
 ```
 
-<div align="center">
-
-<!-- [PLACEHOLDER: GIF dello stop sicuro] -->
-<!-- Inserire qui la GIF che mostra la funzionalità di stop con conferma -->
-
-*Stop sicuro con conferma e pulizia automatica dei file parziali.*
-
-</div>
-
-### Modalità CLI
-
-```bash
-./build/AniDownloader
-./build/AniDownloader --burst  # Modalità burst (massima concorrenza)
-```
-
 ### Automazione Systemd (Linux)
 
 ```bash
-mkdir -p ~/.config/systemd/user/
+# Timer per download automatici ogni 15 minuti
 cp systemd_services/AniDownloader.service ~/.config/systemd/user/
 cp systemd_services/AniDownloader.timer ~/.config/systemd/user/
+
+# Servizio Web UI persistente
+cp systemd_services/AniDownloaderWeb.service ~/.config/systemd/user/
+
 systemctl --user daemon-reload
 systemctl --user enable --now AniDownloader.timer
 ```
-
-Il servizio esegue controlli automatici ogni 15 minuti.
 
 ---
 
@@ -220,15 +222,21 @@ Il servizio esegue controlli automatici ogni 15 minuti.
 AniDownloader_dev/
 ├── include/                    # Header C++ (.hpp)
 │   ├── core/                   # ExecutionEngine, MediaProcessor, Logger, MediaProbe
-│   ├── gui/                    # MainWindow, Dialogs, Widgets, ScaleHelper, Styles
+│   ├── gui/                    # MainWindow, Dialogs, Widgets (Qt6, opzionale)
 │   ├── config/                 # AppConfigManager, PathHelper
-│   └── scrapers/               # AnimeWScraper, AnimeUScraper, ScraperUtils
+│   ├── scrapers/               # AnimeWScraper, AnimeUScraper, ScraperUtils
+│   └── web/                    # WebServer, CryptoUtils (JWT)
 ├── src/                        # Implementazioni (.cpp)
 │   ├── core/                   # Logica di processing e gestione dati
-│   ├── gui/                    # UI, segnali/slot, tema dinamico
+│   ├── gui/                    # UI Qt6, segnali/slot, tema dinamico
 │   ├── config/                 # Configurazione e percorsi
 │   ├── scrapers/               # Parser nativi per i servizi
-│   └── main.cpp                # Entry point (GUI + CLI)
+│   ├── web/                    # HTTP server (httplib), SSE, API REST
+│   └── main.cpp                # Entry point (--web, --gui, --burst)
+├── web/                        # Frontend Svelte 5 SPA
+│   ├── src/                    # Componenti (StatusPage, DashboardPage, ConfigPage, LogsPage)
+│   ├── lib/                    # API client, tema, auth
+│   └── package.json            # Dipendenze Node.js
 ├── resources/                  # Logo applicazione
 ├── systemd_services/           # Automazione Linux (.service, .timer)
 ├── legacy_python/              # Versione Python originale (riferimento storico)
@@ -245,15 +253,14 @@ AniDownloader_dev/
 
 ### Completato in 2.0
 
-- [x] Riscrittura completa in C++17 con Qt6
-- [x] GUI nativa con temi dark/light
+- [x] Riscrittura completa in C++17
+- [x] Web UI (Svelte 5 SPA) con dashboard, gestione serie, configurazione, log
+- [x] API REST con SSE per progresso live
+- [x] GUI Qt6 nativa con temi dark/light
 - [x] Download parallelo multi-thread
 - [x] Conversione H.265 automatica
 - [x] Scrapers nativi (AnimeWorld, AnimeUnity)
 - [x] Compatibilita Windows (installazione, percorsi, User-Agent)
-- [x] DPI-aware scaling (font e dimensioni basati sul sistema)
-- [x] Tray icon e controlli rapidi
-- [x] Drag & Drop (URL e JSON)
 - [x] Logger con rotazione file
 - [x] Cache immagini poster
 - [x] Installazione e disinstallazione cross-platform
@@ -264,9 +271,9 @@ AniDownloader_dev/
 
 ### Funzionalita Future
 
-- [ ] GIF di presentazione: demo interattive delle funzionalita principali per il README
+- [ ] Tauri native wrapper (tray icon, notifiche, app installabile)
 - [ ] Fallback automatico sulle fonti alternative
-- [ ] Interfaccia editor per fonti alternative nella GUI
+- [ ] Interfaccia editor per fonti alternative nella UI
 
 ---
 
