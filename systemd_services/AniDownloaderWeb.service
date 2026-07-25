@@ -1,0 +1,16 @@
+[Unit]
+Description=AniDownloader Web Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/AniDownloader --web
+WorkingDirectory=%h/.local/bin
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
