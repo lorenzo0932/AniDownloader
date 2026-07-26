@@ -33,10 +33,7 @@ jobs:
 
       - name: Install OpenSSL (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          vcpkg install openssl-windows:x64-windows
-          echo "CMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
+        run: choco install openssl -y --no-progress
 
       - name: Setup Node
         uses: actions/setup-node@v4

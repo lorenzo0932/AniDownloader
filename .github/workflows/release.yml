@@ -74,11 +74,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install OpenSSL + vcpkg
-        shell: pwsh
-        run: |
-          vcpkg install openssl-windows:x64-windows
-          echo "CMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
+      - name: Install OpenSSL
+        run: choco install openssl -y --no-progress
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -104,10 +101,21 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ''
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
 
+      - name: Package headless
+        shell: pwsh
+        run: |
+          $dir = "anidownloaderd-$env:GITHUB_REF_NAME-win-x86_64"
+          New-Item -ItemType Directory -Path $dir/web -Force | Out-Null
+          Copy-Item build/Release/AniDownloader.exe "$dir/anidownloaderd.exe"
+          Copy-Item web/dist/* "$dir/web/" -Recurse
+          Compress-Archive -Path $dir -DestinationPath "$dir.zip"
+
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/release/bundle/nsis/*.exe
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            anidownloaderd-*-win-x86_64.zip
 
   macos:
     runs-on: macos-14
@@ -142,7 +150,17 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ''
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
 
+      - name: Package headless
+        run: |
+          dir="anidownloaderd-${{ github.ref_name }}-mac-x86_64"
+          mkdir -p "$dir/web"
+          cp build/AniDownloader "$dir/anidownloaderd"
+          cp -r web/dist/* "$dir/web/"
+          tar czf "$dir.tar.gz" "$dir"
+
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/release/bundle/dmg/*.dmg
+          files: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            anidownloaderd-*-mac-x86_64.tar.gz
