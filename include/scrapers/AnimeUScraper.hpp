@@ -7,7 +7,7 @@ namespace Core {
 
     class AnimeUScraper : public BaseScraper {
     public:
-        DownloadTask planSeriesTask(const Series& series) override;
+        std::vector<DownloadTask> planSeriesTask(const Series& series) override;
     };
 
 }

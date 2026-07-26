@@ -19,7 +19,7 @@ namespace Core {
          * Prende una serie, istanzia lo scraper adatto e produce un DownloadTask.
          * Corrisponde alla funzione plan_single_series in Python.
          */
-        static DownloadTask planSingleSeries(const Series& series);
+        static std::vector<DownloadTask> planSingleSeries(const Series& series);
     };
 
 }

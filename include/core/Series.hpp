@@ -20,6 +20,8 @@ namespace Core {
         std::string seriesPageUrl;
         std::string episodeListSelector;
         std::string downloadLinkSelector;
+        std::string lastDownloadedAt;
+        int lastDownloadedEpisode = 0;
         std::vector<AlternateSource> alternateSources;
 
         bool operator==(const Series& other) const;

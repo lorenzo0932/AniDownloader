@@ -2,6 +2,7 @@
 
 #include "core/Series.hpp"
 #include <string>
+#include <vector>
 
 namespace Core {
 
@@ -23,7 +24,7 @@ namespace Core {
 
         // Metodo virtuale puro (L'equivalente esatto di @abstractmethod)
         // Prende in input una Serie (sola lettura: const &) e restituisce un Task
-        virtual DownloadTask planSeriesTask(const Series& series) = 0;
+        virtual std::vector<DownloadTask> planSeriesTask(const Series& series) = 0;
     };
 
 }

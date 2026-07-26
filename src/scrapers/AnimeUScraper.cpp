@@ -9,9 +9,11 @@
 
 namespace Core {
 
-DownloadTask AnimeUScraper::planSeriesTask(const Series& series) {
-    DownloadTask task;
-    task.shouldProcess = false;
+std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series) {
+    std::vector<DownloadTask> results;
+
+    auto episodesMap = ScraperUtils::scanEpisodesMap(series.path);
+    int nextNeeded = ScraperUtils::computeNextNeeded(series.path, series.lastDownloadedEpisode, episodesMap);
 
     try {
         cpr::Session session;
@@ -23,10 +25,10 @@ DownloadTask AnimeUScraper::planSeriesTask(const Series& series) {
             {{"User-Agent", ScraperUtils::platformUserAgent()}},
             3, 2000
         );
-        if (seriesPageResp.status_code != 200) return task;
+        if (seriesPageResp.status_code != 200) return results;
 
         std::regex epRegex(R"raw(class="episode-item"[^>]*href="([^"]+)"[^>]*>.*?(\d+))raw");
-        
+
         auto words_begin = std::sregex_iterator(seriesPageResp.text.begin(), seriesPageResp.text.end(), epRegex);
         auto words_end = std::sregex_iterator();
 
@@ -38,20 +40,17 @@ DownloadTask AnimeUScraper::planSeriesTask(const Series& series) {
             eps.push_back({std::stoi(match[2].str()), match[1].str()});
         }
 
-        if (eps.empty()) return task;
-
+        if (eps.empty()) return results;
         std::sort(eps.begin(), eps.end(), [](const Ep& a, const Ep& b) { return a.n < b.n; });
 
-        int next = ScraperUtils::getNextEpisodeNum(series.path);
         for (const auto& ep : eps) {
             int local = series.continueSeries ? (ep.n + series.passedEpisodes) : ep.n;
-            if (local >= next) {
+            if (local >= nextNeeded) {
                 cpr::Response epPage = ScraperUtils::httpGetWithRetry(
                     cpr::Url{ep.u},
                     {{"User-Agent", ScraperUtils::platformUserAgent()}},
                     3, 2000
                 );
-                
                 if (epPage.status_code != 200) continue;
 
                 std::regex iframeRegex(R"raw(<iframe[^>]*id="embed"[^>]*src="([^"]+)")raw");
@@ -62,13 +61,12 @@ DownloadTask AnimeUScraper::planSeriesTask(const Series& series) {
                 }
 
                 std::string iframeUrl = iframeMatch[1].str();
-                
+
                 cpr::Response iframePage = ScraperUtils::httpGetWithRetry(
                     cpr::Url{iframeUrl},
                     {{"User-Agent", ScraperUtils::platformUserAgent()}},
                     3, 2000
                 );
-                
                 if (iframePage.status_code != 200) continue;
 
                 std::regex dlRegex(R"raw(window\.downloadUrl\s*=\s*"([^"]+)")raw");
@@ -78,18 +76,21 @@ DownloadTask AnimeUScraper::planSeriesTask(const Series& series) {
                     continue;
                 }
 
+                DownloadTask task;
                 task.videoUrl = dlMatch[1].str();
                 task.episodeNumber = local;
                 task.shouldProcess = true;
                 task.fileName = series.name + "_Ep_" + std::to_string(local) + ".mp4";
-                break;
+                results.push_back(task);
             }
         }
     } catch (const std::exception& e) {
-        task.errorMessage = e.what();
+        DownloadTask err;
+        err.errorMessage = e.what();
+        results.push_back(err);
     }
 
-    return task;
+    return results;
 }
 
 }

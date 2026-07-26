@@ -12,7 +12,7 @@ static std::string toLower(const std::string& s) {
 
 void sortSeries(nlohmann::json& data, const std::string& field, bool desc) {
     static const std::vector<std::string> validFields = {
-        "name", "local_episode_count", "continue"
+        "name", "local_episode_count", "continue", "added", "last_downloaded_at"
     };
     if (std::find(validFields.begin(), validFields.end(), field) == validFields.end())
         return;
@@ -33,6 +33,8 @@ void sortSeries(nlohmann::json& data, const std::string& field, bool desc) {
 
         auto va = getVal(a);
         auto vb = getVal(b);
+
+        if (va == vb) return false;
 
         bool less = false;
         if (va.is_number() && vb.is_number()) {

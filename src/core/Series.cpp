@@ -17,6 +17,8 @@ namespace Core {
         s.continueSeries = j.value("continue", true);
         s.isHighPriority = j.value("is_high_priority", false);
         s.passedEpisodes = j.value("passed_episodes", 0);
+        s.lastDownloadedAt = j.value("last_downloaded_at", "");
+        s.lastDownloadedEpisode = j.value("last_downloaded_episode", 0);
 
         // Fonti alternate opzionali
         s.alternateSources.clear();
@@ -42,7 +44,9 @@ namespace Core {
             {"passed_episodes", s.passedEpisodes},
             {"series_page_url", s.seriesPageUrl},
             {"episode_list_selector", s.episodeListSelector},
-            {"download_link_selector", s.downloadLinkSelector}
+            {"download_link_selector", s.downloadLinkSelector},
+            {"last_downloaded_at", s.lastDownloadedAt},
+            {"last_downloaded_episode", s.lastDownloadedEpisode}
         };
 
         if (!s.alternateSources.empty()) {
