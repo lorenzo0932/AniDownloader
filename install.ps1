@@ -69,16 +69,16 @@ Write-Host @"
 ║           AniDownloader — Installer (Windows)               ║
 ╚══════════════════════════════════════════════════════════════╝
 
-Il binario contiene tutte le modalità integrate:
-CLI (senza flag), GUI (--gui) e Web UI (--web).
+Il binario contiene le modalità integrate:
+CLI (senza flag) / `--burst` e Web UI (`--web`).
 La scelta qui sotto determina solo quali servizi
 automatici abilitare.
 
 Scegli cosa installare:
 
   1) Binario base — nessun servizio
-     Solo il binario. Avvia manualmente con --gui,
-     --web o --burst. Nessun servizio in background.
+     Solo il binario. Avvia manualmente con --burst
+     o --web. Nessun servizio in background.
 
   2) Binario + Timer automatico
      Aggiunge un'Attività Pianificata che controlla nuovi
@@ -186,19 +186,11 @@ if (Test-Path $IconSource) {
 Write-Host "Creazione shortcut..." -ForegroundColor Yellow
 $WshShell = New-Object -ComObject WScript.Shell
 
-$guiLink = $WshShell.CreateShortcut("$ShortcutDir\$AppName GUI.lnk")
-$guiLink.TargetPath = "$InstallDir\$BinName"
-$guiLink.Arguments = "--gui"
-$guiLink.WorkingDirectory = $env:USERPROFILE
-$guiLink.Description = "AniDownloader - Interfaccia Grafica"
-if (Test-Path $IconDest) { $guiLink.IconLocation = "$IconDest,0" }
-$guiLink.Save()
-
 $cliLink = $WshShell.CreateShortcut("$ShortcutDir\$AppName CLI.lnk")
 $cliLink.TargetPath = "$InstallDir\$BinName"
 $cliLink.Arguments = "--burst"
 $cliLink.WorkingDirectory = $env:USERPROFILE
-$cliLink.Description = "AniDownloader - Modalità Background"
+$cliLink.Description = "AniDownloader - Dashboard ANSI live"
 if (Test-Path $IconDest) { $cliLink.IconLocation = "$IconDest,0" }
 $cliLink.Save()
 
