@@ -31,6 +31,10 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install cmake ninja pkg-config
 
+      - name: Install OpenSSL (Windows)
+        if: runner.os == 'Windows'
+        uses: DmitrySoshnikov/install-openssl@v2
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
