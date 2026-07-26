@@ -77,8 +77,7 @@ jobs:
       - name: Install OpenSSL
         shell: pwsh
         run: |
-          choco install openssl -y --no-progress
-          echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
+          & "C:\vcpkg\vcpkg.exe" install openssl:x64-windows
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -88,7 +87,7 @@ jobs:
       - name: Build C++ backend
         shell: cmd
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
           cmake --build build --config Release
 
       - name: Build frontend

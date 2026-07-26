@@ -12,6 +12,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-14]
+        include:
+          - os: windows-2022
+            cmake_args: -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -35,8 +38,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install openssl -y --no-progress
-          echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
+          & "C:\vcpkg\vcpkg.exe" install openssl:x64-windows
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -44,7 +46,7 @@ jobs:
           node-version: 20
 
       - name: Configure C++
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
+        run: cmake -B build ${{ matrix.cmake_args || '-DCMAKE_BUILD_TYPE=Debug' }}
 
       - name: Build C++
         run: cmake --build build
