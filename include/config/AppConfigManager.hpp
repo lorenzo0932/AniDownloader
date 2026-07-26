@@ -14,7 +14,7 @@ namespace Config {
         int chunksPerTask;      // Numero di segmenti in cui dividere il video (0 o 1 = codifica diretta)
         int threadsPerFFmpeg;   // Numero di thread assegnati a ogni processo FFmpeg
         bool convertToH265;     // Flag per abilitare/disabilitare la conversione
-        bool isBurstMode;       // true = Massima potenza (GUI), false = Background (nice -n 15)
+        bool isBurstMode;       // true = Massima potenza (Burst), false = Background (nice -n 15)
     };
 
     class AppConfigManager {

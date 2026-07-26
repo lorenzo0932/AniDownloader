@@ -8,6 +8,7 @@
 #include <chrono>
 #include <csignal>
 #include <thread>
+#include <sys/wait.h>
 #include "core/SeriesRepository.hpp"
 #include "core/ExecutionEngine.hpp"
 #include "core/MediaProcessor.hpp"
@@ -32,10 +33,19 @@ std::atomic<bool> *g_stopPtr = nullptr;
 static void cliSignalHandler(int) {
     if (g_stopPtr) *g_stopPtr = true;
     #ifndef _WIN32
-        pid_t myPid = getpid();
-        std::string killCmd = "pids=$(pgrep -P " + std::to_string(myPid) +
-            " 2>/dev/null); for pid in $pids; do pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; done";
-        std::system(killCmd.c_str());
+        pid_t child = fork();
+        if (child == 0) {
+            pid_t ppid = getppid();
+            char buf[64];
+            snprintf(buf, sizeof(buf), "%d", ppid);
+            execl("/bin/sh", "sh", "-c",
+                ("pids=$(pgrep -P " + std::string(buf) + " 2>/dev/null); "
+                 "for pid in $pids; do pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; done; "
+                 "pkill -x chromedriver 2>/dev/null").c_str(),
+                nullptr);
+            _exit(127);
+        }
+        if (child > 0) waitpid(child, nullptr, WNOHANG);
     #else
         DWORD myPid = GetCurrentProcessId();
         std::string killCmd = "taskkill /F /FI \"PPID eq " + std::to_string(myPid) +
@@ -70,13 +80,14 @@ void refreshTerminal(bool burst) {
 int main(int argc, char* argv[]) {
     bool burstMode = false;
     bool webMode = false;
+    bool silentMode = false;
     int webPort = 8989;
 
-    // Parsing argomenti
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--burst") burstMode = true;
         if (arg == "--web") webMode = true;
+        if (arg == "--silent") silentMode = true;
         if (arg == "--port" && i + 1 < argc) {
             webPort = std::stoi(argv[++i]);
         }
@@ -113,10 +124,12 @@ int main(int argc, char* argv[]) {
 #endif
 
         int finalPort = server->activePort();
-        auto lanIp = Web::WebServer::getLanIp();
-        std::cout << "Web UI: http://localhost:" << finalPort << "\n";
-        if (lanIp != "0.0.0.0" && lanIp != "127.0.0.1")
-            std::cout << "Web UI (LAN): http://" << lanIp << ":" << finalPort << "\n";
+        if (!silentMode) {
+            auto lanIp = Web::WebServer::getLanIp();
+            std::cout << "Web UI: http://localhost:" << finalPort << "\n";
+            if (lanIp != "0.0.0.0" && lanIp != "127.0.0.1")
+                std::cout << "Web UI (LAN): http://" << lanIp << ":" << finalPort << "\n";
+        }
 
         while (running.load()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -150,9 +163,8 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // Preparazione terminale
-    std::cout << "\033[2J\033[H"; 
-    
+    if (burstMode) std::cout << "\033[2J\033[H";
+
     ExecutionEngine engine(configManager);
     std::atomic<bool> stop(false);
     g_stopPtr = &stop;
@@ -170,32 +182,48 @@ int main(int argc, char* argv[]) {
     #endif
 
     engine.run(seriesList, burstMode, stop,
-        // 4. ProgressCb
         [&](const std::string& n, const std::string& m) {
             {
                 std::lock_guard<std::mutex> l(g_statusMutex);
                 g_statusMap[n] = m;
-            } 
-            refreshTerminal(burstMode);
+            }
+            if (burstMode) refreshTerminal(burstMode);
         },
-        // 5. StatusCb (Globale)
         [&](const std::string& s) {
-            (void)s; // Silenzia il warning dell'unused parameter
+            (void)s;
         },
-        // 6. FinishedCb
         [&](const TaskReport& r) {
-            std::lock_guard<std::mutex> l(g_statusMutex);
-            g_reports.push_back(r);
+            {
+                std::lock_guard<std::mutex> l(g_statusMutex);
+                g_reports.push_back(r);
+            }
+            if (r.success && r.episodeNumber > 0) {
+                auto now = std::chrono::system_clock::now();
+                auto tt = std::chrono::system_clock::to_time_t(now);
+                auto tm = *std::gmtime(&tt);
+                char ts[24] = {};
+                std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &tm);
+                SeriesRepository saveRepo(configManager.get<std::string>("json_file_path", ""));
+                auto currentList = saveRepo.loadSeriesData();
+                for (auto& s : currentList) {
+                    if (s.name == r.name) {
+                        s.lastDownloadedAt = ts;
+                        if (r.episodeNumber > s.lastDownloadedEpisode) {
+                            s.lastDownloadedEpisode = r.episodeNumber;
+                        }
+                        break;
+                    }
+                }
+                saveRepo.saveSeriesData(currentList);
+            }
         },
-        // 7. SkippedCb
         [&](const std::string& n, const std::string& r) {
             {
                 std::lock_guard<std::mutex> l(g_statusMutex);
                 g_statusMap[n] = "🚫 " + r;
             }
-            refreshTerminal(burstMode);
+            if (burstMode) refreshTerminal(burstMode);
         },
-        // 8. AnalysisCb
         nullptr
     );
 

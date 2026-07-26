@@ -13,6 +13,7 @@ namespace Core {
     struct TaskReport {
         std::string name;
         bool success;
+        int episodeNumber = -1;
         double dlTime;
         double convTime;
         std::string error;

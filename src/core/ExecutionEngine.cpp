@@ -2,16 +2,23 @@
 #include "core/PlanningService.hpp"
 #include "core/Logger.hpp"
 #include "scrapers/ScraperUtils.hpp"
-#include <future>
 #include <mutex>
 #include <algorithm>
 #include <filesystem>
-#include <thread>  // Per std::this_thread::sleep_for
-#include <chrono>  // Per std::chrono::milliseconds
+#include <thread>
+#include <chrono>
+#include <memory>
 
 namespace Core {
 
 ExecutionEngine::ExecutionEngine(Config::AppConfigManager& config) : m_config(config) {}
+
+struct PlanningResult {
+    std::mutex mutex;
+    std::vector<std::pair<Series, DownloadTask>> tasks;
+    std::vector<std::string> errors;
+    std::vector<std::string> skipped;
+};
 
 void ExecutionEngine::run(const std::vector<Series>& seriesList, 
                          bool burstMode, 
@@ -24,51 +31,80 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
 {
     onStatus("Analisi parallelizzata in corso...");
 
-    // --- AVVIO AUTOMATICO CHROMEDRIVER (Se spento) ---
-    // Verifica se chromedriver è già attivo nel sistema operativo.
-    // Se non lo trova, lo avvia silenziosamente in background sulla porta 9515.
+    std::string driverPath = m_config.get<std::string>("chromedriver_path", "chromedriver");
     #ifndef _WIN32
-        std::system("pgrep -x chromedriver > /dev/null || chromedriver --port=9515 > /dev/null 2>&1 &");
-        // Piccolo ritardo (400ms) per permettere al server ChromeDriver di inizializzarsi
+        std::system(("pgrep -x " + driverPath + " > /dev/null || " + driverPath + " --port=9515 > /dev/null 2>&1 &").c_str());
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
     #else
-        std::system("tasklist /FI \"IMAGENAME eq chromedriver.exe\" 2>NUL | find /I /N \"chromedriver.exe\" >NUL || start /B chromedriver --port=9515 >NUL 2>&1");
+        std::system(("tasklist /FI \"IMAGENAME eq " + driverPath + ".exe\" 2>NUL | find /I /N \"" + driverPath + ".exe\" >NUL || start /B " + driverPath + " --port=9515 >NUL 2>&1").c_str());
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
     #endif
 
-    std::vector<std::pair<Series, DownloadTask>> toProcess;
-    std::mutex resultsMutex;
-    std::vector<std::future<void>> planningTasks;
+    auto result = std::make_shared<PlanningResult>();
+    auto pending = std::make_shared<std::atomic<int>>(0);
 
     for (const auto& s : seriesList) {
         if (stopSignal) break;
-        planningTasks.push_back(std::async(std::launch::async, [&, s]() {
-            if (stopSignal) return;
-            onProgress(s.name, "Analisi...");
-            
+        onProgress(s.name, "Analisi...");
+        (*pending)++;
+
+        std::thread([&stopSignal, result, pending, s]() {
+            if (stopSignal) { (*pending)--; return; }
+
             Series seriesCopy = s;
             seriesCopy.path = ScraperUtils::expandTilde(s.path);
-            DownloadTask task = PlanningService::planSingleSeries(seriesCopy);
-            
-            std::lock_guard<std::mutex> lock(resultsMutex);
-            if (task.shouldProcess) {
-                toProcess.push_back({seriesCopy, task});
-            } else {
-                // Se lo scraper è andato in errore (es. ChromeDriver non risponde),
-                // lo mostriamo chiaramente anziché nasconderlo sotto un finto "Già aggiornata"
-                if (!task.errorMessage.empty()) {
-                    if (onProgress) {
-                        onProgress(s.name, "❌ Errore: " + task.errorMessage);
-                    }
-                } else {
-                    if (onTaskSkipped) {
-                        onTaskSkipped(s.name, "Già aggiornata");
+            auto tasks = PlanningService::planSingleSeries(seriesCopy);
+
+            if (stopSignal) { (*pending)--; return; }
+
+            bool hasWork = false;
+            bool anyError = false;
+
+            {
+                std::lock_guard<std::mutex> lock(result->mutex);
+                for (const auto& t : tasks) {
+                    if (t.shouldProcess) {
+                        result->tasks.push_back({seriesCopy, t});
+                        hasWork = true;
+                    } else if (!t.errorMessage.empty()) {
+                        result->errors.push_back(s.name + ": " + t.errorMessage);
+                        anyError = true;
                     }
                 }
             }
-        }));
+
+            if (!hasWork && !anyError) {
+                std::lock_guard<std::mutex> lock(result->mutex);
+                result->skipped.push_back(s.name);
+            }
+
+            (*pending)--;
+        }).detach();
     }
-    for (auto& f : planningTasks) f.wait();
+
+    while (*pending > 0 && !stopSignal) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
+    std::vector<std::pair<Series, DownloadTask>> toProcess;
+    {
+        std::lock_guard<std::mutex> lock(result->mutex);
+        toProcess = std::move(result->tasks);
+        for (const auto& err : result->errors) {
+            auto colon = err.find(':');
+            if (colon != std::string::npos && onProgress) {
+                onProgress(err.substr(0, colon), "❌ Errore: " + err.substr(colon + 2));
+            }
+        }
+        for (const auto& name : result->skipped) {
+            if (onTaskSkipped) onTaskSkipped(name, "Già aggiornata");
+        }
+    }
+
+    if (stopSignal) {
+        onStatus("Processo interrotto.");
+        return;
+    }
     if (onAnalysisDone) onAnalysisDone();
 
     if (toProcess.empty()) {
@@ -88,7 +124,7 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
     int downloadWorkers = std::min(static_cast<int>(toProcess.size()),
                                    std::max(strategy.maxConcurrentTasks * 2, 4));
     for (int i = 0; i < downloadWorkers; ++i) {
-        workers.push_back(std::async(std::launch::async, [&]() {
+        workers.push_back(std::async(std::launch::async, [&, i]() {
             while (true) {
                 size_t idx = nextIndex.fetch_add(1);
                 if (idx >= toProcess.size() || stopSignal) break;
@@ -97,7 +133,6 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
                 MediaProcessor mp(onProgress, stopSignal);
                 ProcessResult res = mp.processTask(item.second, item.first, strategy);
 
-                // --- LOGICA DI CLEANUP AUTOMATICO ---
                 if (!res.success && stopSignal && m_config.get<bool>("auto_cleanup_on_close", true)) {
                     std::string expPath = ScraperUtils::expandTilde(item.first.path);
                     std::filesystem::path fullFile = std::filesystem::path(expPath) / item.second.fileName;
@@ -108,7 +143,7 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
                     } catch (...) {}
                 }
 
-                TaskReport report{item.first.name, res.success, res.downloadTime, res.conversionTime, res.errorMessage};
+                TaskReport report{item.first.name, res.success, res.episodeNumber, res.downloadTime, res.conversionTime, res.errorMessage};
                 if (res.success) {
                     Core::Logger::result(report.name, report.dlTime, report.convTime);
                 }
@@ -117,7 +152,12 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
         }));
     }
 
-    for (auto& f : workers) f.wait();
+    for (auto& f : workers) {
+        while (f.wait_for(std::chrono::milliseconds(200)) != std::future_status::ready) {
+            if (stopSignal) break;
+        }
+        if (stopSignal) break;
+    }
     onStatus(stopSignal ? "Processo interrotto." : "Elaborazione completata.");
 }
 

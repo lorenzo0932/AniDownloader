@@ -29,7 +29,8 @@ nlohmann::json AppConfigManager::getDefaultConfig() {
         {"num_chunks", 0},              // 0 = Modalità Auto (Dinamica)
         {"auto_cleanup_on_close", true}, // Pulizia file parziali
         {"max_network_retries", 3},      // Retry HTTP/aria2c
-        {"retry_delay_ms", 2000}         // Delay iniziale tra retry (exponential backoff)
+        {"retry_delay_ms", 2000},        // Delay iniziale tra retry (exponential backoff)
+        {"chromedriver_path", "chromedriver"} // Path per ChromeDriver/ChromeDriver.exe
     };
 }
 

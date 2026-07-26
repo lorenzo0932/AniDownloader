@@ -13,6 +13,7 @@ namespace Core {
 
     struct ProcessResult {
         bool success = false;
+        int episodeNumber = -1;
         double downloadTime = 0.0;
         double conversionTime = 0.0;
         std::string errorMessage;
