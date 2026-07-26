@@ -4,6 +4,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <cstdio>
+#include <map>
 #include <cpr/cpr.h>
 
 namespace Core {
@@ -66,6 +67,19 @@ namespace Core {
 
         // Estrae il nome della serie dalla pagina web dato l'URL
         static std::string fetchSeriesNameFromUrl(const std::string& url);
+
+        // Scansione directory: restituisce {epNumber → fullPath} per file >1MB che matchano Ep[N]
+        static std::map<int, std::string> scanEpisodesMap(const std::string& seriesPath);
+
+        // Verifica se epNum esiste nella mappa ed è valido (ffprobe). Torna path o ""
+        static std::string validEpisodePath(const std::map<int, std::string>& episodesMap, int epNum);
+
+        // Logica centrale: calcola il prossimo episodio da scaricare
+        // Se lastDownloadedEpisode <= 0 → fallback a getHighestEpisodeFile()
+        // Se lastDownloadedEpisode > 0 → cerca backward da N in giù, torna il primo valido + 1
+        // Se nessun valido → torna 1
+        static int computeNextNeeded(const std::string& seriesPath, int lastDownloadedEpisode,
+                                     const std::map<int, std::string>& episodesMap);
 
         // Wrapper HTTP con retry automatico per errori transiente
         // maxRetries: numero massimo di tentativi (default 3)

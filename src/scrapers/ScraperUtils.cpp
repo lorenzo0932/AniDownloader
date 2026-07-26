@@ -227,4 +227,58 @@ namespace Core {
             return "";
         }
     }
+
+    std::map<int, std::string> ScraperUtils::scanEpisodesMap(const std::string& seriesPath) {
+        std::map<int, std::string> map;
+        std::string fullPath = expandTilde(seriesPath);
+        if (!fs::exists(fullPath)) return map;
+
+        static const std::regex epRegex(R"raw([._\s-]Ep[._\s-]?(\d+))raw", std::regex_constants::icase);
+        try {
+            for (const auto& entry : fs::directory_iterator(fullPath)) {
+                if (!entry.is_regular_file() || fs::file_size(entry.path()) < 1000000) continue;
+                std::string filename = entry.path().filename().string();
+                std::smatch match;
+                if (std::regex_search(filename, match, epRegex)) {
+                    int num = std::stoi(match[1].str());
+                    if (num < 2000) map[num] = entry.path().string();
+                }
+            }
+        } catch (...) {}
+        return map;
+    }
+
+    std::string ScraperUtils::validEpisodePath(const std::map<int, std::string>& episodesMap, int epNum) {
+        auto it = episodesMap.find(epNum);
+        if (it == episodesMap.end()) return {};
+
+        const std::string& path = it->second;
+        if (path.empty() || !fs::exists(path)) return {};
+        if (fs::file_size(path) < 1000000) return {};
+
+        std::string qPath = Q(path);
+        std::string cmd = "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 " + qPath + DEVNULL();
+        if (std::system(cmd.c_str()) != 0) return {};
+
+        return path;
+    }
+
+    int ScraperUtils::computeNextNeeded(const std::string& seriesPath, int lastDownloadedEpisode,
+                                         const std::map<int, std::string>& episodesMap) {
+        if (lastDownloadedEpisode <= 0) {
+            auto ep = getHighestEpisodeFile(seriesPath);
+            if (ep.number == 0) return 1;
+            if (!ep.path.empty()) {
+                std::string qPath = Q(ep.path);
+                std::string cmd = "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 " + qPath + DEVNULL();
+                if (std::system(cmd.c_str()) != 0) return ep.number;
+            }
+            return ep.number + 1;
+        }
+
+        for (int n = lastDownloadedEpisode; n >= 1; --n) {
+            if (!validEpisodePath(episodesMap, n).empty()) return n + 1;
+        }
+        return 1;
+    }
 }
