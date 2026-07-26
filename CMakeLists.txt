@@ -86,6 +86,28 @@ set(HEADERS
     include/core/SeriesUtils.hpp
     include/web/CryptoUtils.hpp
     include/web/WebServer.hpp
+    ${EMBEDDED_HPP}
+)
+
+# --- EMBEDDED FRONTEND ---
+set(EMBEDDED_HPP ${CMAKE_SOURCE_DIR}/include/web/embedded_web.hpp)
+set(EMBEDDED_CPP ${CMAKE_SOURCE_DIR}/src/web/embedded_web_data.cpp)
+
+file(GLOB_RECURSE WEB_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/web/src/*
+    ${CMAKE_SOURCE_DIR}/web/*.json
+    ${CMAKE_SOURCE_DIR}/web/*.html
+)
+
+add_custom_command(
+    OUTPUT ${EMBEDDED_CPP} ${EMBEDDED_HPP}
+    COMMAND cd ${CMAKE_SOURCE_DIR}/web && npm install && npm run build
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
+        ${CMAKE_SOURCE_DIR}/web/dist ${EMBEDDED_HPP}
+    DEPENDS
+        ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
+        ${WEB_SOURCES}
+    COMMENT "Building Svelte frontend and embedding into C++ binary"
 )
 
 set(SOURCES
@@ -108,7 +130,8 @@ set(SOURCES
     src/core/LogUtils.cpp
     src/core/SeriesUtils.cpp
     src/web/CryptoUtils.cpp
-    src/web/WebServer.cpp)
+    src/web/WebServer.cpp
+    ${EMBEDDED_CPP})
 
 # --- TARGET ---
 add_executable(AniDownloader $<$<PLATFORM_ID:Windows>:WIN32> ${SOURCES} ${HEADERS})
@@ -149,20 +172,27 @@ else()
     endif()
 endif()
 
-# ─── COPIA FRONTEND IN build/frontend/ (per modalità --web standalone) ───
-add_custom_command(TARGET AniDownloader POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/web/dist"
-        "${CMAKE_BINARY_DIR}/frontend"
-    COMMENT "Copying frontend to build/frontend/"
-)
-
-# ─── COPIA SIDECAR IN src-tauri/binaries/ (per Tauri) ───
+# ─── COPIA SIDECAR IN src-tauri/binaries/ (per Tauri bundle) ───
 add_custom_command(TARGET AniDownloader POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "${CMAKE_SOURCE_DIR}/src-tauri/binaries"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE:AniDownloader>"
         "${CMAKE_SOURCE_DIR}/src-tauri/binaries/AniDownloader-${TAURI_TARGET}$<$<PLATFORM_ID:Windows>:.exe>"
-    COMMENT "Copying sidecar to src-tauri/binaries/AniDownloader-${TAURI_TARGET}"
+    COMMENT "Copying sidecar to src-tauri/binaries/"
+)
+
+# ─── COPIA ANCHE IN src-tauri/target/ per sviluppo (stessa dir del Rust binary) ───
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CARGO_PROFILE "release")
+else()
+    set(CARGO_PROFILE "debug")
+endif()
+add_custom_command(TARGET AniDownloader POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_SOURCE_DIR}/src-tauri/target/${CARGO_PROFILE}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:AniDownloader>"
+        "${CMAKE_SOURCE_DIR}/src-tauri/target/${CARGO_PROFILE}/AniDownloader$<$<PLATFORM_ID:Windows>:.exe>"
+    COMMENT "Copying sidecar to src-tauri/target/${CARGO_PROFILE}/"
 )

@@ -1,4 +1,9 @@
-const BASE = '';
+export const BASE = import.meta.env.DEV ? '' : 'http://127.0.0.1:8989';
+
+export function posterUrl(path) {
+  if (!path) return '';
+  return BASE + '/api/poster?path=' + encodeURIComponent(path);
+}
 
 async function request(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
@@ -44,7 +49,7 @@ export const api = {
   },
 
   download: {
-    start: (burst = false) => request('POST', '/api/download/start', { burst }),
+    start: (burst = true) => request('POST', '/api/download/start', { burst }),
     stop: () => request('POST', '/api/download/stop'),
     status: () => request('GET', '/api/download/status'),
   },

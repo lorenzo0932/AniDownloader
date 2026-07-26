@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { fly } from 'svelte/transition';
-  import { api } from '../api.js';
+  import { api, posterUrl } from '../api.js';
 
   let seriesList = $state([]);
   let downloadRunning = $state(false);
@@ -10,6 +10,7 @@
   let sse = $state(null);
   let error = $state('');
   let logExpanded = $state(false);
+  let skipExpanded = $state(false);
   let logEvents = $state([]);
   let route = $state('home');
 
@@ -19,6 +20,26 @@
 
   let summary = $state(null);
   let stats = $state({ total: 0, done: 0, skipped: 0, errors: 0, dlTime: 0, convTime: 0 });
+  let recentAdded = $state([]);
+  let recentlyDownloaded = $state([]);
+
+  let scaricateData = $derived(
+    doneSeries.map(s => ({ name: s.name, path: s.path, service: s.service })).slice(0, 10)
+  );
+
+  async function loadRecentAdded() {
+    try {
+      const data = await api.series.list({ sort: 'added', dir: 'desc' });
+      recentAdded = (data.series || []).slice(0, 10);
+    } catch {}
+  }
+
+  async function loadRecentlyDownloaded() {
+    try {
+      const data = await api.series.list({ sort: 'last_downloaded_at', dir: 'desc' });
+      recentlyDownloaded = (data.series || []).filter(s => s.last_downloaded_at).slice(0, 10);
+    } catch {}
+  }
 
   let activeCount = $derived(seriesList.filter(s => seriesProgress[s.name]?.isActive).length);
   let doneCount = $derived(seriesList.filter(s => seriesProgress[s.name]?.result === 'done').length);
@@ -42,6 +63,7 @@
       seriesProgress = { ...seriesProgress, [name]: state };
       return;
     }
+    if (state.result === 'done' || state.result === 'error') return;
 
     if (msg === 'MODE:BOTH' || msg === 'MODE:DL' || msg === 'MODE:CONV') {
       state.phaseMode = msg;
@@ -165,7 +187,7 @@
               st.percent = 100;
               st.isActive = false;
               st.result = data.success ? 'done' : 'error';
-              if (!data.success) st.statusText = 'Errore: ' + (data.error || '');
+              st.statusText = data.success ? '✅ Completato' : 'Errore: ' + (data.error || '');
               seriesProgress = { ...seriesProgress };
             }
             break;
@@ -186,6 +208,8 @@
             downloadRunning = false;
             overallStatus = 'Completato.';
             summary = { ...stats };
+            loadRecentAdded();
+            loadRecentlyDownloaded();
             break;
         }
       } catch { /* ignore parse errors */ }
@@ -196,6 +220,8 @@
   onMount(() => {
     loadStatus();
     connectSse();
+    loadRecentAdded();
+    loadRecentlyDownloaded();
   });
 
   onDestroy(() => {
@@ -249,7 +275,7 @@
       </div>
       <div class="summary-actions">
         <button class="btn-primary btn-sm" onclick={startDownload}>Nuovo Download</button>
-        <button class="btn-secondary btn-sm" onclick={() => window.location.hash = '#gestione'}>
+        <button class="btn-secondary btn-sm" onclick={() => { history.pushState(null, '', '/gestione'); window.dispatchEvent(new PopStateEvent('popstate')); }}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
           Gestione Serie
         </button>
@@ -258,10 +284,82 @@
   {/if}
 
   {#if !hasRun && activeSeries.length === 0 && doneSeries.length === 0 && skippedSeries.length === 0 && !summary}
-    <div class="welcome">
-      <svg class="welcome-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
-      <p class="welcome-title">Nessun download in corso</p>
-      <p class="welcome-sub">Premi <strong>Avvia Download</strong> per controllare nuovi episodi.</p>
+    <div class="dashboard-tables">
+      <div class="table-col">
+        <div class="group-label">Ultime serie aggiunte</div>
+        <div class="series-list">
+          {#if recentAdded.length > 0}
+            {#each recentAdded as s (s.name)}
+              <div class="series-row">
+                <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
+                <div class="series-info">
+                  <span class="series-name">{s.name}</span>
+                  <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
+                </div>
+              </div>
+            {/each}
+          {:else}
+            <p class="empty-text">Nessuna serie aggiunta</p>
+          {/if}
+        </div>
+      </div>
+      <div class="table-col">
+        <div class="group-label">Ultime serie scaricate</div>
+        <div class="series-list">
+          {#if recentlyDownloaded.length > 0}
+            {#each recentlyDownloaded as s (s.name)}
+              <div class="series-row">
+                <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
+                <div class="series-info">
+                  <span class="series-name">{s.name}</span>
+                  <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
+                </div>
+              </div>
+            {/each}
+          {:else}
+            <p class="empty-text">Ancora nessun episodio scaricato</p>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {:else if summary}
+    <div class="dashboard-tables">
+      <div class="table-col">
+        <div class="group-label">Ultime serie aggiunte</div>
+        <div class="series-list">
+          {#if recentAdded.length > 0}
+            {#each recentAdded as s (s.name)}
+              <div class="series-row">
+                <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
+                <div class="series-info">
+                  <span class="series-name">{s.name}</span>
+                  <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
+                </div>
+              </div>
+            {/each}
+          {:else}
+            <p class="empty-text">Nessuna serie aggiunta</p>
+          {/if}
+        </div>
+      </div>
+      <div class="table-col">
+        <div class="group-label">Ultime serie scaricate</div>
+        <div class="series-list">
+          {#if recentlyDownloaded.length > 0}
+            {#each recentlyDownloaded as s (s.name)}
+              <div class="series-row">
+                <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
+                <div class="series-info">
+                  <span class="series-name">{s.name}</span>
+                  <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
+                </div>
+              </div>
+            {/each}
+          {:else}
+            <p class="empty-text">Ancora nessun episodio scaricato</p>
+          {/if}
+        </div>
+      </div>
     </div>
   {:else if !summary}
     <div class="series-list">
@@ -270,7 +368,7 @@
         {#each activeSeries as s (s.name)}
           {@const prog = seriesProgress[s.name]}
           <div class="series-row active">
-            <img class="poster-thumb" src="/api/poster?path={encodeURIComponent(s.path)}" alt="" loading="lazy" />
+            <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
             <div class="series-info">
               <span class="series-name">{s.name}</span>
               <span class="series-status">{prog.statusText}</span>
@@ -290,7 +388,7 @@
         {#each doneSeries as s (s.name)}
           {@const prog = seriesProgress[s.name]}
           <div class="series-row done">
-            <img class="poster-thumb" src="/api/poster?path={encodeURIComponent(s.path)}" alt="" loading="lazy" />
+            <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
             <div class="series-info">
               <span class="series-name">{s.name}</span>
               <span class="series-status ok">{prog.statusText}</span>
@@ -301,11 +399,11 @@
 
       {#if skippedSeries.length > 0}
         <div class="group-label">
-          <button class="group-toggle" onclick={() => logExpanded = !logExpanded}>
-            Saltate ({skippedSeries.length}) {logExpanded ? '\u25BC' : '\u25B6'}
+          <button class="group-toggle" onclick={() => skipExpanded = !skipExpanded}>
+            Saltate ({skippedSeries.length}) {skipExpanded ? '\u25BC' : '\u25B6'}
           </button>
         </div>
-        {#if logExpanded}
+        {#if skipExpanded}
           {#each skippedSeries as s (s.name)}
             {@const prog = seriesProgress[s.name]}
             <div class="series-row skipped">
@@ -429,14 +527,22 @@
   .summary-times { font-size: 0.78rem; color: var(--text-muted-more); }
   .summary-actions { display: flex; gap: 0.5rem; flex-shrink: 0; align-items: flex-start; }
 
-  .welcome {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 4rem 2rem; text-align: center;
+  .dashboard-tables {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.5rem;
   }
-  .welcome-icon { width: 48px; height: 48px; color: var(--text-muted-more); margin-bottom: 1rem; }
-  .welcome-title { font-size: 1.1rem; color: var(--text-muted); margin-bottom: 0.5rem; }
-  .welcome-sub { font-size: 0.85rem; color: var(--text-muted); }
-  .welcome-sub strong { color: var(--accent-light); }
+  .table-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .service-badge {
+    font-size: 0.68rem; color: var(--accent);
+  }
+  .empty-text {
+    text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.85rem;
+  }
 
   .series-list { display: flex; flex-direction: column; gap: 0.25rem; }
   .group-label {
@@ -491,8 +597,8 @@
   .log-toggle:hover { color: var(--text-secondary); }
   .log-view {
     background: var(--log-bg); border: 1px solid var(--border-color); border-radius: 8px;
-    padding: 0.75rem; font-family: 'Fira Code', 'Cascadia Code', monospace;
-    font-size: 0.72rem; line-height: 1.5; color: var(--text-muted);
+    padding: 0.75rem; font-family: 'Consolas', 'Menlo', 'Monaco', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Courier New', monospace;
+    font-weight: 500; font-size: 0.78rem; line-height: 1.5; color: var(--text-secondary);
     max-height: 200px; overflow-y: auto; margin-top: 0.25rem;
   }
   .log-line { white-space: nowrap; }
@@ -530,9 +636,6 @@
 
     .log-view { font-size: 0.65rem; max-height: 150px; }
 
-    .welcome { padding: 2rem 1rem; }
-    .welcome-icon { width: 36px; height: 36px; }
-    .welcome-title { font-size: 1rem; }
-    .welcome-sub { font-size: 0.8rem; }
+
   }
 </style>

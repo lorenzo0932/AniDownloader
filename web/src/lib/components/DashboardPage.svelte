@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
-  import { api } from '../api.js';
+  import { api, BASE, posterUrl } from '../api.js';
+  import Dropdown from '../Dropdown.svelte';
 
   let series = $state([]);
   let searchQuery = $state('');
@@ -70,7 +71,7 @@
     const item = series[idx];
     if (!item || !item.path) return;
     try {
-      const res = await fetch(`/api/description?path=${encodeURIComponent(item.path)}`);
+      const res = await fetch(BASE + `/api/description?path=${encodeURIComponent(item.path)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.description) {
@@ -163,7 +164,7 @@
   }
 
   function posterSrc(item) {
-    return item && item.path ? `/api/poster?path=${encodeURIComponent(item.path)}` : '';
+    return posterUrl(item ? item.path : '');
   }
 
   function openDetail(idx) { detailIndex = idx; }
@@ -171,7 +172,7 @@
 
   async function pickDirectory() {
     try {
-      const r = await fetch('/api/browse/pick', {
+      const r = await fetch(BASE + '/api/browse/pick', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ current_path: form.path || undefined }),
@@ -203,12 +204,12 @@
 
 <div class="sort-row">
   <label class="sort-label" for="sort-field">Ordina</label>
-  <select id="sort-field" class="sort-select" bind:value={sortField}>
-    <option value="name">Nome</option>
-    <option value="added">Data inserimento</option>
-    <option value="local_episode_count">Episodi</option>
-    <option value="continue">Continua</option>
-  </select>
+  <Dropdown bind:value={sortField} options={[
+    { value: 'name', label: 'Nome' },
+    { value: 'added', label: 'Data inserimento' },
+    { value: 'local_episode_count', label: 'Episodi' },
+    { value: 'continue', label: 'Continua' },
+  ]} />
   <button class="btn-icon-only sort-dir-btn" onclick={() => sortDir = sortDir === 'asc' ? 'desc' : 'asc'} title={sortDir === 'asc' ? 'Crescente' : 'Decrescente'}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
       {#if sortDir === 'asc'}
@@ -225,100 +226,101 @@
 {/if}
 
 {#if showForm}
-  <button class="form-overlay" onclick={closeForm} aria-label="Close"></button>
-  <div class="form-modal">
-    <div class="form-modal-body">
-      <h3>{editing >= 0 ? 'Modifica: ' + form.name : 'Aggiungi Nuova Serie'}</h3>
+  <div class="modal-overlay" onclick={closeForm} onkeydown={(e) => e.key === 'Escape' && closeForm()}>
+    <div class="modal-panel form-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="form-modal-body">
+        <h3>{editing >= 0 ? 'Modifica: ' + form.name : 'Aggiungi Nuova Serie'}</h3>
 
-      <div class="form-layout">
-        <div class="form-poster-col">
-          <div class="poster-frame">
-            {#if editing >= 0}
-              <img src={posterSrc(series[editing])} alt="poster" class="poster-preview"
-                onerror={() => posterError = true} />
-            {:else}
-              <div class="poster-placeholder">Nessun<br />Percorso</div>
-            {/if}
+        <div class="form-layout">
+          <div class="form-poster-col">
+            <div class="poster-frame">
+              {#if editing >= 0}
+                <img src={posterSrc(series[editing])} alt="poster" class="poster-preview"
+                  onerror={() => posterError = true} />
+              {:else}
+                <div class="poster-placeholder">Nessun<br />Percorso</div>
+              {/if}
+            </div>
+          </div>
+          <div class="form-fields-col">
+            <div class="field-group">
+              <label class="field-label" for="f-service">Servizio di Download</label>
+              <div class="radio-row">
+                <label class="radio-label">
+                  <input type="radio" bind:group={form.service} value="animeW_scraper" />
+                  AnimeW Scraper
+                </label>
+                <label class="radio-label">
+                  <input type="radio" bind:group={form.service} value="animeU_scraper" />
+                  AnimeU Scraper
+                </label>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="f-name">Nome:</label>
+              <div class="input-with-btn">
+                <input id="f-name" type="text" bind:value={form.name} placeholder="Nome della serie" required />
+                <button type="button" class="btn-small-icon" title="Recupera il nome dalla pagina web" onclick={async () => {
+                  if (!form.url.trim()) return;
+                  try { const r = await fetch(form.url, { method: 'HEAD' }); } catch {}
+                }}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="f-path">Percorso Cartella:</label>
+              <div class="input-with-btn">
+                <input id="f-path" type="text" bind:value={form.path} placeholder="/path/to/series" required />
+                <button type="button" class="btn-small-icon" onclick={pickDirectory} title="Sfoglia directory">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="f-url">URL Pagina Serie:</label>
+              <input id="f-url" type="text" bind:value={form.url} placeholder="https://www.animeworld.ac/play/..." required />
+            </div>
+
+            <div class="field-group">
+              <label class="checkbox-inline">
+                <input type="checkbox" bind:checked={form.continue} />
+                Continua numerazione
+              </label>
+              <label class="checkbox-inline">
+                <input type="checkbox" bind:checked={form.highPriority} />
+                Alta Priorit&agrave;
+              </label>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label" for="f-passed">Episodi Passati:</label>
+              <input id="f-passed" type="number" min="0" max="9999" bind:value={form.passedEpisodes} class="num-input" />
+            </div>
           </div>
         </div>
-        <div class="form-fields-col">
-          <div class="field-group">
-            <label class="field-label" for="f-service">Servizio di Download</label>
-            <div class="radio-row">
-              <label class="radio-label">
-                <input type="radio" bind:group={form.service} value="animeW_scraper" />
-                AnimeW Scraper
-              </label>
-              <label class="radio-label">
-                <input type="radio" bind:group={form.service} value="animeU_scraper" />
-                AnimeU Scraper
-              </label>
+
+        {#if editing >= 0}
+          <div class="form-footer">
+            <button class="btn-danger" onclick={() => removeItem(editing)}>Elimina Serie</button>
+            <div class="footer-right">
+              <button class="btn-cancel" onclick={closeForm}>Annulla</button>
+              <button class="btn-primary" onclick={saveForm}>Salva Modifiche</button>
             </div>
           </div>
-
-          <div class="field-group">
-            <label class="field-label" for="f-name">Nome:</label>
-            <div class="input-with-btn">
-              <input id="f-name" type="text" bind:value={form.name} placeholder="Nome della serie" required />
-              <button type="button" class="btn-small-icon" title="Recupera il nome dalla pagina web" onclick={async () => {
-                if (!form.url.trim()) return;
-                try { const r = await fetch(form.url, { method: 'HEAD' }); } catch {}
-              }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-              </button>
+        {:else}
+          <div class="form-footer">
+            <div></div>
+            <div class="footer-right">
+              <button class="btn-cancel" onclick={closeForm}>Annulla</button>
+              <button class="btn-primary" onclick={saveForm}>Salva Modifiche</button>
             </div>
           </div>
-
-          <div class="field-group">
-            <label class="field-label" for="f-path">Percorso Cartella:</label>
-            <div class="input-with-btn">
-              <input id="f-path" type="text" bind:value={form.path} placeholder="/path/to/series" required />
-              <button type="button" class="btn-small-icon" onclick={pickDirectory} title="Sfoglia directory">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-              </button>
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label" for="f-url">URL Pagina Serie:</label>
-            <input id="f-url" type="text" bind:value={form.url} placeholder="https://www.animeworld.ac/play/..." required />
-          </div>
-
-          <div class="field-group">
-            <label class="checkbox-inline">
-              <input type="checkbox" bind:checked={form.continue} />
-              Continua numerazione
-            </label>
-            <label class="checkbox-inline">
-              <input type="checkbox" bind:checked={form.highPriority} />
-              Alta Priorit&agrave;
-            </label>
-          </div>
-
-          <div class="field-group">
-            <label class="field-label" for="f-passed">Episodi Passati:</label>
-            <input id="f-passed" type="number" min="0" max="9999" bind:value={form.passedEpisodes} class="num-input" />
-          </div>
-        </div>
+        {/if}
       </div>
-
-      {#if editing >= 0}
-        <div class="form-footer">
-          <button class="btn-danger" onclick={() => removeItem(editing)}>Elimina Serie</button>
-          <div class="footer-right">
-            <button class="btn-cancel" onclick={closeForm}>Annulla</button>
-            <button class="btn-primary" onclick={saveForm}>Salva Modifiche</button>
-          </div>
-        </div>
-      {:else}
-        <div class="form-footer">
-          <div></div>
-          <div class="footer-right">
-            <button class="btn-cancel" onclick={closeForm}>Annulla</button>
-            <button class="btn-primary" onclick={saveForm}>Salva Modifiche</button>
-          </div>
-        </div>
-      {/if}
     </div>
   </div>
 {/if}
@@ -352,11 +354,11 @@
           </div>
         </div>
         <div class="card-actions">
-          <button class="btn-card" onclick={() => openEdit(realIdx)}>
+          <button class="btn-card" onclick={(e) => { e.stopPropagation(); openEdit(realIdx); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Modifica
           </button>
-          <button class="btn-card btn-card-danger" onclick={() => removeItem(realIdx)}>
+          <button class="btn-card btn-card-danger" onclick={(e) => { e.stopPropagation(); removeItem(realIdx); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
             Elimina
           </button>
@@ -368,13 +370,13 @@
 
 {#if detailIndex >= 0}
   {@const s = series[detailIndex]}
-  <button class="modal-overlay" onclick={closeDetail} aria-label="Close"></button>
-  <div class="detail-modal">
-    <div class="detail-modal-inner">
-      <div class="detail-poster-col">
-        <img class="detail-poster" src={posterSrc(s)} alt="" loading="lazy" />
-      </div>
-      <div class="detail-info-col">
+  <div class="modal-overlay" onclick={closeDetail} onkeydown={(e) => e.key === 'Escape' && closeDetail()}>
+    <div class="modal-panel detail-modal" onclick={(e) => e.stopPropagation()}>
+      <div class="detail-modal-inner">
+        <div class="detail-poster-col">
+          <img class="detail-poster" src={posterSrc(s)} alt="" loading="lazy" />
+        </div>
+        <div class="detail-info-col">
         <button class="detail-close" onclick={closeDetail}>&times;</button>
         <div class="detail-info-scroll">
           <h2 class="detail-title">{s.name || s.title}</h2>
@@ -429,6 +431,7 @@
       </div>
     </div>
   </div>
+  </div>
 {/if}
 </div>
 
@@ -478,10 +481,6 @@
     margin-bottom: 1rem;
   }
   .sort-label { font-size: 0.8rem; color: var(--text-muted); }
-  .sort-select {
-    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px;
-    color: var(--text-primary); padding: 0.35rem 0.5rem; font-size: 0.8rem;
-  }
   .sort-dir-btn { padding: 0.35rem; }
 
   .error {
@@ -506,7 +505,7 @@
   }
   @media (hover: hover) {
     .series-card:hover {
-      transform: scale(1.04);
+      transform: scale(1);
       box-shadow: 0 8px 30px rgba(0,0,0,0.35);
       z-index: 2;
     }
@@ -520,6 +519,7 @@
     width: 100%; aspect-ratio: 2 / 3; object-fit: cover;
     background: var(--bg-tertiary);
     display: block;
+    transform: translateZ(0);
   }
   .card-desc-overlay {
     position: absolute;
@@ -565,16 +565,10 @@
   .btn-card + .btn-card { border-left: 1px solid var(--border-color); }
   .btn-card-danger:hover { background: var(--danger-card-hover); color: var(--danger); }
 
-  .form-overlay {
-    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: var(--overlay); z-index: 100;
-    border: none; padding: 0; cursor: default;
-  }
   .form-modal {
     animation: scaleIn 0.25s ease-out;
-    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
     background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px;
-    padding: 1.5rem; z-index: 101; min-width: 520px; max-width: 90vw;
+    padding: 1.5rem; min-width: 520px; max-width: 90vw;
     max-height: 90vh; overflow-y: auto;
   }
   .form-modal-body h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--accent-light); }
@@ -586,7 +580,7 @@
     background: var(--poster-frame-bg); display: flex; align-items: center; justify-content: center;
     overflow: hidden;
   }
-  .poster-preview { width: 100%; height: 100%; object-fit: cover; }
+  .poster-preview { width: 100%; height: 100%; object-fit: cover; transform: translateZ(0); }
   .poster-placeholder { color: var(--text-muted-more); font-size: 0.8rem; text-align: center; line-height: 1.5; }
   .form-fields-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 
@@ -638,8 +632,8 @@
     to { opacity: 1; }
   }
   @keyframes scaleIn {
-    from { opacity: 0; transform: translate(-50%,-50%) scale(0.95); }
-    to { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
   }
   @keyframes slideUp {
     from { opacity: 0; transform: translateY(10px); }
@@ -648,14 +642,14 @@
 
   .modal-overlay {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: center;
     background: var(--overlay); z-index: 200;
     border: none; padding: 0; cursor: default;
     animation: fadeIn 0.2s ease;
   }
   .detail-modal {
-    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-    z-index: 201; max-width: 90vw; max-height: 90vh;
     animation: scaleIn 0.25s ease-out;
+    max-width: 90vw; max-height: 90vh;
   }
   .detail-modal-inner {
     display: flex; gap: 0;
@@ -669,6 +663,7 @@
   .detail-poster {
     width: 260px; height: 100%; aspect-ratio: 2/3; object-fit: cover;
     display: block;
+    transform: translateZ(0);
   }
   .detail-info-col {
     flex: 1; min-width: 0; padding: 1.5rem;
@@ -716,8 +711,8 @@
     }
     .form-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      transform: none; border-radius: 0; min-width: auto;
-      max-width: 100vw; max-height: 100vh; z-index: 101;
+      border-radius: 0; min-width: auto;
+      max-width: 100vw; max-height: 100vh;
     }
     .form-layout { flex-direction: column; }
     .form-poster-col { display: none; }
@@ -726,7 +721,7 @@
     .header-row { flex-wrap: wrap; gap: 0.5rem; }
     .btn-primary { padding: 0.45rem 0.85rem; font-size: 0.8rem; }
     .detail-modal {
-      top: 0; left: 0; right: 0; bottom: 0; transform: none;
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       max-width: 100vw; max-height: 100vh; border-radius: 0;
       animation: fadeIn 0.2s ease;
     }

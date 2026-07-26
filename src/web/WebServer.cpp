@@ -1,6 +1,8 @@
 #include "web/WebServer.hpp"
+#include "web/embedded_web.hpp"
 #include "core/Logger.hpp"
 #include "core/PlanningService.hpp"
+#include "core/MediaProcessor.hpp"
 #include "core/FileUtils.hpp"
 #include "core/LogUtils.hpp"
 #include "core/SeriesUtils.hpp"
@@ -527,41 +529,8 @@ void WebServer::setupRoutes() {
         sendJson(res, successJson({{"lines", out}}));
     });
 
-    // ---- SPA STATIC FILES ----
-    auto webDir = findFrontendDir();
-    if (!webDir.empty()) {
-        m_svr.set_mount_point("/", webDir);
-        Core::Logger::info("Frontend: " + webDir);
-    } else {
-        m_svr.Get("/", [](const httplib::Request&, httplib::Response& res) {
-            res.set_content(
-                R"(<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">)"
-                R"(<meta name="viewport" content="width=device-width,initial-scale=1">)"
-                R"(<title>AniDownloader Web</title>)"
-                R"(<style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#1e1e1e;color:#fff;margin:0}div{text-align:center}h1{color:#6200ea}p{color:#aaa}code{background:#333;padding:2px 6px;border-radius:4px}</style>)"
-                R"(</head><body><div><h1>AniDownloader Web</h1>)"
-                R"(<p>Frontend not built. Run:</p>)"
-                R"(<p><code>cd web && npm install && npm run build</code></p></div></body></html>)",
-                "text/html"
-            );
-        });
-        Core::Logger::info("Frontend not found, serving placeholder");
-    }
-
-    // SPA fallback
-    auto frontendDir = findFrontendDir();
-    m_svr.set_error_handler([this, frontendDir](const httplib::Request& req, httplib::Response& res) {
-        if (res.status == 404 && req.path.find("/api/") != 0) {
-            auto indexPath = std::filesystem::path(frontendDir) / "index.html";
-            if (std::filesystem::exists(indexPath)) {
-                std::ifstream f(indexPath);
-                std::string content((std::istreambuf_iterator<char>(f)), {});
-                res.set_content(content, "text/html");
-                res.status = 200;
-                return;
-            }
-        }
-    });
+    // ---- EMBEDDED FRONTEND ----
+    serveEmbeddedFrontend();
 }
 
 std::string WebServer::findFrontendDir() {
@@ -584,6 +553,7 @@ std::string WebServer::findFrontendDir() {
 
     std::vector<std::filesystem::path> candidates = {
         exeDir / "frontend",
+        exeDir / "web",
         exeDir.parent_path() / "web" / "dist",
         std::filesystem::current_path() / "web" / "dist",
     };
@@ -593,6 +563,70 @@ std::string WebServer::findFrontendDir() {
             return dir.string();
     }
     return {};
+}
+
+void WebServer::serveEmbeddedFrontend() {
+    const auto& files = getEmbeddedFiles();
+
+    // Root path -> index.html
+    {
+        auto it = files.find("/index.html");
+        if (it != files.end()) {
+            const auto& f = it->second;
+            m_svr.Get("/", [ptr = f.data, sz = f.size](const httplib::Request&, httplib::Response& res) {
+                res.set_content(std::string(reinterpret_cast<const char*>(ptr), sz), "text/html");
+                res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+                res.set_header("Pragma", "no-cache");
+            });
+        }
+    }
+
+    // Register explicit GET routes for each embedded file (no regex, avoids std::regex thread-safety issues)
+    for (const auto& [path, file] : files) {
+        if (path == "/index.html") continue;
+        m_svr.Get(std::string(path),
+            [ptr = file.data, sz = file.size, mt = std::string(file.mime_type)]
+            (const httplib::Request&, httplib::Response& res) {
+                res.set_content(std::string(reinterpret_cast<const char*>(ptr), sz), mt);
+                res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+                res.set_header("Pragma", "no-cache");
+            });
+    }
+
+    // SPA fallback: for non-API 404s, serve index.html
+    m_svr.set_error_handler([&files](const httplib::Request& req, httplib::Response& res) {
+        if (res.status == 404 && req.path.find("/api/") != 0) {
+            auto it = files.find("/index.html");
+            if (it != files.end()) {
+                const auto& file = it->second;
+                res.set_content(std::string(reinterpret_cast<const char*>(file.data), file.size),
+                               "text/html");
+                res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+                res.set_header("Pragma", "no-cache");
+                res.status = 200;
+            }
+        }
+    });
+
+    Core::Logger::info("Frontend: embedded (" + std::to_string(files.size()) + " files, " +
+                       std::to_string(files.find("/index.html")->second.size) + " bytes)");
+}
+
+std::string WebServer::mimeType(const std::string& path) {
+    auto dot = path.rfind('.');
+    if (dot == std::string::npos) return "application/octet-stream";
+    auto ext = path.substr(dot);
+    if (ext == ".html") return "text/html";
+    if (ext == ".js")   return "application/javascript";
+    if (ext == ".css")  return "text/css";
+    if (ext == ".svg")  return "image/svg+xml";
+    if (ext == ".png")  return "image/png";
+    if (ext == ".ico")  return "image/x-icon";
+    if (ext == ".json") return "application/json";
+    if (ext == ".woff2") return "font/woff2";
+    if (ext == ".woff")  return "font/woff";
+    if (ext == ".ttf")   return "font/ttf";
+    return "application/octet-stream";
 }
 
 bool WebServer::start() {
@@ -654,6 +688,24 @@ void WebServer::runDownloads(const std::vector<Core::Series>& seriesList, bool b
                 broadcastSseEvent(ev.dump());
             },
             [this](const Core::TaskReport& report) {
+                if (report.success) {
+                    auto now = std::chrono::system_clock::now();
+                    auto tt = std::chrono::system_clock::to_time_t(now);
+                    auto tm = *std::gmtime(&tt);
+                    char buf[24] = {};
+                    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+                    auto series = m_seriesRepository.loadSeriesData();
+                    for (auto& s : series) {
+                        if (s.name == report.name) {
+                            s.lastDownloadedAt = buf;
+                            if (report.episodeNumber > s.lastDownloadedEpisode) {
+                                s.lastDownloadedEpisode = report.episodeNumber;
+                            }
+                            break;
+                        }
+                    }
+                    m_seriesRepository.saveSeriesData(series);
+                }
                 nlohmann::json ev = {
                     {"type", "finished"}, {"series", report.name},
                     {"success", report.success}, {"dlTime", report.dlTime},

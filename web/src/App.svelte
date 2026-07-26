@@ -28,6 +28,7 @@
   <div class="app-layout">
     <nav class="sidebar">
       <div class="sidebar-header">
+        <img src="/logo.png" class="sidebar-logo" alt="AniDownloader" />
         <h1>AniDownloader</h1>
       </div>
       <div class="nav-items">
@@ -160,6 +161,7 @@
   .app-layout {
     display: flex;
     min-height: 100vh;
+    position: relative;
   }
 
   .sidebar {
@@ -176,11 +178,13 @@
     z-index: 50;
   }
 
+  .sidebar-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; }
+  .sidebar-logo { width: 26px; height: 26px; flex-shrink: 0; border-radius: 4px; }
+  :global([data-theme="light"]) .sidebar-logo { filter: invert(1) brightness(0.8); }
   .sidebar-header h1 {
     font-size: 1.25rem;
     font-weight: 700;
     color: var(--accent);
-    margin-bottom: 1.5rem;
   }
 
   .nav-items {
@@ -226,6 +230,8 @@
     padding: 2rem;
     flex: 1;
     width: calc(100% - 240px);
+    position: relative;
+    z-index: 1;
   }
 
   @media (max-width: 768px) {

@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
-  import { fly } from 'svelte/transition';
   import { api } from '../api.js';
+  import Dropdown from '../Dropdown.svelte';
 
   let lines = $state([]);
   let count = $state(100);
@@ -29,12 +29,12 @@
   <div class="header-row">
     <h2>Server Logs</h2>
     <div class="controls">
-      <select bind:value={count} onchange={load}>
-        <option value="50">50 lines</option>
-        <option value="100">100 lines</option>
-        <option value="200">200 lines</option>
-        <option value="500">500 lines</option>
-      </select>
+      <Dropdown bind:value={count} options={[
+        { value: '50', label: '50 lines' },
+        { value: '100', label: '100 lines' },
+        { value: '200', label: '200 lines' },
+        { value: '500', label: '500 lines' },
+      ]} onchange={load} />
       <button class="btn-primary" onclick={refresh}>Refresh</button>
     </div>
   </div>
@@ -55,11 +55,7 @@
   .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem; }
   h2 { font-size: 1.5rem; font-weight: 700; }
   .controls { display: flex; gap: 0.5rem; align-items: center; }
-  select {
-    padding: 0.5rem 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color);
-    border-radius: 8px; color: var(--text-primary); font-size: 0.85rem; cursor: pointer;
-  }
-  select:focus { outline: none; border-color: var(--accent); }
+
   .btn-primary {
     padding: 0.5rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
@@ -77,8 +73,8 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .log-view {
     background: var(--log-bg); border: 1px solid var(--border-color); border-radius: 12px;
-    padding: 1rem; font-family: 'Fira Code', 'Cascadia Code', monospace;
-    font-size: 0.78rem; line-height: 1.5; color: var(--text-muted); max-height: 70vh;
+    padding: 1rem; font-family: 'Consolas', 'Menlo', 'Monaco', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Courier New', monospace;
+    font-weight: 500; font-size: 0.78rem; line-height: 1.5; color: var(--text-secondary); max-height: 70vh;
     overflow-y: auto; white-space: pre-wrap; word-break: break-all;
     animation: fadeIn 0.3s ease-out;
   }

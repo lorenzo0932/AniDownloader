@@ -4,16 +4,6 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "shell:allow-spawn",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "binaries/AniDownloader",
-          "sidecar": true
-        }
-      ]
-    },
     "dialog:default",
     "notification:default",
     "fs:default"
