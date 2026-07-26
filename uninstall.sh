@@ -2,7 +2,6 @@
 set -euo pipefail
 
 APP_NAME="AniDownloader"
-BIN_NAME="AniDownloader"
 INSTALL_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
@@ -10,6 +9,7 @@ ICON_DEST_DIR="$HOME/.local/share/icons"
 ICON_NAME="anidownloader_logo.png"
 CONFIG_DIR="$HOME/.config/$APP_NAME"
 CACHE_DIR="$HOME/.cache/$APP_NAME"
+HEADLESS_DIR="$HOME/.local/share/anidownloader-headless"
 
 # ──────────────────────────────────────────────
 # 1. Menu
@@ -24,19 +24,18 @@ EOF
 
 echo "Scegli cosa rimuovere:"
 echo ""
-echo "  1) Solo il binario"
-echo "     Rimuove l'eseguibile, shortcut .desktop e icona."
-echo "     Mantiene: servizi systemd, configurazione (config.json,"
-echo "     series_data.json)."
+echo "  1) Solo i binari e launcher"
+echo "     Rimuove AppImage, anidownloaderd, shortcut .desktop, icona e script helper."
+echo "     Mantiene: servizi systemd e configurazione (config.json, series_data.json)."
 echo "     Utile per reinstallare senza perdere dati."
 echo ""
 echo "  2) Solo i servizi"
-echo "     Disabilita e rimuove i file systemd (timer e web)."
-echo "     Mantiene: binario e configurazione."
+echo "     Disabilita e rimuove i file systemd (daemon e check timer)."
+echo "     Mantiene: binari e configurazione."
 echo "     Utile se non vuoi piu' l'esecuzione automatica."
 echo ""
 echo "  3) Tutto"
-echo "     Rimuove binario, servizi, shortcut, icona,"
+echo "     Rimuove binari, servizi, shortcut, icona, helper e"
 echo "     configurazione (config.json, series_data.json)."
 echo "     ⚠️  I dati sono IRRECUPERABILI senza backup."
 echo ""
@@ -72,31 +71,42 @@ if [ "$MODE" = "all" ]; then
     RIMUOVI_CONFIG=true
 fi
 
-# Ferma e disabilita servizi
+# Ferma e disabilita servizi (nuovi e vecchi per retrocompatibilità)
 if $FERMA_SERVIZI; then
     echo "Fermo e disabilito servizi systemd..."
-    for svc in AniDownloader.timer AniDownloader.service AniDownloaderWeb.service; do
+    for svc in anidownloaderd.service anidownloader-check.service anidownloader-check.timer AniDownloader.timer AniDownloader.service AniDownloaderWeb.service; do
         systemctl --user stop "$svc" 2>/dev/null || true
         systemctl --user disable "$svc" 2>/dev/null || true
     done
-    rm -f "$SYSTEMD_DIR/AniDownloader.service" \
+    rm -f "$SYSTEMD_DIR/anidownloaderd.service" \
+          "$SYSTEMD_DIR/anidownloader-check.service" \
+          "$SYSTEMD_DIR/anidownloader-check.timer" \
+          "$SYSTEMD_DIR/AniDownloader.service" \
           "$SYSTEMD_DIR/AniDownloader.timer" \
           "$SYSTEMD_DIR/AniDownloaderWeb.service"
     systemctl --user daemon-reload
     echo "  File systemd rimossi"
 fi
 
-# Rimuovi binario
+# Rimuovi binari, shortcut e helper
 if $RIMUOVI_BINARIO; then
-    echo "Rimuovo eseguibile e uninstaller..."
-    rm -f "$INSTALL_DIR/$BIN_NAME"
+    echo "Rimuovo eseguibili, script helper e uninstaller..."
+    rm -f "$INSTALL_DIR/$APP_NAME.AppImage"
+    rm -f "$INSTALL_DIR/$APP_NAME"
+    rm -f "$INSTALL_DIR/AniDownloader"
+    rm -f "$INSTALL_DIR/anidownloaderd"
+    rm -f "$INSTALL_DIR/anidownloader-webui.sh"
     rm -f "$INSTALL_DIR/uninstall.sh"
+    rm -rf "$HEADLESS_DIR"
 
     echo "Rimuovo icona..."
     rm -f "$ICON_DEST_DIR/$ICON_NAME"
 
     echo "Rimuovo shortcut .desktop..."
     rm -f "$APP_DIR/$APP_NAME.desktop"
+    rm -f "$APP_DIR/${APP_NAME}-CLI.desktop"
+    rm -f "$APP_DIR/${APP_NAME}-Web.desktop"
+    # Pulizia vecchie nomenclature
     rm -f "$APP_DIR/${APP_NAME}GUI.desktop"
     rm -f "$APP_DIR/${APP_NAME}Web.desktop"
     update-desktop-database "$APP_DIR" 2>/dev/null || true
@@ -124,7 +134,7 @@ if $FERMA_SERVIZI; then
     echo "  Servizi systemd: rimossi"
 fi
 if $RIMUOVI_BINARIO; then
-    echo "  Binario:         rimosso ($INSTALL_DIR/$BIN_NAME)"
+    echo "  Binari/Desktop:  rimossi ($INSTALL_DIR/$APP_NAME* e $HEADLESS_DIR)"
 fi
 if ! $RIMUOVI_CONFIG; then
     echo "  Configurazione:  mantenuta ($CONFIG_DIR)"

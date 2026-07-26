@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_NAME="AniDownloader"
-BIN_NAME="AniDownloader"
+REPO="lorenzo0932/AniDownloader"
 INSTALL_DIR="$HOME/.local/bin"
 APP_DIR="$HOME/.local/share/applications"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
@@ -10,6 +10,25 @@ ICON_DEST_DIR="$HOME/.local/share/icons"
 ICON_NAME="anidownloader_logo.png"
 ICON_FULL_PATH="$ICON_DEST_DIR/$ICON_NAME"
 CONFIG_DIR="$HOME/.config/$APP_NAME"
+HEADLESS_DIR="$HOME/.local/share/anidownloader-headless"
+
+# ──────────────────────────────────────────────
+# Funzioni
+# ──────────────────────────────────────────────
+get_latest_release() {
+    curl -sL "https://api.github.com/repos/$REPO/releases/latest" | \
+        grep '"tag_name"' | cut -d'"' -f4
+}
+
+download_asset() {
+    local version="$1" asset="$2" output="$3"
+    url="https://github.com/$REPO/releases/download/$version/$asset"
+    echo "  Download: $asset"
+    curl -fsL -o "$output" "$url" || {
+        echo "  Fallito download di $asset"
+        return 1
+    }
+}
 
 # ──────────────────────────────────────────────
 # 0. Verifica dipendenze
@@ -22,18 +41,7 @@ check_cmd() {
     fi
 }
 
-check_pkgconfig() {
-    if ! pkg-config --exists "$1" 2>/dev/null; then
-        MISSING="$MISSING  - $1 ($2)\n"
-    fi
-}
-
-check_cmd cmake "build system"
-check_cmd ninja "build tool (alternativa: make)"
-
-check_pkgconfig libcurl "libcurl (sviluppo): libcurl4-openssl-dev / libcurl-devel"
-check_pkgconfig openssl "OpenSSL (sviluppo): libssl-dev / openssl-devel"
-
+check_cmd curl "download pre-built artifacts"
 check_cmd aria2c "runtime (download multi-thread) — opzionale ma raccomandato"
 check_cmd ffmpeg "runtime (conversione video) — opzionale ma raccomandato"
 
@@ -41,10 +49,7 @@ if [ -n "$MISSING" ]; then
     echo "═══════════════════════════════════════════════"
     echo " Dipendenze mancanti:"
     echo -e "$MISSING"
-    echo " Installale con il package manager della tua"
-    echo " distribuzione e riprova."
     echo "═══════════════════════════════════════════════"
-    exit 1
 fi
 
 # ──────────────────────────────────────────────
@@ -58,223 +63,435 @@ cat << "EOF"
 
 EOF
 
-echo "Scegli cosa installare:"
+echo "Cosa vuoi installare?"
 echo ""
-echo "  Il binario contiene tutte le modalità integrate:"
-echo "  CLI (senza flag), GUI (--gui) e Web UI (--web)."
-echo "  La scelta qui sotto determina solo quali servizi"
-echo "  automatici abilitare."
+echo "  1) Solo Desktop (AppImage + launcher)  [~80 MB]"
+echo "     App nativa con icona nel drawer, tray icon."
+echo "     Include Tauri + C++ backend + Web UI integrata."
 echo ""
-echo "  1) Binario base — nessun servizio"
-echo "     Solo il binario. Avvia manualmente con --gui,"
-echo "     --web o --burst. Nessun servizio in background."
+echo "  2) Solo Headless (CLI + servizio systemd)  [~8 MB]"
+echo "     Solo backend C++ per server/NAS/Raspberry Pi."
+echo "     Accesso via browser sulla porta 8989."
+echo "     Il daemon 'anidownloaderd' parte automaticamente."
 echo ""
-echo "  2) Binario + Timer automatico"
-echo "     Aggiunge il servizio systemd che controlla nuovi"
-echo "     episodi ogni 15 minuti e al risveglio dal sonno."
-echo "     Consigliato per download automatici in background."
-echo ""
-echo "  3) Binario + Web UI"
-echo "     Aggiunge il server web always-on (porta 8989)."
-echo "     Gestisci tutto dal browser: download, progresso live (SSE)."
-echo ""
-echo "  4) Tutto (Binario + Timer + Web UI)"
-echo "     Timer automatico + server web. Il massimo della"
-echo "     flessibilità."
+echo "  3) Entrambi (consigliato)  [~88 MB]"
+echo "     Desktop + Headless. App nativa + servizio systemd."
 echo ""
 echo "  0) Annulla"
 echo ""
 
-read -r -p "Scelta [0-4] (default: 2): " choice
-choice="${choice:-2}"
+read -r -p "Scelta [0-3] (default: 3): " choice
+choice="${choice:-3}"
 
-WITH_TIMER=false
-WITH_WEB=false
+INSTALL_DESKTOP=false
+INSTALL_HEADLESS=false
 
 case "$choice" in
     0) echo "Annullato."; exit 0 ;;
-    1) ;;
-    2) WITH_TIMER=true ;;
-    3) WITH_WEB=true ;;
-    4) WITH_TIMER=true; WITH_WEB=true ;;
+    1) INSTALL_DESKTOP=true ;;
+    2) INSTALL_HEADLESS=true ;;
+    3) INSTALL_DESKTOP=true; INSTALL_HEADLESS=true ;;
     *) echo "Scelta non valida."; exit 1 ;;
 esac
 
 echo ""
 
 # ──────────────────────────────────────────────
-# 2. Ferma servizi esistenti
+# 2. Determina versione
 # ──────────────────────────────────────────────
-echo "Fermo eventuali servizi in esecuzione..."
-systemctl --user stop AniDownloader.timer AniDownloader.service 2>/dev/null || true
-if systemctl --user is-active AniDownloaderWeb.service &>/dev/null 2>&1; then
-    systemctl --user stop AniDownloaderWeb.service 2>/dev/null || true
-fi
-
-# ──────────────────────────────────────────────
-# 3. Compilazione
-# ──────────────────────────────────────────────
-echo "Compilazione in corso..."
-BUILD_DIR="build"
-if command -v ninja &>/dev/null; then
-    GENERATOR="Ninja"
-    BUILD_CMD="ninja"
-else
-    GENERATOR="Unix Makefiles"
-    BUILD_CMD="make -j$(nproc)"
-fi
-if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
-    CURRENT_GEN=$(grep CMAKE_MAKE_PROGRAM "$BUILD_DIR/CMakeCache.txt" 2>/dev/null | head -1)
-    if echo "$CURRENT_GEN" | grep -q "ninja" && [ "$GENERATOR" = "Unix Makefiles" ]; then
-        rm -rf "$BUILD_DIR"
-    elif echo "$CURRENT_GEN" | grep -q "make" && [ "$GENERATOR" = "Ninja" ]; then
-        rm -rf "$BUILD_DIR"
+BUILD_LOCAL=true
+VERSION="${1:-}"
+if [ -z "$VERSION" ]; then
+    echo "Recupero ultima release da GitHub..."
+    VERSION=$(get_latest_release) || true
+    if [ -n "$VERSION" ]; then
+        echo "  Trovata: $VERSION"
+        BUILD_LOCAL=false
+    else
+        echo "  GitHub non raggiungibile. Procedo con build locale."
     fi
+else
+    echo "  Versione richiesta: $VERSION"
 fi
-mkdir -p "$BUILD_DIR"
-cmake -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE=Release
-cmake --build "$BUILD_DIR"
 echo ""
 
 # ──────────────────────────────────────────────
-# 4. Crea directory necessarie
+# 3. Crea directory necessarie
 # ──────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR" "$APP_DIR" "$SYSTEMD_DIR" "$ICON_DEST_DIR" "$CONFIG_DIR"
+if $INSTALL_HEADLESS; then
+    mkdir -p "$HEADLESS_DIR"
+fi
 
 # ──────────────────────────────────────────────
-# 5. Installa binario
+# 4. Rileva systemd
 # ──────────────────────────────────────────────
-echo "Installo binario in $INSTALL_DIR..."
-rm -f "$INSTALL_DIR/$BIN_NAME"
-cp -f "$BUILD_DIR/$BIN_NAME" "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/$BIN_NAME"
+HAS_SYSTEMD=false
+if command -v systemctl &>/dev/null && systemctl --user show-environment &>/dev/null 2>&1; then
+    HAS_SYSTEMD=true
+fi
 
 # ──────────────────────────────────────────────
-# 6. Build frontend (se web)
+# 5. Ferma istanze in esecuzione
 # ──────────────────────────────────────────────
-if $WITH_WEB; then
-    echo "Build frontend web..."
-    if command -v node &>/dev/null && command -v npm &>/dev/null; then
-        if (cd web && npm install --silent && npm run build --silent); then
-            mkdir -p "$INSTALL_DIR/frontend"
-            cp -r web/dist/* "$INSTALL_DIR/frontend/"
-        else
-            echo "  Frontend build fallito (proseguo comunque)"
-        fi
+echo "Fermo eventuali processi in esecuzione..."
+pkill -f "$INSTALL_DIR/$APP_NAME" 2>/dev/null || true
+pkill -f "$INSTALL_DIR/AniDownloader" 2>/dev/null || true
+pkill -f "$INSTALL_DIR/anidownloaderd" 2>/dev/null || true
+pkill -f "$HEADLESS_DIR/anidownloaderd" 2>/dev/null || true
+if $HAS_SYSTEMD; then
+    # Ferma servizi nuovi
+    systemctl --user stop anidownloaderd.service 2>/dev/null || true
+    # Ferma e disabilita servizi VECCHI (retrocompatibilità)
+    for old in AniDownloader.service AniDownloader.timer AniDownloaderWeb.service; do
+        systemctl --user stop "$old" 2>/dev/null || true
+        systemctl --user disable "$old" 2>/dev/null || true
+    done
+    # Rimuovi file vecchi
+    rm -f "$SYSTEMD_DIR/AniDownloader.service" \
+          "$SYSTEMD_DIR/AniDownloader.timer" \
+          "$SYSTEMD_DIR/AniDownloaderWeb.service"
+    systemctl --user daemon-reload
+fi
+sleep 1
+
+# ──────────────────────────────────────────────
+# 5. Installazione
+# ──────────────────────────────────────────────
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64)  ARCH="x86_64"  ;;
+    aarch64) ARCH="aarch64" ;;
+    armv7l)  ARCH="armv7l"  ;;
+    *)       echo "  Architettura '$ARCH' non supportata. Uso x86_64 come default."
+             ARCH="x86_64"  ;;
+esac
+
+if $BUILD_LOCAL; then
+    echo "═══ Build locale ═══"
+
+    check_cmd cmake "build system"
+    check_cmd node "frontend build (npm)"
+    check_cmd npm "frontend build"
+
+    BUILD_DIR="build"
+    if command -v ninja &>/dev/null; then
+        GENERATOR="Ninja"
+        BUILD_CMD="ninja"
     else
-        echo "  Node.js/npm non trovato — build frontend saltata"
+        GENERATOR="Unix Makefiles"
+        BUILD_CMD="make -j$(nproc)"
+    fi
+    echo "Build frontend web + embed into C++ binary..."
+    (cd web && npm install --silent && npm run build --silent) || true
+    python3 scripts/embed_web.py web/dist include/web/embedded_web.hpp
+
+    mkdir -p "$BUILD_DIR"
+    cmake -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$BUILD_DIR"
+
+    # Copia sempre il binary C++ raw in INSTALL_DIR per la CLI
+    cp "$BUILD_DIR/$APP_NAME" "$INSTALL_DIR/AniDownloader"
+    chmod +x "$INSTALL_DIR/AniDownloader"
+
+    if $INSTALL_DESKTOP; then
+        APPIMAGE=$(find src-tauri/target/release -name "*.AppImage" 2>/dev/null | head -1)
+        if [ -z "$APPIMAGE" ] && command -v npx &>/dev/null && [ -f "src-tauri/tauri.conf.json" ]; then
+            echo "Build Tauri (AppImage)..."
+            NO_STRIP=1 npx @tauri-apps/cli build 2>&1 && \
+                APPIMAGE=$(find src-tauri/target/release -name "*.AppImage" 2>/dev/null | head -1) || \
+                APPIMAGE=""
+        fi
+
+        if [ -n "$APPIMAGE" ]; then
+            echo "  AppImage: $APPIMAGE"
+            cp "$APPIMAGE" "$INSTALL_DIR/$APP_NAME.AppImage"
+            chmod +x "$INSTALL_DIR/$APP_NAME.AppImage"
+        else
+            echo "  Tauri/AppImage non disponibile, copio binario raw."
+            echo "  Per usare il desktop serve anche Tauri; intanto puoi"
+            echo "  lanciare '--web' e aprire http://localhost:8989 nel browser."
+            cp "$BUILD_DIR/$APP_NAME" "$INSTALL_DIR/"
+        fi
+    fi
+
+    if $INSTALL_HEADLESS; then
+        echo "Installo headless..."
+        mkdir -p "$HEADLESS_DIR/web"
+        cp "$BUILD_DIR/$APP_NAME" "$HEADLESS_DIR/anidownloaderd"
+        if [ -d "web/dist" ]; then
+            rm -rf "$HEADLESS_DIR/web"/*
+            cp -r web/dist/* "$HEADLESS_DIR/web/"
+        fi
+        ln -sf "$HEADLESS_DIR/anidownloaderd" "$INSTALL_DIR/anidownloaderd"
+    fi
+else
+    echo "═══ Download da GitHub ═══"
+
+    if $INSTALL_DESKTOP; then
+        echo "Scarico AppImage..."
+        DESKTOP_ASSET="${APP_NAME}-${VERSION}-${ARCH}.AppImage"
+        DESKTOP_DEST="$INSTALL_DIR/$APP_NAME.AppImage"
+        download_asset "$VERSION" "$DESKTOP_ASSET" "$DESKTOP_DEST"
+        chmod +x "$DESKTOP_DEST"
+    fi
+
+    if $INSTALL_HEADLESS; then
+        echo "Scarico headless..."
+        HEADLESS_ASSET="anidownloaderd-${VERSION}-linux-${ARCH}.tar.gz"
+        HEADLESS_TMP=$(mktemp -d)
+        if download_asset "$VERSION" "$HEADLESS_ASSET" "$HEADLESS_TMP/headless.tar.gz"; then
+            tar -xzf "$HEADLESS_TMP/headless.tar.gz" -C "$HEADLESS_DIR"
+            HEADLESS_BIN=$(find "$HEADLESS_DIR" -name "anidownloaderd" -type f 2>/dev/null | head -1)
+            if [ -n "$HEADLESS_BIN" ]; then
+                chmod +x "$HEADLESS_BIN"
+                ln -sf "$HEADLESS_BIN" "$INSTALL_DIR/anidownloaderd"
+            else
+                echo "  Binary anidownloaderd non trovato nell'archivio"
+            fi
+        else
+            echo "  Download fallito. Salto headless."
+        fi
+        rm -rf "$HEADLESS_TMP"
     fi
 fi
 
 # ──────────────────────────────────────────────
-# 7. Icona
+# 6. Icona
 # ──────────────────────────────────────────────
 if [ -f "resources/logo.png" ]; then
     cp -f "resources/logo.png" "$ICON_FULL_PATH"
-else
-    echo "  resources/logo.png non trovata"
+elif [ -f "$HEADLESS_DIR/resources/logo.png" ]; then
+    cp -f "$HEADLESS_DIR/resources/logo.png" "$ICON_FULL_PATH"
 fi
 
 # ──────────────────────────────────────────────
-# 8. Shortcut .desktop
+# 7. Shortcut .desktop (3 entry)
 # ──────────────────────────────────────────────
-rm -f "$APP_DIR/AniDownloader.desktop" "$APP_DIR/AniDownloaderGUI.desktop" "$APP_DIR/AniDownloaderWeb.desktop"
+# Pulisce vecchi file .desktop
+rm -f "$APP_DIR/$APP_NAME.desktop" \
+      "$APP_DIR/${APP_NAME}GUI.desktop" \
+      "$APP_DIR/${APP_NAME}Web.desktop"
 
-cat << EOF > "$APP_DIR/AniDownloader.desktop"
+# Determina il binary desktop (AppImage o raw)
+DESKTOP_BIN="$INSTALL_DIR/$APP_NAME.AppImage"
+if [ ! -f "$DESKTOP_BIN" ]; then
+    DESKTOP_BIN="$INSTALL_DIR/$APP_NAME"
+fi
+
+# 7a. GUI — App nativa
+if $INSTALL_DESKTOP; then
+    cat << EOF > "$APP_DIR/$APP_NAME.desktop"
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=AniDownloader (CLI)
-Comment=Download e conversione anime (riga di comando)
-Exec=bash -c "$INSTALL_DIR/$BIN_NAME --burst"
-Path=$HOME
-Icon=$ICON_FULL_PATH
-Terminal=true
-Categories=Network;Video;AudioVideo;
-EOF
-
-cat << EOF > "$APP_DIR/AniDownloaderGUI.desktop"
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=AniDownloader (GUI)
-Comment=Download e conversione anime (interfaccia grafica)
-Exec=bash -c "$INSTALL_DIR/$BIN_NAME --gui"
+Name=AniDownloader
+Comment=Download e conversione anime — GUI nativa
+Exec=$DESKTOP_BIN
 Path=$HOME
 Icon=$ICON_FULL_PATH
 Terminal=false
 Categories=Network;Video;AudioVideo;
 EOF
+fi
 
-if $WITH_WEB; then
-    cat << EOF > "$APP_DIR/AniDownloaderWeb.desktop"
+# 7b. CLI — terminale con dashboard burst
+CLI_BIN="$INSTALL_DIR/AniDownloader"
+if $INSTALL_DESKTOP; then
+    cat << EOF > "$APP_DIR/${APP_NAME}-CLI.desktop"
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=AniDownloader (Web)
-Comment=Server web AniDownloader
-Exec=bash -c "$INSTALL_DIR/$BIN_NAME --web"
-Path=$INSTALL_DIR
+Name=AniDownloader (CLI)
+Comment=Download e conversione anime — dashboard ANSI live
+Exec=$CLI_BIN --burst
+Path=$HOME
 Icon=$ICON_FULL_PATH
 Terminal=true
 Categories=Network;Video;AudioVideo;
 EOF
 fi
 
-update-desktop-database "$APP_DIR" 2>/dev/null || true
+# 7c. WebUI — browser + auto-avvio daemon
+if $INSTALL_DESKTOP || $INSTALL_HEADLESS; then
+    # Crea script helper per WebUI
+    WEBUI_HELPER="$INSTALL_DIR/anidownloader-webui.sh"
 
-# ──────────────────────────────────────────────
-# 9. File systemd
-# ──────────────────────────────────────────────
-rm -f "$SYSTEMD_DIR/AniDownloader.service" "$SYSTEMD_DIR/AniDownloader.timer" "$SYSTEMD_DIR/AniDownloaderWeb.service"
+    cat << 'SCRIPT' > "$WEBUI_HELPER"
+#!/bin/bash
+# Helper per aprire WebUI: avvia il daemon se non in ascolto, poi apre browser
+WEBUI_PORT=8989
 
-if [ -d "systemd_services" ]; then
-    sed "s|^ExecStart=.*|ExecStart=$INSTALL_DIR/$BIN_NAME|" \
-        "systemd_services/AniDownloader.service" > "$SYSTEMD_DIR/AniDownloader.service"
+# Trova il binary (headless o AppImage)
+find_binary() {
+    local dirs=(
+        "__HEADLESS_DIR__/anidownloaderd"
+        "__INSTALL_DIR__/anidownloaderd"
+        "__INSTALL_DIR__/AniDownloader.AppImage"
+        "__INSTALL_DIR__/AniDownloader"
+    )
+    for p in "${dirs[@]}"; do
+        if [ -x "$p" ]; then
+            echo "$p"
+            return 0
+        fi
+    done
+    return 1
+}
 
-    cp -f "systemd_services/AniDownloader.timer" "$SYSTEMD_DIR/"
+HEADLESS_BIN=$(find_binary)
 
-    if $WITH_WEB; then
-        sed "s|%h/.local/bin/$BIN_NAME|$INSTALL_DIR/$BIN_NAME|g" \
-            "systemd_services/AniDownloaderWeb.service" > "$SYSTEMD_DIR/AniDownloaderWeb.service"
+# Verifica se il daemon è già in ascolto
+if command -v ss &>/dev/null; then
+    LISTENING=$(ss -tlnp "sport = :$WEBUI_PORT" 2>/dev/null)
+elif command -v netstat &>/dev/null; then
+    LISTENING=$(netstat -tlnp 2>/dev/null | grep ":$WEBUI_PORT ")
+else
+    LISTENING=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$WEBUI_PORT" 2>/dev/null)
+fi
+
+if [ -z "$LISTENING" ] || [ "$LISTENING" = "000" ]; then
+    echo "Avvio AniDownloader WebUI (porta $WEBUI_PORT)..."
+    if [ -n "$HEADLESS_BIN" ]; then
+        "$HEADLESS_BIN" --web --silent &
+        sleep 2
+    else
+        echo "Binary non trovato in nessun path."
+        echo "Installa AniDownloader prima di usare questa voce."
+        exit 1
     fi
 fi
 
-systemctl --user daemon-reload
+# Apri browser
+if command -v xdg-open &>/dev/null; then
+    xdg-open "http://127.0.0.1:$WEBUI_PORT"
+elif command -v sensible-browser &>/dev/null; then
+    sensible-browser "http://127.0.0.1:$WEBUI_PORT"
+else
+    echo "Apri il browser su http://127.0.0.1:$WEBUI_PORT"
+fi
+SCRIPT
 
-if $WITH_TIMER; then
-    systemctl --user enable --now AniDownloader.timer
-    echo "Timer automatico attivato: controlla nuovi episodi ogni 15 minuti"
+    # Sostituisce i placeholder coi path reali
+    sed -i "s|__HEADLESS_DIR__|$HEADLESS_DIR|g; s|__INSTALL_DIR__|$INSTALL_DIR|g" "$WEBUI_HELPER"
+    chmod +x "$WEBUI_HELPER"
+
+    cat << EOF > "$APP_DIR/${APP_NAME}-Web.desktop"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=AniDownloader (WebUI)
+Comment=Download e conversione anime — interfaccia web
+Exec=$WEBUI_HELPER
+Path=$HOME
+Icon=$ICON_FULL_PATH
+Terminal=false
+Categories=Network;Video;AudioVideo;
+EOF
 fi
 
-if $WITH_WEB; then
-    systemctl --user enable --now AniDownloaderWeb.service
-    echo "Server web attivato: http://localhost:8989"
+update-desktop-database "$APP_DIR" 2>/dev/null || true
+echo "  Desktop entries creati: AniDownloader{,-CLI,-Web}.desktop"
+
+# ──────────────────────────────────────────────
+# 8. Servizio systemd (solo Headless)
+# ──────────────────────────────────────────────
+if $INSTALL_HEADLESS; then
+    HEADLESS_BIN="$HEADLESS_DIR/anidownloaderd"
+    [ -x "$HEADLESS_BIN" ] || HEADLESS_BIN="$INSTALL_DIR/anidownloaderd"
+fi
+
+if $INSTALL_HEADLESS && $HAS_SYSTEMD; then
+
+    rm -f "$SYSTEMD_DIR/anidownloaderd.service"
+
+    cat << EOF > "$SYSTEMD_DIR/anidownloaderd.service"
+[Unit]
+Description=AniDownloader Headless Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$HEADLESS_BIN --web --silent
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+EOF
+
+    # Crea anche un timer per download automatici (silent mode)
+    rm -f "$SYSTEMD_DIR/anidownloader-check.service" "$SYSTEMD_DIR/anidownloader-check.timer"
+
+    cat << EOF > "$SYSTEMD_DIR/anidownloader-check.service"
+[Unit]
+Description=AniDownloader check nuovi episodi
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$HEADLESS_BIN
+StandardOutput=journal
+StandardError=journal
+EOF
+
+    cat << EOF > "$SYSTEMD_DIR/anidownloader-check.timer"
+[Unit]
+Description=AniDownloader check periodico
+Requires=anidownloader-check.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+OnClockChange=true
+OnTimezoneChange=true
+Persistent=true
+
+[Install]
+WantedBy=default.target
+EOF
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now anidownloaderd.service
+    systemctl --user enable --now anidownloader-check.timer
+
+    echo "  anidownloaderd.service: attivo (web UI su http://localhost:8989)"
+    echo "  anidownloader-check.timer: attivo (check ogni 15 min in modalitá silenziosa)"
+fi
+
+if $INSTALL_HEADLESS && ! $HAS_SYSTEMD; then
+    echo "  systemd non disponibile. Avvia manualmente:"
+    echo "    $HEADLESS_BIN --web --silent &"
+    echo "  Oppure usa lo script di init della tua distribuzione."
 fi
 
 # ──────────────────────────────────────────────
-# 10. Uninstaller
-# ──────────────────────────────────────────────
-cp -f uninstall.sh "$INSTALL_DIR/uninstall.sh"
-chmod +x "$INSTALL_DIR/uninstall.sh"
-
-# ──────────────────────────────────────────────
-# 11. Riepilogo
+# 9. Riepilogo
 # ──────────────────────────────────────────────
 echo ""
 echo "╔═══════════════════════════════════════════════╗"
 echo "║  Installazione completata!                    ║"
 echo "╚═══════════════════════════════════════════════╝"
 echo ""
-echo "  Binario:       $INSTALL_DIR/$BIN_NAME"
-echo "  Config:        $CONFIG_DIR"
-echo echo ""
-if $WITH_TIMER; then
-    echo "  Timer:         attivo (ogni 15 min)"
+
+if $INSTALL_DESKTOP; then
+    echo "  Desktop:  $INSTALL_DIR/$APP_NAME.AppImage"
+    echo "  Launcher:"
+    echo "    - $APP_NAME        (GUI nativa)"
+    echo "    - $APP_NAME-CLI    (terminale, dashboard ANSI)"
+    echo "    - $APP_NAME-Web    (browser + daemon)"
 fi
-if $WITH_WEB; then
-    echo "  Web UI:        http://localhost:8989"
+
+if $INSTALL_HEADLESS; then
+    echo "  Headless: $HEADLESS_DIR/anidownloaderd"
+    if $HAS_SYSTEMD; then
+        echo "  Servizio: anidownloaderd.service (systemd)"
+    fi
+    echo "  Web UI:   http://localhost:8989"
 fi
-echo ""
-echo "  Disinstallare: $INSTALL_DIR/uninstall.sh"
+
+echo "  Config:   $CONFIG_DIR"
 echo ""
