@@ -31,6 +31,7 @@ void MediaProcessor::notifyStop() {
 
 ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series& series, const Config::ExecutionStrategy& strategy) {
     ProcessResult res;
+    res.episodeNumber = task.episodeNumber;
     std::string expandedPath = ScraperUtils::expandTilde(series.path);
     std::string fullFile = (fs::path(expandedPath) / task.fileName).string();
     std::string aria2File = fullFile + ".aria2";
@@ -187,18 +188,18 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
                 std::string cmd = nicePrefix + "ffmpeg -v error -y -i " + ScraperUtils::Q(inputPath) + " " + baseArgs +
                                   " -progress " + ScraperUtils::Q(progP.string()) + " " + ScraperUtils::Q(finalMergedInWork.string()) + ScraperUtils::DEVNULL();
 
-                auto f = std::async(std::launch::async, [cmd]() { return std::system(cmd.c_str()); });
+                auto f = std::async(std::launch::async, [&cmd, this]() { return ProcessUtils::runCommand(cmd, m_stopSignal, nullptr); });
                 while (f.wait_for(std::chrono::milliseconds(500)) != std::future_status::ready) {
                     if (m_stopSignal) { fs::remove_all(workDir); return false; }
-                    m_progressCallback(seriesName, "Conv " + std::to_string(std::min(99, (int)((ProcessUtils::parseProgressUs(progP) * 100) / (duration * 1000000)))) + "%");
+                    m_progressCallback(seriesName, "Conv " + std::to_string(std::min(100, (int)((ProcessUtils::parseProgressUs(progP) * 100) / (duration * 1000000)))) + "%");
                 }
-                if (f.get() != 0) throw std::runtime_error("Errore FFmpeg");
+                if (f.get() != 0 || m_stopSignal) { fs::remove_all(workDir); return false; }
             }
             else {
                 m_progressCallback(seriesName, "Splitting...");
                 std::string split = "ffmpeg -v error -y -i " + ScraperUtils::Q(inputPath) + " -c copy -map 0 -f segment -segment_time " +
                                     ProcessUtils::formatFloat(duration / strategy.chunksPerTask) + " -reset_timestamps 1 " + ScraperUtils::Q((workDir / "s%03d.mp4").string());
-                if (std::system(split.c_str()) != 0) throw std::runtime_error("Errore split");
+                if (ProcessUtils::runCommand(split, m_stopSignal, nullptr) != 0) throw std::runtime_error("Errore split");
 
                 std::vector<fs::path> parts;
                 for (const auto& p : fs::directory_iterator(workDir))
@@ -213,17 +214,21 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
                     fs::path progP = p.string() + ".txt";
                     std::string cmd = nicePrefix + "ffmpeg -v error -y -i " + ScraperUtils::Q(p.string()) + " " + baseArgs +
                                       " -progress " + ScraperUtils::Q(progP.string()) + " " + ScraperUtils::Q(outP.string()) + ScraperUtils::DEVNULL();
-                    jobs.push_back({outP, progP, std::async(std::launch::async, [cmd]() { return std::system(cmd.c_str()); })});
+                    auto ffJob = std::async(std::launch::async, [cmd, stopSig = &m_stopSignal]() -> int { return ProcessUtils::runCommand(cmd, *stopSig, nullptr); });
+                    jobs.push_back({outP, progP, std::move(ffJob)});
                 }
 
                 while (true) {
-                    if (m_stopSignal) { fs::remove_all(workDir); return false; }
+                    if (m_stopSignal) {
+                        for (auto& j : jobs) j.f.wait();
+                        fs::remove_all(workDir); return false;
+                    }
                     bool allDone = true; double cur = 0;
                     for (auto& j : jobs) {
                         if (j.f.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) allDone = false;
                         cur += ProcessUtils::parseProgressUs(j.prog);
                     }
-                    m_progressCallback(seriesName, "Conv " + std::to_string(std::min(99, (int)((cur * 100) / (duration * 1000000)))) + "%");
+                    m_progressCallback(seriesName, "Conv " + std::to_string(std::min(100, (int)((cur * 100) / (duration * 1000000)))) + "%");
                     if (allDone) break;
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
@@ -234,7 +239,7 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
                 for (auto& j : jobs) l << "file '" << j.out.filename().string() << "'\n";
                 l.close();
                 std::string concat = "ffmpeg -v error -y -fflags +genpts -f concat -safe 0 -i " + ScraperUtils::Q((workDir / "list.txt").string()) + " -c copy " + ScraperUtils::Q(finalMergedInWork.string()) + ScraperUtils::DEVNULL();
-                if (std::system(concat.c_str()) != 0) throw std::runtime_error("Errore merging");
+                if (ProcessUtils::runCommand(concat, m_stopSignal, nullptr) != 0) throw std::runtime_error("Errore merging");
             }
 
             m_progressCallback(seriesName, "Verifica...");

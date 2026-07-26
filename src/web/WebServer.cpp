@@ -13,6 +13,8 @@
 #include <sstream>
 #include <algorithm>
 #include <chrono>
+#include <ctime>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 #ifdef _WIN32
@@ -21,8 +23,16 @@
 #include <iphlpapi.h>
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #else
 #include <unistd.h>
+#include <sys/wait.h>
 #include <ifaddrs.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -441,10 +451,10 @@ void WebServer::setupRoutes() {
             return;
         }
         try {
-            bool burst = false;
+            bool burst = true;
             if (!req.body.empty()) {
                 auto body = nlohmann::json::parse(req.body);
-                burst = body.value("burst", false);
+                burst = body.value("burst", true);
             }
             auto& seriesList = m_seriesRepository.loadSeriesData();
             if (seriesList.empty()) {
@@ -461,6 +471,34 @@ void WebServer::setupRoutes() {
     m_svr.Post("/api/download/stop", [this](const httplib::Request&, httplib::Response& res) {
         if (m_downloadRunning.load()) {
             m_stopSignal.store(true);
+            Core::MediaProcessor::notifyStop();
+
+#ifndef _WIN32
+            {
+                pid_t child = fork();
+                if (child == 0) {
+                    pid_t ppid = getppid();
+                    char buf[64];
+                    snprintf(buf, sizeof(buf), "%d", ppid);
+                    execl("/bin/sh", "sh", "-c",
+                        ("pids=$(pgrep -P " + std::string(buf) + " 2>/dev/null); "
+                         "for pid in $pids; do pkill -9 -P $pid 2>/dev/null; "
+                         "kill -9 $pid 2>/dev/null; done").c_str(), nullptr);
+                    _exit(127);
+                }
+                if (child > 0) waitpid(child, nullptr, WNOHANG);
+            }
+#else
+            DWORD myPid = GetCurrentProcessId();
+            std::string killCmd = "taskkill /F /FI \"PPID eq " + std::to_string(myPid) +
+                "\" /T >nul 2>&1";
+            std::system(killCmd.c_str());
+#endif
+
+#ifndef _WIN32
+            std::system("pkill -x chromedriver 2>/dev/null");
+#endif
+
             Core::Logger::info("Download stop requested");
             sendJson(res, successJson({{"message", "Stop signal sent"}}));
         } else {
@@ -540,6 +578,12 @@ std::string WebServer::findFrontendDir() {
         DWORD len = GetModuleFileNameW(NULL, buf, MAX_PATH);
         if (len > 0 && len < MAX_PATH)
             return std::filesystem::path(buf).parent_path();
+#elif defined(__APPLE__)
+        char buf[4096];
+        uint32_t len = sizeof(buf);
+        if (_NSGetExecutablePath(buf, &len) == 0) {
+            return std::filesystem::path(buf).parent_path();
+        }
 #else
         char buf[4096];
         ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
@@ -721,6 +765,7 @@ void WebServer::runDownloads(const std::vector<Core::Series>& seriesList, bool b
         );
 
         m_downloadRunning.store(false);
+        m_stopSignal.store(false);
 
         nlohmann::json ev = {{"type", "done"}, {"running", false}};
         broadcastSseEvent(ev.dump());
