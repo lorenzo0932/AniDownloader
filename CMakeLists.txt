@@ -45,6 +45,9 @@ endif()
 # --- GESTIONE DIPENDENZE ---
 include(FetchContent)
 
+# Python (per embed_web.py — cross-platform)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
 # JSON (Header-only)
 FetchContent_Declare(
     json
@@ -102,7 +105,7 @@ file(GLOB_RECURSE WEB_SOURCES CONFIGURE_DEPENDS
 add_custom_command(
     OUTPUT ${EMBEDDED_CPP} ${EMBEDDED_HPP}
     COMMAND cd ${CMAKE_SOURCE_DIR}/web && npm install && npm run build
-    COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
+    COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
         ${CMAKE_SOURCE_DIR}/web/dist ${EMBEDDED_HPP}
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
