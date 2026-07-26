@@ -294,6 +294,10 @@ Il progetto segue un approccio **monorepo trunk-based**:
 
 Aree: `core` (C++ engine), `web` (Svelte), `tauri` (desktop wrapper), `config`/`scrapers` per i rispettivi moduli C++.
 
+### Supporto AI
+
+Questo progetto è stato sviluppato con il supporto di **opencode** e diversi modelli di intelligenza artificiale, utilizzati come assistenti alla programmazione. Ogni decisione architetturale e ogni linea di codice sono state comunque revisionate e approvate manualmente.
+
 ---
 
 ## Licenza
