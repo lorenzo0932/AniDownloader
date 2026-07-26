@@ -75,7 +75,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install OpenSSL
-        run: choco install openssl -y --no-progress
+        shell: pwsh
+        run: |
+          choco install openssl -y --no-progress
+          echo "OPENSSL_ROOT_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
 
       - name: Setup Node
         uses: actions/setup-node@v4
