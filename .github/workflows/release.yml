@@ -74,8 +74,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install OpenSSL
-        uses: DmitrySoshnikov/install-openssl@v2
+      - name: Install OpenSSL + vcpkg
+        shell: pwsh
+        run: |
+          vcpkg install openssl-windows:x64-windows
+          echo "CMAKE_TOOLCHAIN_FILE=${env:VCPKG_INSTALLATION_ROOT}\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
 
       - name: Setup Node
         uses: actions/setup-node@v4

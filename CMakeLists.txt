@@ -45,8 +45,14 @@ endif()
 # --- GESTIONE DIPENDENZE ---
 include(FetchContent)
 
-# Python (per embed_web.py — cross-platform)
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# Python (per embed_web.py — cross-platform, fallback a python3/python)
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(NOT Python3_FOUND)
+    find_program(Python3_EXECUTABLE python3 python)
+    if(NOT Python3_EXECUTABLE)
+        message(WARNING "Python3 not found — frontend embed will be skipped at build time")
+    endif()
+endif()
 
 # JSON (Header-only)
 FetchContent_Declare(
@@ -78,6 +84,10 @@ find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 # Threads
 find_package(Threads REQUIRED)
 
+# --- EMBEDDED FRONTEND ---
+set(EMBEDDED_HPP ${CMAKE_SOURCE_DIR}/include/web/embedded_web.hpp)
+set(EMBEDDED_CPP ${CMAKE_SOURCE_DIR}/src/web/embedded_web_data.cpp)
+
 # --- SORGENTI ---
 set(HEADERS
     include/core/ExecutionEngine.hpp
@@ -92,26 +102,31 @@ set(HEADERS
     ${EMBEDDED_HPP}
 )
 
-# --- EMBEDDED FRONTEND ---
-set(EMBEDDED_HPP ${CMAKE_SOURCE_DIR}/include/web/embedded_web.hpp)
-set(EMBEDDED_CPP ${CMAKE_SOURCE_DIR}/src/web/embedded_web_data.cpp)
-
 file(GLOB_RECURSE WEB_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/web/src/*
     ${CMAKE_SOURCE_DIR}/web/*.json
     ${CMAKE_SOURCE_DIR}/web/*.html
 )
 
-add_custom_command(
-    OUTPUT ${EMBEDDED_CPP} ${EMBEDDED_HPP}
-    COMMAND cd ${CMAKE_SOURCE_DIR}/web && npm install && npm run build
-    COMMAND Python3::Interpreter ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
-        ${CMAKE_SOURCE_DIR}/web/dist ${EMBEDDED_HPP}
-    DEPENDS
-        ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
-        ${WEB_SOURCES}
-    COMMENT "Building Svelte frontend and embedding into C++ binary"
-)
+if(Python3_FOUND OR Python3_EXECUTABLE)
+    add_custom_command(
+        OUTPUT ${EMBEDDED_CPP} ${EMBEDDED_HPP}
+        COMMAND cd ${CMAKE_SOURCE_DIR}/web && npm install && npm run build
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
+            ${CMAKE_SOURCE_DIR}/web/dist ${EMBEDDED_HPP}
+        DEPENDS
+            ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
+            ${WEB_SOURCES}
+        COMMENT "Building Svelte frontend and embedding into C++ binary"
+    )
+else()
+    add_custom_command(
+        OUTPUT ${EMBEDDED_CPP} ${EMBEDDED_HPP}
+        COMMAND ${CMAKE_COMMAND} -E echo "Skipping frontend embed — Python3 not found"
+        COMMAND ${CMAKE_COMMAND} -E touch ${EMBEDDED_CPP}
+        COMMENT "Skipping frontend embed (Python3 not available)"
+    )
+endif()
 
 set(SOURCES
     src/main.cpp
