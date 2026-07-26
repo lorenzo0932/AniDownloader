@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System deps (C++)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            cmake ninja-build pkg-config \
+            libcurl4-openssl-dev libssl-dev \
+            libwebkit2gtk-4.1-dev libappindicator-gtk3-dev librsvg2-dev \
+            patchelf
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build C++ backend
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Build frontend
+        run: |
+          cd web
+          npm ci
+          npm run build
+          cd ..
+
+      - name: Build Tauri (AppImage)
+        run: npx @tauri-apps/cli build
+        env:
+          NO_STRIP: 1
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+
+      - name: Package headless
+        run: |
+          HEADLESS_DIR="anidownloaderd-${{ github.ref_name }}-linux-x86_64"
+          mkdir -p "$HEADLESS_DIR/web"
+          cp build/AniDownloader "$HEADLESS_DIR/anidownloaderd"
+          cp -r web/dist/* "$HEADLESS_DIR/web/"
+          tar czf "anidownloaderd-${{ github.ref_name }}-linux-x86_64.tar.gz" "$HEADLESS_DIR"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            anidownloaderd-*.tar.gz
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build C++ backend
+        shell: cmd
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+
+      - name: Build frontend
+        run: |
+          cd web
+          npm ci
+          npm run build
+          cd ..
+
+      - name: Build Tauri (NSIS)
+        run: npx @tauri-apps/cli build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/release/bundle/nsis/*.exe
+
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build C++ backend
+        run: |
+          cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Build frontend
+        run: |
+          cd web
+          npm ci
+          npm run build
+          cd ..
+
+      - name: Build Tauri (DMG)
+        run: npx @tauri-apps/cli build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/release/bundle/dmg/*.dmg
