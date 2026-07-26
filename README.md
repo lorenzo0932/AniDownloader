@@ -2,14 +2,14 @@
 
 Una riscrittura completa in **C++17** del sistema AniDownloader. Massima velocità, efficienza e integrazione nativa con Linux e Windows.
 
-Dual UI: **Web Interface** (Svelte 5 SPA) o **GUI Qt6 Nativa**.
+UI: **Web Interface** (Svelte 5 SPA) con wrapper nativo Tauri (AppImage/.dmg/.msi).
 
 ---
 
 ## Funzionalità
 
 * **Web UI moderna** (Svelte 5): dashboard download real-time con SSE, gestione serie CRUD con griglia di card e poster, configurazione temi dark/light, log viewer. Accessibile da browser locale o remoto.
-* **GUI Qt6 Nativa** (opzionale): temi dark/light, DPI-aware, tray icon, notifiche desktop, drag & drop.
+* **App Nativa Tauri**: tray icon, notifiche desktop, finestra dedicata. Packaging AppImage (Linux), .dmg (macOS), .msi (Windows).
 * **Download Parallelo ad alte prestazioni**: `ExecutionEngine` multi-thread con controllo granulare della concorrenza.
 * **Conversione Automatica H.265**: Trascodifica HEVC post-download per risparmiare spazio (~50%).
 * **Scrapers Nativi**: Parser C++ per AnimeWorld e AnimeUnity. Nessuna dipendenza Python.
@@ -17,7 +17,7 @@ Dual UI: **Web Interface** (Svelte 5 SPA) o **GUI Qt6 Nativa**.
 * **Notifiche Desktop**: Native per completamento, errori e skip.
 * **Aggiornamenti Automatici**: GitHub API con confronto semver.
 * **Gestione Serie Avanzata**: Multi-stagione, numerazione continua, episodi passati, fonti multiple.
-* **Monitoraggio Real-Time**: Progresso live via SSE (Web UI) o barre (Qt GUI).
+* **Monitoraggio Real-Time**: Progresso live via SSE (Web UI).
 * **Automazione Systemd**: Servizio `.service` e `.timer` per esecuzione periodica.
 * **Installazione Cross-Platform**: Script per Linux e Windows.
 
@@ -56,7 +56,6 @@ winget install aria2
 
 * **CMake** >= 3.17
 * **Compilatore C++17** (GCC, Clang, MSVC)
-* **Qt6** (Widgets, solo per modalità `--gui`)
 * **Node.js** >= 18 (per build frontend Web UI)
 * **Ninja** (consigliato, opzionale)
 * **OpenSSL** / **libcurl** (gestite automaticamente via FetchContent)
@@ -194,24 +193,14 @@ Accessibile da qualsiasi browser sulla rete locale. Interfaccia completa con das
 ./build/AniDownloader --burst        # Massima concorrenza
 ```
 
-### Modalità GUI Qt6
-
-```bash
-./build/AniDownloader --gui
-```
-
 ### Automazione Systemd (Linux)
 
 ```bash
-# Timer per download automatici ogni 15 minuti
-cp systemd_services/AniDownloader.service ~/.config/systemd/user/
-cp systemd_services/AniDownloader.timer ~/.config/systemd/user/
+# L'installer genera ed abilita automaticamente i servizi:
+./install.sh          # Scegli "Headless" o "Entrambi"
 
-# Servizio Web UI persistente
-cp systemd_services/AniDownloaderWeb.service ~/.config/systemd/user/
-
-systemctl --user daemon-reload
-systemctl --user enable --now AniDownloader.timer
+# Manualmente, se preferisci:
+anidownloaderd --web --silent &
 ```
 
 ---
@@ -222,28 +211,29 @@ systemctl --user enable --now AniDownloader.timer
 AniDownloader_dev/
 ├── include/                    # Header C++ (.hpp)
 │   ├── core/                   # ExecutionEngine, MediaProcessor, Logger, MediaProbe
-│   ├── gui/                    # MainWindow, Dialogs, Widgets (Qt6, opzionale)
 │   ├── config/                 # AppConfigManager, PathHelper
 │   ├── scrapers/               # AnimeWScraper, AnimeUScraper, ScraperUtils
 │   └── web/                    # WebServer, CryptoUtils (JWT)
 ├── src/                        # Implementazioni (.cpp)
 │   ├── core/                   # Logica di processing e gestione dati
-│   ├── gui/                    # UI Qt6, segnali/slot, tema dinamico
 │   ├── config/                 # Configurazione e percorsi
 │   ├── scrapers/               # Parser nativi per i servizi
 │   ├── web/                    # HTTP server (httplib), SSE, API REST
-│   └── main.cpp                # Entry point (--web, --gui, --burst)
+│   └── main.cpp                # Entry point (--web, --burst, silent)
 ├── web/                        # Frontend Svelte 5 SPA
 │   ├── src/                    # Componenti (StatusPage, DashboardPage, ConfigPage, LogsPage)
 │   ├── lib/                    # API client, tema, auth
 │   └── package.json            # Dipendenze Node.js
+├── src-tauri/                  # Wrapper Tauri v2 (AppImage/.dmg/.msi)
+│   ├── src/                    # main.rs (sidecar launch, tray icon)
+│   ├── icons/                  # Icone applicazione
+│   ├── capabilities/           # Permessi Tauri
+│   └── tauri.conf.json         # Configurazione Tauri
 ├── resources/                  # Logo applicazione
-├── systemd_services/           # Automazione Linux (.service, .timer)
-├── legacy_python/              # Versione Python originale (riferimento storico)
+├── scripts/                    # Utility di build (embed_web.py)
 ├── install.sh                  # Installatore Linux
 ├── install.ps1                 # Installatore Windows
 ├── uninstall.sh                # Disinstallatore Linux
-├── uninstall.ps1               # Disinstallatore Windows
 └── CMakeLists.txt              # Sistema di build
 ```
 
@@ -256,7 +246,7 @@ AniDownloader_dev/
 - [x] Riscrittura completa in C++17
 - [x] Web UI (Svelte 5 SPA) con dashboard, gestione serie, configurazione, log
 - [x] API REST con SSE per progresso live
-- [x] GUI Qt6 nativa con temi dark/light
+- [x] App Nativa Tauri (tray icon, notifiche, finestra dedicata)
 - [x] Download parallelo multi-thread
 - [x] Conversione H.265 automatica
 - [x] Scrapers nativi (AnimeWorld, AnimeUnity)
@@ -271,7 +261,6 @@ AniDownloader_dev/
 
 ### Funzionalita Future
 
-- [ ] Tauri native wrapper (tray icon, notifiche, app installabile)
 - [ ] Fallback automatico sulle fonti alternative
 - [ ] Interfaccia editor per fonti alternative nella UI
 
@@ -280,11 +269,11 @@ AniDownloader_dev/
 ## Monitoraggio
 
 ```bash
-# Log del servizio systemd
-journalctl --user -u AniDownloader.service -f
+# Log del servizio systemd (headless)
+journalctl --user -u anidownloaderd.service -f
 
 # Log interno dell'applicazione
-# Disponibile nella vista Download della GUI
+# Si trovano in ~/.config/AniDownloader/logs/
 ```
 
 <div align="center">
@@ -292,6 +281,18 @@ journalctl --user -u AniDownloader.service -f
 <!-- [PLACEHOLDER: Screenshot dei log e monitoraggio] -->
 
 </div>
+
+---
+
+## Sviluppo
+
+Il progetto segue un approccio **monorepo trunk-based**:
+
+- **Branch attivo**: `feat/tauri` — contiene backend C++, frontend Svelte e wrapper Tauri
+- **Feature branch temporanei** per lavori consistenti (es. `feat/search-refactor`)
+- **Convenzione commit**: `tipo(area): messaggio` — `feat(core):`, `fix(web):`, `chore:`, `docs:`
+
+Aree: `core` (C++ engine), `web` (Svelte), `tauri` (desktop wrapper), `config`/`scrapers` per i rispettivi moduli C++.
 
 ---
 
