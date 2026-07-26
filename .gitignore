@@ -27,6 +27,20 @@ src-tauri/icons/*.icns
 __pycache__/
 *.pyc
 
+# Generated embedded web files
+include/web/embedded_web.hpp
+src/web/embedded_web_data.cpp
+
 # Ignore the series_data.json file
 series_data.json
+
+# AppImage extraction artifact
+squashfs-root/
+
+# Build output directories
+output/
+
+# Local planning and to-do notes (not for GitHub)
+REFACTOR-*.md
+TODO-*.md
 
