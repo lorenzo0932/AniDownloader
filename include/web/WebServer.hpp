@@ -64,6 +64,9 @@ private:
 
     void runDownloads(const std::vector<Core::Series>& seriesList, bool burst);
 
+    void serveEmbeddedFrontend();
+    static std::string mimeType(const std::string& path);
+
     static std::string corsOrigin();
     static std::string findFrontendDir();
 };
