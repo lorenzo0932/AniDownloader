@@ -372,7 +372,8 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, st
         return results;
     }
 
-    int maxTabs = Config::AppConfigManager::getMaxConcurrentTabs();
+    unsigned int hwThreads = std::thread::hardware_concurrency();
+    int maxTabs = (hwThreads == 0) ? 2 : (hwThreads < 6) ? 1 : (hwThreads <= 12) ? 3 : (hwThreads <= 24) ? 4 : 6;
     Core::Logger::info(series.name + ": maxTabs=" + std::to_string(maxTabs));
 
     for (size_t offset = 0; offset < candidates.size(); offset += maxTabs) {
