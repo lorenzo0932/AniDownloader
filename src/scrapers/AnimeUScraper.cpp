@@ -9,7 +9,7 @@
 
 namespace Core {
 
-std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series) {
+std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, std::atomic<bool>&) {
     std::vector<DownloadTask> results;
 
     auto episodesMap = ScraperUtils::scanEpisodesMap(series.path);
