@@ -1,14 +1,15 @@
 #include "scrapers/AnimeWScraper.hpp"
 #include "scrapers/ScraperUtils.hpp"
+#include "config/AppConfigManager.hpp"
 #include "core/Logger.hpp"
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <chrono>
 #include <regex>
+#include <atomic>
 
 using json = nlohmann::json;
-static const int MAX_BATCH_SIZE = 5;
 
 namespace Core {
 
@@ -29,6 +30,204 @@ static json webdriverCommand(const std::string& endpoint, const std::string& met
         try { return json::parse(r.text); } catch (...) { return json(); }
     }
     return json();
+}
+
+static json cdpCommand(const std::string& sessionId, const std::string& cmd, const json& params = {}) {
+    return webdriverCommand("/session/" + sessionId + "/chromium/send_command_and_get_result", "POST", {
+        {"cmd", cmd},
+        {"params", params}
+    });
+}
+
+static std::string openNewTab(const std::string& sessionId) {
+    json res = webdriverCommand("/session/" + sessionId + "/window/new", "POST", json::object());
+    if (res.contains("value") && res["value"].contains("handle")) {
+        return res["value"]["handle"].get<std::string>();
+    }
+    return {};
+}
+
+static void switchToWindow(const std::string& sessionId, const std::string& handle) {
+    webdriverCommand("/session/" + sessionId + "/window", "POST", {{"handle", handle}});
+}
+
+static void closeTab(const std::string& sessionId, const std::string& handle) {
+    switchToWindow(sessionId, handle);
+    webdriverCommand("/session/" + sessionId + "/window", "DELETE");
+}
+
+static json getFrameTree(const std::string& sessionId) {
+    return cdpCommand(sessionId, "Page.getFrameTree", json::object());
+}
+
+static std::string extractUrlFromLog(const std::string& msgStr);
+
+enum class SniffState {
+    NAVIGATING, WAITING_ALT_CLICK,
+    WAITING_IFRAME, SNIFFING, DONE, ERROR
+};
+
+struct SniffTab {
+    std::string windowHandle;
+    std::string episodeUrl;
+    int episodeNumber;
+    std::string videoUrl;
+    SniffState state;
+    std::chrono::steady_clock::time_point stateEntered;
+    std::vector<std::string> frameIds;
+};
+
+static void collectFrameIdsRecursive(const json& node, std::vector<std::string>& out) {
+    if (node.contains("frame") && node["frame"].contains("id")) {
+        out.push_back(node["frame"]["id"].get<std::string>());
+    }
+    if (node.contains("childFrames") && node["childFrames"].is_array()) {
+        for (const auto& child : node["childFrames"]) {
+            collectFrameIdsRecursive(child, out);
+        }
+    }
+}
+
+static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
+    const std::vector<EpisodeCandidate>& candidates,
+    std::atomic<bool>& stopSignal, const std::string& seriesName)
+{
+    std::vector<DownloadTask> results;
+    if (candidates.empty() || stopSignal.load()) return results;
+
+    std::vector<SniffTab> tabs;
+    for (const auto& c : candidates) {
+        if (stopSignal.load()) break;
+        std::string wh = openNewTab(sessionId);
+        if (wh.empty()) {
+            Core::Logger::warn(seriesName + ": impossibile aprire tab per Ep." + std::to_string(c.episodeNumber));
+            continue;
+        }
+        switchToWindow(sessionId, wh);
+        std::string fullUrl = (c.episodeUrl.find("http") == 0) ? c.episodeUrl : "https://www.animeworld.ac" + c.episodeUrl;
+        webdriverCommand("/session/" + sessionId + "/url", "POST", {{"url", fullUrl}});
+        tabs.push_back({wh, fullUrl, c.episodeNumber, {}, SniffState::NAVIGATING,
+                        std::chrono::steady_clock::now(), {}});
+    }
+
+    if (!tabs.empty()) {
+        try {
+            auto poolStart = std::chrono::steady_clock::now();
+            while (!stopSignal.load()) {
+                bool allDone = true;
+                for (auto& tab : tabs) {
+                    if (tab.state == SniffState::DONE || tab.state == SniffState::ERROR) continue;
+                    allDone = false;
+                    switchToWindow(sessionId, tab.windowHandle);
+                    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::steady_clock::now() - tab.stateEntered).count();
+
+                    switch (tab.state) {
+                        case SniffState::NAVIGATING: {
+                            json eval = cdpCommand(sessionId, "Runtime.evaluate", {
+                                {"expression", "document.readyState === 'complete' || document.readyState === 'interactive'"},
+                                {"returnByValue", true}
+                            });
+                            bool ready = false;
+                            if (eval.contains("value") && eval["value"].contains("result") &&
+                                eval["value"]["result"].contains("value")) {
+                                ready = eval["value"]["result"]["value"].get<bool>();
+                            }
+                            if (ready || elapsed > 15) {
+                                cdpCommand(sessionId, "Network.enable", json::object());
+                                json ft = getFrameTree(sessionId);
+                                if (ft.contains("value") && ft["value"].contains("frameTree")) {
+                                    collectFrameIdsRecursive(ft["value"]["frameTree"], tab.frameIds);
+                                }
+                                json altSearch = webdriverCommand("/session/" + sessionId + "/elements", "POST", {
+                                    {"using", "css selector"}, {"value", "#alternative"}
+                                });
+                                if (altSearch.contains("value") && altSearch["value"].is_array() && !altSearch["value"].empty()) {
+                                    std::string altId = altSearch["value"][0].begin().value().get<std::string>();
+                                    webdriverCommand("/session/" + sessionId + "/element/" + altId + "/click", "POST", json::object());
+                                    tab.state = SniffState::WAITING_ALT_CLICK;
+                                } else {
+                                    tab.state = SniffState::WAITING_IFRAME;
+                                }
+                                tab.stateEntered = std::chrono::steady_clock::now();
+                            }
+                            break;
+                        }
+                        case SniffState::WAITING_ALT_CLICK:
+                            if (elapsed >= 2) {
+                                tab.state = SniffState::WAITING_IFRAME;
+                                tab.stateEntered = std::chrono::steady_clock::now();
+                            }
+                            break;
+                        case SniffState::WAITING_IFRAME: {
+                            json iframeSearch = webdriverCommand("/session/" + sessionId + "/elements", "POST", {
+                                {"using", "css selector"}, {"value", "iframe#player-iframe"}
+                            });
+                            bool found = iframeSearch.contains("value") && iframeSearch["value"].is_array() && !iframeSearch["value"].empty();
+                            if (found) {
+                                std::string fId = iframeSearch["value"][0].begin().value().get<std::string>();
+                                webdriverCommand("/session/" + sessionId + "/element/" + fId + "/click", "POST", json::object());
+                                json ft = getFrameTree(sessionId);
+                                if (ft.contains("value") && ft["value"].contains("frameTree")) {
+                                    collectFrameIdsRecursive(ft["value"]["frameTree"], tab.frameIds);
+                                }
+                                tab.state = SniffState::SNIFFING;
+                                tab.stateEntered = std::chrono::steady_clock::now();
+                            } else if (elapsed > 10) {
+                                Core::Logger::warn(seriesName + ": Ep." + std::to_string(tab.episodeNumber) + " iframe timeout");
+                                tab.state = SniffState::ERROR;
+                            }
+                            break;
+                        }
+                        case SniffState::SNIFFING: {
+                            json logRes = webdriverCommand("/session/" + sessionId + "/log", "POST", {{"type", "performance"}});
+                            if (logRes.contains("value") && logRes["value"].is_array()) {
+                                for (auto& entry : logRes["value"]) {
+                                    if (!entry.contains("message")) continue;
+                                    std::string url = extractUrlFromLog(entry["message"].get<std::string>());
+                                    if (!url.empty()) {
+                                        tab.videoUrl = url;
+                                        tab.state = SniffState::DONE;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (tab.state != SniffState::DONE && elapsed > 10) {
+                                tab.state = SniffState::DONE;
+                            }
+                            break;
+                        }
+                        default: break;
+                    }
+                }
+                if (allDone) break;
+                if (std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - poolStart).count() > 90) {
+                    Core::Logger::warn(seriesName + ": sniff batch timeout globale");
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+
+            for (auto& tab : tabs) {
+                if (!tab.videoUrl.empty()) {
+                    DownloadTask task;
+                    task.shouldProcess = true;
+                    task.videoUrl = tab.videoUrl;
+                    task.episodeNumber = tab.episodeNumber;
+                    task.fileName = ScraperUtils::generateFilename(tab.videoUrl, tab.episodeNumber);
+                    results.push_back(task);
+                }
+            }
+        } catch (const std::exception& e) {
+            Core::Logger::warn(seriesName + ": sniffBatch eccezione: " + std::string(e.what()));
+        }
+    }
+
+    for (auto& tab : tabs) {
+        closeTab(sessionId, tab.windowHandle);
+    }
+    return results;
 }
 
 static std::string extractUrlFromLog(const std::string& msgStr) {
@@ -54,72 +253,12 @@ static std::string extractUrlFromLog(const std::string& msgStr) {
     return "";
 }
 
-static std::string sniffVideoUrl(const std::string& sessionId, const std::string& episodeUrl) {
-    std::string fullUrl = (episodeUrl.find("http") == 0) ? episodeUrl : "https://www.animeworld.ac" + episodeUrl;
-    webdriverCommand("/session/" + sessionId + "/url", "POST", {{"url", fullUrl}});
+std::vector<EpisodeCandidate> AnimeWScraper::getCandidates(const Series& series) {
+    std::vector<EpisodeCandidate> results;
 
-    std::string altBtnId = "";
-    for (int i = 0; i < 5; ++i) {
-        json altSearch = webdriverCommand("/session/" + sessionId + "/elements", "POST", {
-            {"using", "css selector"}, {"value", "#alternative"}
-        });
-        if (altSearch.contains("value") && altSearch["value"].is_array() && !altSearch["value"].empty()) {
-            altBtnId = altSearch["value"][0].begin().value().get<std::string>();
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
-    if (!altBtnId.empty()) {
-        webdriverCommand("/session/" + sessionId + "/element/" + altBtnId + "/click", "POST", json::object());
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-    }
-
-    std::string frameId = "";
-    for (int i = 0; i < 10; ++i) {
-        json iframeSearch = webdriverCommand("/session/" + sessionId + "/elements", "POST", {
-            {"using", "css selector"}, {"value", "iframe#player-iframe"}
-        });
-        if (iframeSearch.contains("value") && iframeSearch["value"].is_array() && !iframeSearch["value"].empty()) {
-            frameId = iframeSearch["value"][0].begin().value().get<std::string>();
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
-    if (!frameId.empty()) {
-        webdriverCommand("/session/" + sessionId + "/element/" + frameId + "/click", "POST", json::object());
-    }
-
-    std::string dlUrl = "";
-    for (int i = 0; i < 15; ++i) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        json logRes = webdriverCommand("/session/" + sessionId + "/log", "POST", {{"type", "performance"}});
-        if (logRes.contains("value") && logRes["value"].is_array()) {
-            for (auto& entry : logRes["value"]) {
-                if (!entry.contains("message")) continue;
-                std::string msgStr = entry["message"].get<std::string>();
-                std::string candidateUrl = extractUrlFromLog(msgStr);
-                if (!candidateUrl.empty()) {
-                    dlUrl = candidateUrl;
-                    break;
-                }
-            }
-        }
-        if (!dlUrl.empty()) break;
-    }
-
-    return dlUrl;
-}
-
-std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series) {
-    std::vector<DownloadTask> results;
-
-    // FASE 1: Scansione directory + calcolo prossimo episodio
     auto episodesMap = ScraperUtils::scanEpisodesMap(series.path);
     int nextNeeded = ScraperUtils::computeNextNeeded(series.path, series.lastDownloadedEpisode, episodesMap);
 
-    // FASE 2: Download HTML statico ed estrazione episodi online
     cpr::Header staticHeaders = {
         {"User-Agent", ScraperUtils::platformUserAgent()},
         {"Referer", "https://www.animeworld.so/"}
@@ -133,10 +272,9 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series) {
         if (r.status_code == 200) html = r.text;
     } catch (...) {}
 
+    Core::Logger::info(series.name + ": nextNeeded=" + std::to_string(nextNeeded) + ", html_len=" + std::to_string(html.size()));
     if (html.empty()) {
-        DownloadTask err;
-        err.errorMessage = "Errore: Impossibile scaricare l'HTML statico per la verifica preliminare.";
-        results.push_back(err);
+        Core::Logger::warn(series.name + ": HTML statico non scaricabile per getCandidates");
         return results;
     }
 
@@ -154,29 +292,39 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series) {
         }
     }
 
+    Core::Logger::info(series.name + ": regex found " + std::to_string(found.size()) + " episode tags");
     if (found.empty()) {
-        DownloadTask err;
-        err.errorMessage = "Nessun episodio rilevato nell'HTML statico.";
-        results.push_back(err);
+        Core::Logger::warn(series.name + ": nessun episodio nell'HTML statico");
         return results;
     }
     std::sort(found.begin(), found.end(), [](const EpData& a, const EpData& b) { return a.n < b.n; });
 
-    // FASE 3: Seleziona candidati (episodi online >= nextNeeded)
-    std::vector<std::pair<EpData, int>> candidates;
     for (const auto& ep : found) {
         int local = series.continueSeries ? (ep.n + series.passedEpisodes) : ep.n;
         if (local >= nextNeeded) {
-            candidates.push_back({ep, local});
+            results.push_back({local, ep.url});
+        } else {
+            Core::Logger::info(series.name + ": filtered out Ep." + std::to_string(local) + " < nextNeeded=" + std::to_string(nextNeeded));
         }
     }
 
+    Core::Logger::info(series.name + ": final candidates=" + std::to_string(results.size()));
+    return results;
+}
+
+std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, std::atomic<bool>& stopSignal) {
+    std::vector<DownloadTask> results;
+
+    auto candidates = getCandidates(series);
+    Core::Logger::info(series.name + ": getCandidates returned " + std::to_string(candidates.size()) + " candidates");
     if (candidates.empty()) {
+        Core::Logger::warn(series.name + ": getCandidates empty, skipping");
         return results;
     }
 
-    // FASE 4: ChromeDriver batch — una sessione per tutti gli episodi consecutivi
+    Core::Logger::info(series.name + ": waiting for ScraperSemaphoreGuard...");
     ScraperSemaphoreGuard scraperGuard;
+    Core::Logger::info(series.name + ": ScraperSemaphoreGuard acquired");
 
     json caps = {
         {"capabilities", {
@@ -200,12 +348,14 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series) {
         }}
     };
 
+    Core::Logger::info(series.name + ": creating ChromeDriver session...");
     json sessionRes;
     std::string sessionId;
     for (int attempt = 1; attempt <= 3; ++attempt) {
         sessionRes = webdriverCommand("/session", "POST", caps);
         if (sessionRes.contains("value") && sessionRes["value"].contains("sessionId")) {
             sessionId = sessionRes["value"]["sessionId"].get<std::string>();
+            Core::Logger::info(series.name + ": ChromeDriver session created: " + sessionId);
             break;
         }
         if (attempt < 3) {
@@ -215,35 +365,42 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series) {
     }
 
     if (sessionId.empty()) {
+        Core::Logger::warn(series.name + ": ChromeDriver session creation FAILED after 3 attempts");
         DownloadTask err;
         err.errorMessage = "Impossibile connettersi a ChromeDriver locale (Porta 9515).";
         results.push_back(err);
         return results;
     }
 
-    int batchCount = 0;
-    for (const auto& [ep, localEpNum] : candidates) {
-        if (batchCount >= MAX_BATCH_SIZE) break;
+    int maxTabs = Config::AppConfigManager::getMaxConcurrentTabs();
+    Core::Logger::info(series.name + ": maxTabs=" + std::to_string(maxTabs));
+
+    for (size_t offset = 0; offset < candidates.size(); offset += maxTabs) {
+        if (stopSignal.load()) break;
+
+        size_t remaining = candidates.size() - offset;
+        size_t batchSize = std::min(static_cast<size_t>(maxTabs), remaining);
+        std::vector<EpisodeCandidate> batch(
+            candidates.begin() + static_cast<std::ptrdiff_t>(offset),
+            candidates.begin() + static_cast<std::ptrdiff_t>(offset + batchSize)
+        );
 
         try {
-            std::string dlUrl = sniffVideoUrl(sessionId, ep.url);
-            if (dlUrl.empty()) break;
-
-            DownloadTask task;
-            task.shouldProcess = true;
-            task.videoUrl = dlUrl;
-            task.episodeNumber = localEpNum;
-            task.fileName = ScraperUtils::generateFilename(dlUrl, localEpNum);
-            results.push_back(task);
-            batchCount++;
-
+            auto batchResults = sniffBatch(sessionId, batch, stopSignal, series.name);
+            results.insert(results.end(), batchResults.begin(), batchResults.end());
         } catch (const std::exception& e) {
-            Core::Logger::warn(series.name + ": Ep." + std::to_string(localEpNum) + " sniff fallito: " + e.what());
+            Core::Logger::warn(series.name + ": batch sniff fallito: " + std::string(e.what()));
             break;
         }
     }
 
-    webdriverCommand("/session/" + sessionId, "DELETE");
+    Core::Logger::info(series.name + ": planSeriesTask complete, returning " + std::to_string(results.size()) + " tasks");
+    try {
+        webdriverCommand("/session/" + sessionId, "DELETE");
+        Core::Logger::info(series.name + ": ChromeDriver session deleted");
+    } catch (...) {
+        Core::Logger::warn(series.name + ": ChromeDriver session delete failed");
+    }
     return results;
 }
 
