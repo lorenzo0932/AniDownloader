@@ -7,6 +7,7 @@
 #include "core/LogUtils.hpp"
 #include "core/SeriesUtils.hpp"
 #include "config/PathHelper.hpp"
+#include "scrapers/ScraperUtils.hpp"
 
 #include <regex>
 #include <fstream>
@@ -188,10 +189,11 @@ void WebServer::setupRoutes() {
         try {
             auto vec = m_seriesRepository.loadSeriesData();
             nlohmann::json data = nlohmann::json::array();
-            for (const auto& s : vec) {
-                nlohmann::json entry = s;
+            for (size_t i = 0; i < vec.size(); ++i) {
+                nlohmann::json entry = vec[i];
                 auto path = entry.value("path", "");
                 entry["local_episode_count"] = path.empty() ? 0 : Core::countVideoFiles(path);
+                entry["_file_index"] = static_cast<uint64_t>(i);
                 data.push_back(std::move(entry));
             }
             std::string sortField = req.has_param("sort") ? req.get_param_value("sort") : "";
@@ -251,6 +253,19 @@ void WebServer::setupRoutes() {
         }
     });
 
+    // ---- FETCH SERIES NAME FROM URL ----
+    m_svr.Post("/api/series/fetch-name", [this](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            std::string url = body.value("url", "");
+            if (url.empty()) { sendJson(res, errorJson("Missing url"), 400); return; }
+            std::string name = Core::ScraperUtils::fetchSeriesNameFromUrl(url);
+            sendJson(res, successJson({{"name", name}}));
+        } catch (const std::exception& e) {
+            sendJson(res, errorJson(std::string("Fetch failed: ") + e.what()), 500);
+        }
+    });
+
     // ---- DESCRIPTION (tvshow.nfo) ----
     m_svr.Get(R"(/api/series/(\d+)/description)", [this](const httplib::Request& req, httplib::Response& res) {
         try {
@@ -273,10 +288,11 @@ void WebServer::setupRoutes() {
             std::string path = req.has_param("path") ? req.get_param_value("path") : "/";
             auto dirs = Core::listDirectories(path);
             nlohmann::json entries = nlohmann::json::array();
-            for (auto& [name, fullPath] : dirs) {
+            for (auto& de : dirs) {
                 nlohmann::json obj;
-                obj["name"] = name;
-                obj["path"] = fullPath;
+                obj["name"] = de.name;
+                obj["path"] = de.path;
+                obj["mtime"] = de.mtime;
                 entries.push_back(obj);
             }
             sendJson(res, successJson({{"entries", entries}}));
@@ -761,7 +777,10 @@ void WebServer::runDownloads(const std::vector<Core::Series>& seriesList, bool b
                 nlohmann::json ev = {{"type", "skipped"}, {"series", name}, {"reason", reason}};
                 broadcastSseEvent(ev.dump());
             },
-            nullptr
+            [this]() {
+                nlohmann::json ev = {{"type", "phase"}, {"phase", "processing"}};
+                broadcastSseEvent(ev.dump());
+            }
         );
 
         m_downloadRunning.store(false);

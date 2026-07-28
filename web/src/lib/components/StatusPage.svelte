@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fly } from 'svelte/transition';
   import { api, posterUrl } from '../api.js';
+  import ConfirmModal from './ConfirmModal.svelte';
 
   let seriesList = $state([]);
   let downloadRunning = $state(false);
@@ -20,6 +21,10 @@
 
   let summary = $state(null);
   let stats = $state({ total: 0, done: 0, skipped: 0, errors: 0, dlTime: 0, convTime: 0 });
+  let phase = $state('idle');
+  let results = $state([]);
+  let analysed = $state({});
+  let analysedCount = $state(0);
   let recentAdded = $state([]);
   let recentlyDownloaded = $state([]);
 
@@ -53,13 +58,16 @@
   let doneSeries = $derived(seriesList.filter(s => seriesProgress[s.name]?.result === 'done'));
   let skippedSeries = $derived(seriesList.filter(s => seriesProgress[s.name]?.result === 'skipped'));
   let waitingSeries = $derived(seriesList.filter(s => !seriesProgress[s.name]));
+  let analysisSeries = $derived(seriesList.filter(s =>
+    seriesProgress[s.name] && analysed[s.name] === false
+  ));
 
   function navigateTo(r) { route = r; }
 
   function updateProgress(name, msg) {
     let state = seriesProgress[name];
     if (!state) {
-      state = { percent: 0, phaseMode: null, isActive: true, statusText: msg, result: null };
+      state = { percent: 0, phaseMode: null, isActive: false, statusText: msg, result: null };
       seriesProgress = { ...seriesProgress, [name]: state };
       return;
     }
@@ -140,6 +148,10 @@
     logEvents = [];
     summary = null;
     stats = { total: 0, done: 0, skipped: 0, errors: 0, dlTime: 0, convTime: 0 };
+    results = [];
+    analysed = {};
+    analysedCount = 0;
+    phase = 'analysis';
     hasRun = true;
     addLog({ type: 'overall', status: 'Avvio download...' });
     try {
@@ -150,12 +162,29 @@
     }
   }
 
-  async function stopDownload() {
+  let stopWarning = $state(true);
+  let showStopConfirm = $state(false);
+
+  async function loadConfig() {
     try {
-      await api.download.stop();
-    } catch (e) {
-      addLog({ type: 'error', message: e.message });
+      const data = await api.config.get();
+      stopWarning = data.config?.show_stop_warning !== false;
+    } catch {
+      addLog({ type: 'error', message: 'Impossibile caricare le impostazioni. Usa valori predefiniti.' });
     }
+  }
+
+  function stopClicked() {
+    if (stopWarning) {
+      showStopConfirm = true;
+    } else {
+      doStop();
+    }
+  }
+
+  function doStop() {
+    showStopConfirm = false;
+    api.download.stop().catch(e => addLog({ type: 'error', message: e.message }));
   }
 
   function connectSse() {
@@ -168,10 +197,24 @@
 
         switch (data.type) {
           case 'progress':
+            if (data.message === 'Analisi...') {
+              if (analysed[data.series] === undefined) {
+                analysed = { ...analysed, [data.series]: false };
+              }
+            } else if (analysed[data.series] === false) {
+              analysed = { ...analysed, [data.series]: true };
+              analysedCount++;
+            }
             updateProgress(data.series, data.message);
             break;
           case 'overall':
             overallStatus = data.status;
+            break;
+          case 'phase':
+            phase = data.phase;
+            if (data.phase === 'processing') {
+              overallStatus = 'Elaborazione in corso...';
+            }
             break;
           case 'finished':
             stats.total++;
@@ -182,6 +225,11 @@
             } else {
               stats.errors++;
             }
+            if (analysed[data.series] === false) {
+              analysed = { ...analysed, [data.series]: true };
+              analysedCount++;
+            }
+            results = [...results, { name: data.series, success: data.success, error: data.error || null, dlTime: Number(data.dlTime || 0), convTime: Number(data.convTime || 0), skipped: false }];
             if (seriesProgress[data.series]) {
               let st = seriesProgress[data.series];
               st.percent = 100;
@@ -194,6 +242,11 @@
           case 'skipped':
             stats.total++;
             stats.skipped++;
+            if (analysed[data.series] === false) {
+              analysed = { ...analysed, [data.series]: true };
+              analysedCount++;
+            }
+            results = [...results, { name: data.series, success: true, skipped: true, error: null, dlTime: 0, convTime: 0 }];
             if (seriesProgress[data.series]) {
               let st = seriesProgress[data.series];
               st.isActive = false;
@@ -207,6 +260,7 @@
           case 'done':
             downloadRunning = false;
             overallStatus = 'Completato.';
+            phase = 'done';
             summary = { ...stats };
             loadRecentAdded();
             loadRecentlyDownloaded();
@@ -218,6 +272,7 @@
   }
 
   onMount(() => {
+    loadConfig();
     loadStatus();
     connectSse();
     loadRecentAdded();
@@ -234,7 +289,7 @@
     <button class="btn-primary" onclick={startDownload} disabled={downloadRunning}>
       Avvia Download
     </button>
-    <button class="btn-danger" onclick={stopDownload} disabled={!downloadRunning}>
+    <button class="btn-danger" onclick={stopClicked} disabled={!downloadRunning}>
       Ferma Download
     </button>
     <span class="status-label">{overallStatus}</span>
@@ -267,6 +322,16 @@
           <span class="stat stat-error">{summary.errors} errori</span>
           <span class="stat stat-total">{summary.total} totali</span>
         </div>
+        {#if results.length > 0}
+          <div class="summary-lists">
+            {#each results.filter(r => r.success && !r.skipped) as r}
+              <div class="summary-list done">✅ {r.name}</div>
+            {/each}
+            {#each results.filter(r => !r.success && !r.skipped) as r}
+              <div class="summary-list error">❌ {r.name} — {r.error}</div>
+            {/each}
+          </div>
+        {/if}
         {#if stats.dlTime > 0 || stats.convTime > 0}
           <div class="summary-times">
             Download: {stats.dlTime.toFixed(1)}s &middot; Conversione: {stats.convTime.toFixed(1)}s
@@ -363,6 +428,19 @@
     </div>
   {:else if !summary}
     <div class="series-list">
+      {#if analysisSeries.length > 0}
+        <div class="group-label">Analisi in corso ({analysisSeries.length})</div>
+        {#each analysisSeries as s (s.name)}
+          <div class="series-row analysing">
+            <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
+            <div class="series-info">
+              <span class="series-name">{s.name}</span>
+              <span class="series-status">Analisi...</span>
+            </div>
+          </div>
+        {/each}
+      {/if}
+
       {#if activeSeries.length > 0}
         <div class="group-label">In elaborazione ({activeSeries.length})</div>
         {#each activeSeries as s (s.name)}
@@ -434,6 +512,16 @@
       {/if}
     </div>
   {/if}
+
+  <ConfirmModal
+    show={showStopConfirm}
+    title="Interrompere il download?"
+    message={'Sei sicuro di voler interrompere il download in corso?\n\nI file parzialmente scaricati verranno rimossi se l\'opzione "Pulizia Automatica" è attiva nelle impostazioni.'}
+    confirmText="Ferma Download"
+    danger={true}
+    onConfirm={doStop}
+    onCancel={() => showStopConfirm = false}
+  />
 
   {#if logEvents.length > 0}
     <div class="log-section">
@@ -525,6 +613,10 @@
   .stat-error { color: var(--danger); }
   .stat-total { color: var(--text-muted); }
   .summary-times { font-size: 0.78rem; color: var(--text-muted-more); }
+  .summary-lists { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.2rem; }
+  .summary-list { font-size: 0.8rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .summary-list.done { color: var(--success); }
+  .summary-list.error { color: var(--danger); }
   .summary-actions { display: flex; gap: 0.5rem; flex-shrink: 0; align-items: flex-start; }
 
   .dashboard-tables {
@@ -568,6 +660,7 @@
   .series-row:nth-child(4) { animation-delay: 60ms; }
   .series-row:nth-child(5) { animation-delay: 80ms; }
   .series-row.active { border-color: var(--accent-bg); }
+  .series-row.analysing { opacity: 0.65; }
   .series-row.done { opacity: 0.7; }
   .series-row.skipped { opacity: 0.5; }
   .series-row.waiting { opacity: 0.4; }

@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { api, BASE, posterUrl } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
+  import ConfirmModal from './ConfirmModal.svelte';
+  import DirectoryBrowser from './DirectoryBrowser.svelte';
 
   let series = $state([]);
   let searchQuery = $state('');
@@ -10,10 +12,12 @@
   let showForm = $state(false);
   let editing = $state(-1);
   let posterError = $state(false);
+  let showBrowser = $state(false);
   let descriptions = $state({});
   let detailIndex = $state(-1);
   let sortField = $state('name');
   let sortDir = $state('asc');
+  let viewMode = $state('normal');
 
   let form = $state({
     service: 'animeW_scraper',
@@ -31,8 +35,6 @@
       : series
   );
 
-  let sortKey = $derived(sortField + ':' + sortDir);
-
   async function load() {
     busy = true;
     error = '';
@@ -42,8 +44,8 @@
       if (sortField === 'added' && sortDir === 'desc') data.reverse();
       series = data;
       descriptions = {};
-      for (let i = 0; i < series.length; i++) {
-        loadDescription(i);
+      for (const item of series) {
+        loadDescription(item._file_index);
       }
     } catch (e) {
       error = e.message;
@@ -52,9 +54,17 @@
     }
   }
 
+  onMount(() => { load(); });
+
+  let prevSortField = $state(sortField);
+  let prevSortDir = $state(sortDir);
   $effect(() => {
-    sortKey;
-    load();
+    if (sortField !== prevSortField || sortDir !== prevSortDir) {
+      prevSortField = sortField;
+      prevSortDir = sortDir;
+      load();
+    }
+    sortField, sortDir;
   });
 
   function setSort(field) {
@@ -67,15 +77,15 @@
     }
   }
 
-  async function loadDescription(idx) {
-    const item = series[idx];
+  async function loadDescription(fileIdx) {
+    const item = series.find(s => s._file_index === fileIdx);
     if (!item || !item.path) return;
     try {
       const res = await fetch(BASE + `/api/description?path=${encodeURIComponent(item.path)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.description) {
-          descriptions = { ...descriptions, [idx]: data.description };
+          descriptions = { ...descriptions, [fileIdx]: data.description };
         }
       }
     } catch {}
@@ -100,8 +110,9 @@
     showForm = true;
   }
 
-  function openEdit(idx) {
-    const s = series[idx];
+  function openEdit(fileIdx) {
+    const s = series.find(item => item._file_index === fileIdx);
+    if (!s) { error = 'Errore: serie con indice ' + fileIdx + ' non trovata.'; return; }
     form = {
       service: s.service || 'animeW_scraper',
       name: s.name || s.title || '',
@@ -111,7 +122,7 @@
       highPriority: s.is_high_priority || false,
       passedEpisodes: s.passed_episodes || 0,
     };
-    editing = idx;
+    editing = fileIdx;
     showForm = true;
     posterError = false;
   }
@@ -152,14 +163,26 @@
     }
   }
 
-  async function removeItem(idx) {
-    if (!confirm('Eliminare questa serie?')) return;
+  let confirmDeleteIdx = $state(-1);
+  let confirmDeleteName = $state('');
+
+  function promptRemove(fileIdx) {
+    const s = series.find(item => item._file_index === fileIdx);
+    confirmDeleteName = s ? (s.name || s.title || 'serie sconosciuta') : 'serie #' + fileIdx;
+    confirmDeleteIdx = fileIdx;
+  }
+
+  async function doRemove() {
+    const idx = confirmDeleteIdx;
+    const name = confirmDeleteName;
+    confirmDeleteIdx = -1;
     try {
       await api.series.remove(idx);
       if (editing === idx) closeForm();
+      if (detailIndex === idx) closeDetail();
       await load();
     } catch (e) {
-      error = e.message;
+      error = 'Errore durante l\'eliminazione di "' + name + '": ' + e.message;
     }
   }
 
@@ -170,31 +193,39 @@
   function openDetail(idx) { detailIndex = idx; }
   function closeDetail() { detailIndex = -1; }
 
-  async function pickDirectory() {
-    try {
-      const r = await fetch(BASE + '/api/browse/pick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current_path: form.path || undefined }),
-      });
-      if (r.ok) {
-        const data = await r.json();
-        if (data.path) form.path = data.path;
-      }
-    } catch {}
+  function pickDirectory() {
+    showBrowser = true;
   }
+
+  function onBrowserSelect(selectedPath) {
+    form.path = selectedPath;
+    showBrowser = false;
+  }
+
+  function onBrowserCancel() {
+    showBrowser = false;
+  }
+
+  let showFab = $state(true);
+  let lastScrollY = $state(0);
+
+  function handleScroll() {
+    const sy = window.scrollY;
+    showFab = sy < lastScrollY || sy < 100;
+    lastScrollY = sy;
+  }
+
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  });
 
 </script>
 
 <div in:fly={{ y: 8, duration: 200 }}>
 <div class="header-row">
   <h2>Gestione Serie</h2>
-  <div class="header-actions">
-    <button class="btn-primary" onclick={openNew}>
-      <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Aggiungi Serie
-    </button>
-  </div>
 </div>
 
 <div class="search-row">
@@ -219,6 +250,14 @@
       {/if}
     </svg>
   </button>
+  <div class="view-toggle">
+    <button type="button" class="btn-icon-only" class:active={viewMode === 'normal'} onclick={() => viewMode = 'normal'} title="Vista normale">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    </button>
+    <button type="button" class="btn-icon-only" class:active={viewMode === 'compact'} onclick={() => viewMode = 'compact'} title="Vista compatta">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="18" height="4"/><rect x="3" y="10" width="18" height="4"/><rect x="3" y="17" width="18" height="4"/></svg>
+    </button>
+  </div>
 </div>
 
 {#if error}
@@ -235,8 +274,11 @@
           <div class="form-poster-col">
             <div class="poster-frame">
               {#if editing >= 0}
-                <img src={posterSrc(series[editing])} alt="poster" class="poster-preview"
-                  onerror={() => posterError = true} />
+                {@const editItem = series.find(item => item._file_index === editing)}
+                {#if editItem}
+                  <img src={posterSrc(editItem)} alt="poster" class="poster-preview"
+                    onerror={() => posterError = true} />
+                {/if}
               {:else}
                 <div class="poster-placeholder">Nessun<br />Percorso</div>
               {/if}
@@ -263,7 +305,12 @@
                 <input id="f-name" type="text" bind:value={form.name} placeholder="Nome della serie" required />
                 <button type="button" class="btn-small-icon" title="Recupera il nome dalla pagina web" onclick={async () => {
                   if (!form.url.trim()) return;
-                  try { const r = await fetch(form.url, { method: 'HEAD' }); } catch {}
+                  try {
+                    const result = await api.series.fetchName(form.url);
+                    if (result.name) form.name = result.name;
+                  } catch (e) {
+                    error = 'Impossibile recuperare il nome: ' + e.message;
+                  }
                 }}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
                 </button>
@@ -305,7 +352,7 @@
 
         {#if editing >= 0}
           <div class="form-footer">
-            <button class="btn-danger" onclick={() => removeItem(editing)}>Elimina Serie</button>
+            <button class="btn-danger" onclick={() => { const idx = editing; closeForm(); promptRemove(idx); }}>Elimina Serie</button>
             <div class="footer-right">
               <button class="btn-cancel" onclick={closeForm}>Annulla</button>
               <button class="btn-primary" onclick={saveForm}>Salva Modifiche</button>
@@ -330,15 +377,14 @@
 {:else if filtered.length === 0}
   <div class="empty">{series.length === 0 ? 'Nessuna serie configurata. Aggiungine una per iniziare!' : 'Nessuna serie corrisponde alla ricerca.'}</div>
 {:else}
-  <div class="series-grid">
-    {#each filtered as item, idx (series.indexOf(item))}
-      {@const realIdx = series.indexOf(item)}
-      <div class="series-card" style="--i:{idx}" role="button" tabindex="0" onclick={() => openDetail(realIdx)} onkeydown={(e) => e.key === 'Enter' && openDetail(realIdx)}>
+  <div class="series-grid" class:grid-compact={viewMode === 'compact'}>
+    {#each filtered as item, idx (item._file_index)}
+      <div class="series-card" style="--i:{idx}" role="button" tabindex="0" onclick={() => openDetail(item._file_index)} onkeydown={(e) => e.key === 'Enter' && openDetail(item._file_index)}>
         <div class="card-poster-wrap">
           <img class="card-poster" src={posterSrc(item)} alt="" loading="lazy" />
-          {#if descriptions[realIdx]}
+          {#if descriptions[item._file_index]}
             <div class="card-desc-overlay">
-              <p class="card-desc">{descriptions[realIdx]}</p>
+              <p class="card-desc">{descriptions[item._file_index]}</p>
             </div>
           {/if}
         </div>
@@ -354,11 +400,11 @@
           </div>
         </div>
         <div class="card-actions">
-          <button class="btn-card" onclick={(e) => { e.stopPropagation(); openEdit(realIdx); }}>
+          <button class="btn-card" onclick={(e) => { e.stopPropagation(); openEdit(item._file_index); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Modifica
           </button>
-          <button class="btn-card btn-card-danger" onclick={(e) => { e.stopPropagation(); removeItem(realIdx); }}>
+          <button class="btn-card btn-card-danger" onclick={(e) => { e.stopPropagation(); promptRemove(item._file_index); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
             Elimina
           </button>
@@ -368,8 +414,27 @@
   </div>
 {/if}
 
+<ConfirmModal
+  show={confirmDeleteIdx >= 0}
+  title="Eliminare questa serie?"
+  message={'Eliminare definitivamente "' + confirmDeleteName + '"?\nQuesta operazione non può essere annullata.'}
+  confirmText="Elimina"
+  danger={true}
+  onConfirm={doRemove}
+  onCancel={() => confirmDeleteIdx = -1}
+/>
+
+<DirectoryBrowser
+  show={showBrowser}
+  currentPath={form.path || '~/Video'}
+  title="Scegli cartella per la serie"
+  onselect={onBrowserSelect}
+  oncancel={onBrowserCancel}
+/>
+
 {#if detailIndex >= 0}
-  {@const s = series[detailIndex]}
+  {@const s = series.find(item => item._file_index === detailIndex)}
+  {#if s}
   <div class="modal-overlay" onclick={closeDetail} onkeydown={(e) => e.key === 'Escape' && closeDetail()}>
     <div class="modal-panel detail-modal" onclick={(e) => e.stopPropagation()}>
       <div class="detail-modal-inner">
@@ -414,7 +479,11 @@
             </div>
             <div class="detail-stat">
               <span class="detail-stat-label">URL</span>
-              <span class="detail-stat-value detail-stat-url" title={s.series_page_url || s.url}>{s.series_page_url || s.url || '—'}</span>
+              {#if s.series_page_url || s.url}
+                <a class="detail-stat-value detail-stat-url" href={s.series_page_url || s.url} target="_blank" rel="noopener noreferrer" title={s.series_page_url || s.url}>{s.series_page_url || s.url}</a>
+              {:else}
+                <span class="detail-stat-value detail-stat-url">—</span>
+              {/if}
             </div>
           </div>
         </div>
@@ -423,7 +492,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Modifica
           </button>
-          <button class="btn-danger" onclick={() => { const idx = detailIndex; closeDetail(); removeItem(idx); }}>
+          <button class="btn-danger" onclick={() => { const idx = detailIndex; closeDetail(); promptRemove(idx); }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
             Elimina
           </button>
@@ -432,13 +501,22 @@
     </div>
   </div>
   </div>
+  {:else}
+    <div class="error">Serie con ID {detailIndex} non trovata. Potrebbe essere stata eliminata.</div>
+  {/if}
 {/if}
+
+{#if showFab && !showForm && detailIndex < 0}
+  <button class="fab" onclick={openNew} aria-label="Aggiungi Serie">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="28" height="28"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </button>
+{/if}
+
 </div>
 
 <style>
   .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
   h2 { font-size: 1.5rem; font-weight: 700; }
-  .header-actions { display: flex; gap: 0.5rem; align-items: center; }
   .btn-icon-only {
     background: none; border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); cursor: pointer; padding: 0.5rem;
@@ -451,18 +529,17 @@
     display: flex; align-items: center; gap: 0.4rem;
   }
   .btn-primary:hover { background: var(--accent-hover); }
-  .btn-icon { width: 16px; height: 16px; }
   .btn-cancel {
     padding: 0.55rem 1.1rem; background: none; border: 1px solid var(--btn-cancel-border); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
   }
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-danger {
-    padding: 0.55rem 1.1rem; background: var(--danger-bg); border: 1px solid var(--danger-border); border-radius: 8px;
-    color: var(--danger); font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    padding: 0.55rem 1.1rem; background: var(--danger); border: none; border-radius: 8px;
+    color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
   }
-  .btn-danger:hover { background: var(--danger-bg-hover); }
+  .btn-danger:hover { opacity: 0.85; }
 
   .search-row {
     display: flex; align-items: center; gap: 0.5rem;
@@ -482,6 +559,9 @@
   }
   .sort-label { font-size: 0.8rem; color: var(--text-muted); }
   .sort-dir-btn { padding: 0.35rem; }
+  .view-toggle { display: flex; gap: 0.15rem; margin-left: auto; }
+  .view-toggle .btn-icon-only { padding: 0.35rem; border-radius: 6px; }
+  .view-toggle .btn-icon-only.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   .error {
     background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger);
@@ -496,6 +576,15 @@
   .empty { text-align: center; padding: 3rem; color: var(--text-muted); font-size: 0.9rem; }
 
   .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+  .grid-compact { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; }
+  .grid-compact .card-poster { aspect-ratio: 2/3; }
+  .grid-compact .card-body h3 { font-size: 0.78rem; }
+  .grid-compact .card-path { display: none; }
+  .grid-compact .card-url { display: none; }
+  .grid-compact .card-service { font-size: 0.62rem; }
+  .grid-compact .card-epcount { font-size: 0.62rem; }
+  .grid-compact .card-actions .btn-card { padding: 0.4rem; font-size: 0.72rem; gap: 0.2rem; }
+  .grid-compact .btn-card svg { width: 12px; height: 12px; }
   .series-card {
     background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden;
     display: flex; flex-direction: column;
@@ -558,12 +647,13 @@
   }
   .btn-card {
     flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.3rem;
-    background: none; border: none; color: var(--text-secondary); padding: 0.55rem;
+    background: none; border: none; color: var(--accent); padding: 0.55rem;
     cursor: pointer; font-size: 0.8rem; transition: all 0.1s;
   }
-  .btn-card:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+  .btn-card:hover { background: var(--bg-tertiary); }
   .btn-card + .btn-card { border-left: 1px solid var(--border-color); }
-  .btn-card-danger:hover { background: var(--danger-card-hover); color: var(--danger); }
+  .btn-card-danger { color: var(--danger); }
+  .btn-card-danger:hover { background: var(--danger-bg); }
 
   .form-modal {
     animation: scaleIn 0.25s ease-out;
@@ -698,13 +788,31 @@
   .detail-stat { display: flex; justify-content: space-between; align-items: center; }
   .detail-stat-label { font-size: 0.75rem; color: var(--text-muted); }
   .detail-stat-value { font-size: 0.85rem; color: var(--text-primary); font-weight: 600; }
-  .detail-stat-path { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; }
-  .detail-stat-url { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; font-weight: 400; }
-  .detail-actions { display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); flex-shrink: 0; }
-.detail-stat-diff { color: var(--text-muted); font-size: 0.75rem; margin-left: 0.4rem; }
+  .detail-stat-path { font-size: 0.78rem; word-break: break-all; text-align: right; max-width: 55%; }
+  .detail-stat-url { font-size: 0.75rem; font-weight: 400; word-break: break-all; text-align: right; max-width: 55%; }
+  .detail-stat-url:hover { color: var(--accent); }
+  .detail-actions { display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); flex-shrink: 0;
+    padding-bottom: 96px;
+  }
+  .detail-stat-diff { color: var(--text-muted); font-size: 0.75rem; margin-left: 0.4rem; }
+
+  .fab {
+    position: fixed; right: 1.5rem;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--accent); border: none; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 150;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    transition: transform 0.2s ease, opacity 0.2s ease, background 0.2s ease;
+    bottom: 112px;
+  }
+  .fab:hover { background: var(--accent-hover); transform: scale(1.08); }
+  .fab:active { transform: scale(0.95); }
 
   @media (max-width: 768px) {
     .series-grid { grid-template-columns: 1fr; }
+    .series-grid.grid-compact { grid-template-columns: repeat(2, 1fr); }
+    .grid-compact .card-poster { max-height: 180px; }
     .series-card:hover { transform: none; box-shadow: none; }
     .card-desc-overlay {
       background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 50%, rgba(0,0,0,0.3) 100%);
@@ -713,26 +821,46 @@
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       border-radius: 0; min-width: auto;
       max-width: 100vw; max-height: 100vh;
+      padding-bottom: 96px;
     }
     .form-layout { flex-direction: column; }
     .form-poster-col { display: none; }
     .form-modal-body h3 { font-size: 1rem; }
-    .header-actions { gap: 0.3rem; }
     .header-row { flex-wrap: wrap; gap: 0.5rem; }
     .btn-primary { padding: 0.45rem 0.85rem; font-size: 0.8rem; }
     .detail-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      max-width: 100vw; max-height: 100vh; border-radius: 0;
+      max-width: 100vw; max-height: 100dvh; border-radius: 0;
       animation: fadeIn 0.2s ease;
     }
     .detail-modal-inner {
       flex-direction: column; border-radius: 0;
-      max-height: 100vh; height: 100vh;
+      max-height: 100dvh; height: 100dvh;
     }
-    .detail-poster { width: 100%; aspect-ratio: 2/3; max-height: 40vh; object-fit: cover; }
+    .detail-poster { width: 100%; aspect-ratio: 2/3; max-height: 40dvh; object-fit: cover; }
     .detail-info-col { max-width: none; padding: 1rem; }
     .detail-desc { max-height: none; }
-    .detail-stat-path { max-width: 140px; }
-    .detail-stat-url { max-width: 140px; }
+    .detail-stat-path { max-width: none; }
+    .detail-stat-url { max-width: none; }
+  }
+
+  @media (orientation: landscape) and (max-height: 520px) {
+    .detail-modal {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      max-width: 100vw; max-height: 100dvh; border-radius: 0;
+    }
+    .detail-modal-inner {
+      flex-direction: row; border-radius: 0;
+      max-height: 100dvh; height: 100dvh;
+    }
+    .detail-poster { width: 160px; max-height: 100dvh; aspect-ratio: 2/3; object-fit: cover; }
+    .detail-info-col { max-width: none; padding: 0.75rem; }
+    .detail-actions { padding-bottom: 48px; }
+    .form-modal {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: 0; min-width: auto;
+      max-width: 100vw; max-height: 100vh;
+      padding-bottom: 48px;
+    }
   }
 </style>

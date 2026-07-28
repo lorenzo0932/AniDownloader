@@ -1,4 +1,5 @@
-export const BASE = import.meta.env.DEV ? '' : 'http://127.0.0.1:8989';
+const isTauri = typeof window !== 'undefined' && typeof window.__TAURI_INTERNALS__ !== 'undefined';
+export const BASE = isTauri ? 'http://127.0.0.1:8989' : '';
 
 export function posterUrl(path) {
   if (!path) return '';
@@ -38,6 +39,7 @@ export const api = {
       if (params.length) path += '?' + params.join('&');
       return request('GET', path);
     },
+    fetchName: (url) => request('POST', '/api/series/fetch-name', { url }),
     add: (item) => request('POST', '/api/series', item),
     update: (index, item) => request('PUT', `/api/series/${index}`, item),
     remove: (index) => request('DELETE', `/api/series/${index}`),

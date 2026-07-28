@@ -106,7 +106,7 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
         }
 
         if (status != 0) {
-            res.errorMessage = "Errore Aria2";
+            res.errorMessage = m_stopSignal ? "Interrotto dall'utente" : "Errore nel download per aria2";
             Logger::error(series.name + ": Download fallito dopo 3 tentativi");
             return res;
         }
@@ -121,7 +121,7 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
         {
             std::unique_lock<std::mutex> lock(s_convMutex);
             s_convCv.wait(lock, [&]{ return s_activeConversions < strategy.maxConcurrentTasks || m_stopSignal; });
-            if (m_stopSignal) return res;
+            if (m_stopSignal) { res.errorMessage = "Interrotto dall'utente"; return res; }
             s_activeConversions++;
         }
 
@@ -134,7 +134,7 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
         s_convCv.notify_one();
 
         if (!ok) {
-            res.errorMessage = "Errore Conversione";
+            res.errorMessage = m_stopSignal ? "Interrotto dall'utente" : "Errore nella compressione del video";
             return res;
         }
     } else {

@@ -5,6 +5,8 @@
 #include <regex>
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
+#include <chrono>
 
 namespace Core {
 
@@ -53,16 +55,38 @@ std::string findPosterPath(const std::string& seriesPath) {
     return {};
 }
 
-std::vector<std::pair<std::string, std::string>> listDirectories(const std::string& dirPath) {
-    std::vector<std::pair<std::string, std::string>> entries;
-    std::filesystem::path dp(dirPath);
+std::vector<DirEntry> listDirectories(const std::string& dirPath) {
+    std::vector<DirEntry> entries;
+    std::filesystem::path dp;
+
+    if (dirPath == "~" || dirPath.rfind("~/", 0) == 0) {
+        const char* home = std::getenv("HOME");
+        if (!home) { dp = std::filesystem::path(dirPath); }
+        else {
+            dp = dirPath == "~"
+                ? std::filesystem::path(home)
+                : std::filesystem::path(home) / dirPath.substr(2);
+        }
+    } else {
+        dp = std::filesystem::path(dirPath);
+    }
+
     if (!std::filesystem::exists(dp) || !std::filesystem::is_directory(dp))
         return entries;
+
     for (const auto& entry : std::filesystem::directory_iterator(dp)) {
-        if (entry.is_directory()) {
-            entries.emplace_back(entry.path().filename().string(), entry.path().string());
-        }
+        if (!entry.is_directory()) continue;
+        auto filename = entry.path().filename().string();
+        if (filename[0] == '.') continue;
+        auto ftime = std::filesystem::last_write_time(entry);
+        auto mtime = std::chrono::duration_cast<std::chrono::seconds>(
+            ftime.time_since_epoch()).count();
+        entries.push_back({filename, entry.path().string(), mtime});
     }
+
+    std::sort(entries.begin(), entries.end(),
+        [](const DirEntry& a, const DirEntry& b) { return a.name < b.name; });
+
     return entries;
 }
 

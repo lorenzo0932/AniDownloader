@@ -3,11 +3,14 @@
   import { api, BASE } from '../api.js';
   import { getTheme, setTheme } from '../theme.svelte.js';
   import Dropdown from '../Dropdown.svelte';
+  import DirectoryBrowser from './DirectoryBrowser.svelte';
 
   let config = $state({});
   let error = $state('');
   let saved = $state(false);
   let busy = $state(true);
+  let showBrowser = $state(false);
+  let browserTarget = $state('');
   let selectedTheme = $state(getTheme());
 
   const THEME_OPTIONS = [
@@ -56,32 +59,24 @@
     setTheme(t);
   }
 
-  async function pickJsonPath() {
-    try {
-      const r = await fetch(BASE + '/api/browse/pick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current_path: config.json_file_path || undefined }),
-      });
-      if (r.ok) {
-        const data = await r.json();
-        if (data.path) config.json_file_path = data.path;
-      }
-    } catch {}
+  function pickJsonPath() {
+    browserTarget = 'json_file_path';
+    showBrowser = true;
   }
 
-  async function pickOutputDir() {
-    try {
-      const r = await fetch(BASE + '/api/browse/pick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current_path: config.output_dir || undefined }),
-      });
-      if (r.ok) {
-        const data = await r.json();
-        if (data.path) config.output_dir = data.path;
-      }
-    } catch {}
+  function pickOutputDir() {
+    browserTarget = 'output_dir';
+    showBrowser = true;
+  }
+
+  function onBrowserSelect(selectedPath) {
+    if (browserTarget === 'json_file_path') config.json_file_path = selectedPath;
+    else if (browserTarget === 'output_dir') config.output_dir = selectedPath;
+    showBrowser = false;
+  }
+
+  function onBrowserCancel() {
+    showBrowser = false;
   }
 
   onMount(load);
@@ -99,6 +94,13 @@
 {:else}
   <div class="form-card">
     <form onsubmit={(e) => { e.preventDefault(); save(); }}>
+      <DirectoryBrowser
+        show={showBrowser}
+        currentPath={browserTarget === 'json_file_path' ? (config.json_file_path || '~/Video') : (config.output_dir || '~/Video')}
+        title={browserTarget === 'json_file_path' ? 'Scegli file JSON' : 'Scegli cartella di output'}
+        onselect={onBrowserSelect}
+        oncancel={onBrowserCancel}
+      />
 
       <div class="settings-columns">
         <div class="settings-col">
@@ -303,4 +305,11 @@
     margin-bottom: 1.5rem;
   }
   .form-card .form-footer { padding-top: 0; }
+
+  @media (max-width: 768px) {
+    .settings-col { min-width: 100%; }
+    .form-card { padding: 1rem; }
+    .form-footer { flex-wrap: wrap; gap: 0.5rem; }
+    .settings-columns { gap: 0; }
+  }
 </style>

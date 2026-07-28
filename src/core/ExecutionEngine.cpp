@@ -137,10 +137,22 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
                     std::string expPath = ScraperUtils::expandTilde(item.first.path);
                     std::filesystem::path fullFile = std::filesystem::path(expPath) / item.second.fileName;
                     try {
-                        if (std::filesystem::exists(fullFile)) std::filesystem::remove(fullFile);
-                        if (std::filesystem::exists(fullFile.string() + ".aria2")) 
+                        bool removedFile = false;
+                        bool removedAria2 = false;
+                        if (std::filesystem::exists(fullFile)) {
+                            std::filesystem::remove(fullFile);
+                            removedFile = true;
+                        }
+                        if (std::filesystem::exists(fullFile.string() + ".aria2")) {
                             std::filesystem::remove(fullFile.string() + ".aria2");
-                    } catch (...) {}
+                            removedAria2 = true;
+                        }
+                        if (removedFile || removedAria2) {
+                            Core::Logger::info("Cleanup: rimossi file parziali per " + item.first.name);
+                        }
+                    } catch (const std::exception& e) {
+                        Core::Logger::error("Cleanup fallito per " + item.first.name + ": " + e.what());
+                    }
                 }
 
                 TaskReport report{item.first.name, res.success, res.episodeNumber, res.downloadTime, res.conversionTime, res.errorMessage};
