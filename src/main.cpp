@@ -27,6 +27,7 @@ using namespace Core;
 std::mutex g_statusMutex;
 std::map<std::string, std::string> g_statusMap;
 std::vector<TaskReport> g_reports;
+std::string g_overallStatus;
 auto g_startTime = std::chrono::steady_clock::now();
 std::atomic<bool> *g_stopPtr = nullptr;
 
@@ -80,9 +81,13 @@ void refreshTerminal(bool burst) {
     std::cout << "   " << spin << " AniDownloader C++ | Mod: " << (burst ? "BURST 🚀" : "SILENT ☁️") << " | T: " << elapsed << "s\n";
     std::cout << "==========================================================\n";
 
-    for (auto const& [name, status] : g_statusMap) {
-        std::string disp = (name.length() > 34) ? name.substr(0, 31) + "..." : name;
-        std::cout << " - " << std::left << std::setw(35) << disp << " : " << status << "\033[K\n";
+    if (g_statusMap.empty()) {
+        std::cout << g_overallStatus << "\033[K\n";
+    } else {
+        for (auto const& [name, status] : g_statusMap) {
+            std::string disp = (name.length() > 34) ? name.substr(0, 31) + "..." : name;
+            std::cout << " - " << std::left << std::setw(35) << disp << " : " << status << "\033[K\n";
+        }
     }
     std::cout << "==========================================================\n" << std::flush;
 }
@@ -200,7 +205,11 @@ int main(int argc, char* argv[]) {
             if (burstMode) refreshTerminal(burstMode);
         },
         [&](const std::string& s) {
-            (void)s;
+            {
+                std::lock_guard<std::mutex> l(g_statusMutex);
+                g_overallStatus = s;
+            }
+            if (burstMode) refreshTerminal(burstMode);
         },
         [&](const TaskReport& r) {
             {
@@ -244,6 +253,9 @@ int main(int argc, char* argv[]) {
                       << " | Conv: " << r.convTime << "s\n";
         }
     }
-    
+
+    if (burstMode) {
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
     return 0;
 }
