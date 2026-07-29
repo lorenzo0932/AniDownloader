@@ -312,7 +312,9 @@ std::vector<EpisodeCandidate> AnimeWScraper::getCandidates(const Series& series)
     return results;
 }
 
-std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, std::atomic<bool>& stopSignal) {
+std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, std::atomic<bool>& stopSignal,
+    ScraperProgressCb progressCb)
+{
     std::vector<DownloadTask> results;
 
     auto candidates = getCandidates(series);
@@ -322,6 +324,7 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, st
         return results;
     }
 
+    if (progressCb) progressCb("Analisi: " + std::to_string(candidates.size()) + " episodi da verificare, attesa risorsa Chrome...");
     Core::Logger::info(series.name + ": waiting for ScraperSemaphoreGuard...");
     ScraperSemaphoreGuard scraperGuard;
     Core::Logger::info(series.name + ": ScraperSemaphoreGuard acquired");
@@ -348,6 +351,7 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, st
         }}
     };
 
+    if (progressCb) progressCb("Analisi: creazione sessione ChromeDriver...");
     Core::Logger::info(series.name + ": creating ChromeDriver session...");
     json sessionRes;
     std::string sessionId;
@@ -365,6 +369,7 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, st
     }
 
     if (sessionId.empty()) {
+        if (progressCb) progressCb("Analisi: errore creazione sessione ChromeDriver");
         Core::Logger::warn(series.name + ": ChromeDriver session creation FAILED after 3 attempts");
         DownloadTask err;
         err.errorMessage = "Impossibile connettersi a ChromeDriver locale (Porta 9515).";
@@ -376,9 +381,11 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, st
     int maxTabs = (hwThreads == 0) ? 2 : (hwThreads < 6) ? 1 : (hwThreads <= 12) ? 3 : (hwThreads <= 24) ? 4 : 6;
     Core::Logger::info(series.name + ": maxTabs=" + std::to_string(maxTabs));
 
+    size_t totalBatches = (candidates.size() + maxTabs - 1) / maxTabs;
     for (size_t offset = 0; offset < candidates.size(); offset += maxTabs) {
         if (stopSignal.load()) break;
 
+        size_t batchNum = offset / maxTabs + 1;
         size_t remaining = candidates.size() - offset;
         size_t batchSize = std::min(static_cast<size_t>(maxTabs), remaining);
         std::vector<EpisodeCandidate> batch(
@@ -386,11 +393,15 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, st
             candidates.begin() + static_cast<std::ptrdiff_t>(offset + batchSize)
         );
 
+        if (progressCb) progressCb("Analisi: sniffing batch " + std::to_string(batchNum) + "/" + std::to_string(totalBatches) + " (" + std::to_string(batchSize) + " ep)...");
+
         try {
             auto batchResults = sniffBatch(sessionId, batch, stopSignal, series.name);
             results.insert(results.end(), batchResults.begin(), batchResults.end());
+            if (progressCb) progressCb("Analisi: batch " + std::to_string(batchNum) + "/" + std::to_string(totalBatches) + " completato (" + std::to_string(batchResults.size()) + " URL)");
         } catch (const std::exception& e) {
             Core::Logger::warn(series.name + ": batch sniff fallito: " + std::string(e.what()));
+            if (progressCb) progressCb("Analisi: batch " + std::to_string(batchNum) + "/" + std::to_string(totalBatches) + " fallito");
             break;
         }
     }

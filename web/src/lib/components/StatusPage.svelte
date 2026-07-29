@@ -197,7 +197,7 @@
 
         switch (data.type) {
           case 'progress':
-            if (data.message === 'Analisi...') {
+            if (data.message === 'Analisi...' || data.message.startsWith('Analisi:')) {
               if (analysed[data.series] === undefined) {
                 analysed = { ...analysed, [data.series]: false };
               }
@@ -292,6 +292,9 @@
     <button class="btn-danger" onclick={stopClicked} disabled={!downloadRunning}>
       Ferma Download
     </button>
+    {#if phase === 'analysis' && !summary}
+      <span class="loading-spinner"></span>
+    {/if}
     <span class="status-label">{overallStatus}</span>
     <span class="sse-badge" class:connected={sseConnected}>
       {sseConnected ? 'SSE' : 'Disconnesso'}
@@ -582,6 +585,14 @@
     padding: 0.2rem 0.5rem; border-radius: 4px;
   }
   .sse-badge.connected { color: var(--success); border-color: var(--success-border); }
+
+  .loading-spinner {
+    width: 16px; height: 16px; border: 2px solid var(--border-color);
+    border-top: 2px solid var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   .global-bar-wrap { display: flex; align-items: center; gap: 0.75rem; }
   .global-bar {

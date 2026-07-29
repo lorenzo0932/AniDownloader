@@ -22,7 +22,9 @@ namespace Core {
         return nullptr; 
     }
 
-    std::vector<DownloadTask> PlanningService::planSingleSeries(const Series& series) {
+    std::vector<DownloadTask> PlanningService::planSingleSeries(const Series& series,
+        BaseScraper::ScraperProgressCb progressCb)
+    {
         if (series.service.empty()) {
             DownloadTask err;
             err.shouldProcess = false;
@@ -30,7 +32,6 @@ namespace Core {
             return {err};
         }
 
-        // --- FASE 1: AVVIA LO SCRAPER ONLINE (PRIORITÀ MASSIMA) ---
         auto scraper = getScraperInstance(series.service);
         if (!scraper) {
             DownloadTask err;
@@ -39,9 +40,10 @@ namespace Core {
             return {err};
         }
 
+        std::atomic<bool> stop{false};
         std::vector<DownloadTask> tasks;
         try {
-            tasks = scraper->planSeriesTask(series);
+            tasks = scraper->planSeriesTask(series, stop, progressCb);
         } catch (const std::exception& e) {
             DownloadTask err;
             err.shouldProcess = false;

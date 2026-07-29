@@ -58,18 +58,28 @@ static void cliSignalHandler(int) {
 /**
  * @brief Aggiorna la dashboard nel terminale.
  */
+static const char* spinnerFrames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+
 void refreshTerminal(bool burst) {
+    static int spinIdx = 0;
     std::lock_guard<std::mutex> lock(g_statusMutex);
-    
-    // ANSI: Sposta cursore in 0,0 (Home)
-    std::cout << "\033[H"; 
-    
+
+    std::cout << "\033[H";
+
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - g_startTime).count();
-    
+
     std::cout << "==========================================================\n";
-    std::cout << "   AniDownloader C++ | Mod: " << (burst ? "BURST 🚀" : "SILENT ☁️") << " | T: " << elapsed << "s\n";
+    bool hasAnalisi = false;
+    for (auto const& [name, status] : g_statusMap) {
+        if (status.find("Analisi:") != std::string::npos) { hasAnalisi = true; break; }
+    }
+    char spin = spinnerFrames[spinIdx % 10];
+    if (!hasAnalisi) spin = ' ';
+    spinIdx++;
+
+    std::cout << "   " << spin << " AniDownloader C++ | Mod: " << (burst ? "BURST 🚀" : "SILENT ☁️") << " | T: " << elapsed << "s\n";
     std::cout << "==========================================================\n";
-    
+
     for (auto const& [name, status] : g_statusMap) {
         std::string disp = (name.length() > 34) ? name.substr(0, 31) + "..." : name;
         std::cout << " - " << std::left << std::setw(35) << disp << " : " << status << "\033[K\n";
@@ -217,12 +227,8 @@ int main(int argc, char* argv[]) {
                 saveRepo.saveSeriesData(currentList);
             }
         },
-        [&](const std::string& n, const std::string& r) {
-            {
-                std::lock_guard<std::mutex> l(g_statusMutex);
-                g_statusMap[n] = "🚫 " + r;
-            }
-            if (burstMode) refreshTerminal(burstMode);
+        [&](const std::string&, const std::string&) {
+            // Skip: silently, senza mostrare in dashboard CLI
         },
         nullptr
     );

@@ -9,7 +9,9 @@
 
 namespace Core {
 
-std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, std::atomic<bool>&) {
+std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, std::atomic<bool>&,
+    ScraperProgressCb progressCb)
+{
     std::vector<DownloadTask> results;
 
     auto episodesMap = ScraperUtils::scanEpisodesMap(series.path);
@@ -43,9 +45,19 @@ std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, st
         if (eps.empty()) return results;
         std::sort(eps.begin(), eps.end(), [](const Ep& a, const Ep& b) { return a.n < b.n; });
 
+        size_t totalToCheck = 0;
+        for (const auto& ep : eps) {
+            int local = series.continueSeries ? (ep.n + series.passedEpisodes) : ep.n;
+            if (local >= nextNeeded) totalToCheck++;
+        }
+        if (progressCb) progressCb("Analisi: " + std::to_string(totalToCheck) + " episodi da verificare");
+
+        size_t checked = 0;
         for (const auto& ep : eps) {
             int local = series.continueSeries ? (ep.n + series.passedEpisodes) : ep.n;
             if (local >= nextNeeded) {
+                checked++;
+                if (progressCb) progressCb("Analisi: verifica episodio " + std::to_string(checked) + "/" + std::to_string(totalToCheck) + "...");
                 cpr::Response epPage = ScraperUtils::httpGetWithRetry(
                     cpr::Url{ep.u},
                     {{"User-Agent", ScraperUtils::platformUserAgent()}},

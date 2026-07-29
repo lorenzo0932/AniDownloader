@@ -17,7 +17,6 @@ struct PlanningResult {
     std::mutex mutex;
     std::vector<std::pair<Series, DownloadTask>> tasks;
     std::vector<std::string> errors;
-    std::vector<std::string> skipped;
 };
 
 void ExecutionEngine::run(const std::vector<Series>& seriesList, 
@@ -45,15 +44,17 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
 
     for (const auto& s : seriesList) {
         if (stopSignal) break;
-        onProgress(s.name, "Analisi...");
         (*pending)++;
 
-        std::thread([&stopSignal, result, pending, s]() {
+        std::thread([&stopSignal, result, pending, s, &onProgress, &onTaskSkipped]() {
             if (stopSignal) { (*pending)--; return; }
 
             Series seriesCopy = s;
             seriesCopy.path = ScraperUtils::expandTilde(s.path);
-            auto tasks = PlanningService::planSingleSeries(seriesCopy);
+            auto tasks = PlanningService::planSingleSeries(seriesCopy,
+                [&onProgress, name = s.name](const std::string& stage) {
+                    if (onProgress) onProgress(name, stage);
+                });
 
             if (stopSignal) { (*pending)--; return; }
 
@@ -74,8 +75,7 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
             }
 
             if (!hasWork && !anyError) {
-                std::lock_guard<std::mutex> lock(result->mutex);
-                result->skipped.push_back(s.name);
+                if (onTaskSkipped) onTaskSkipped(s.name, "Già aggiornata");
             }
 
             (*pending)--;
@@ -95,9 +95,6 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
             if (colon != std::string::npos && onProgress) {
                 onProgress(err.substr(0, colon), "❌ Errore: " + err.substr(colon + 2));
             }
-        }
-        for (const auto& name : result->skipped) {
-            if (onTaskSkipped) onTaskSkipped(name, "Già aggiornata");
         }
     }
 
