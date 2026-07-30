@@ -199,7 +199,7 @@ if $BUILD_LOCAL; then
     fi
     echo "Build frontend web + embed into C++ binary..."
     (cd web && npm install --silent && npm run build --silent) || true
-    python3 scripts/embed_web.py web/dist include/web/embedded_web.hpp
+    python3 scripts/embed_web.py web web/dist include/web/embedded_web.hpp
 
     mkdir -p "$BUILD_DIR"
     cmake -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE=Release
