@@ -1,18 +1,20 @@
 use std::net::TcpStream;
-use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
-    WebviewUrl, WebviewWindowBuilder, Manager,
+    Manager, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::ShellExt;
 
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // ─── Tray menu ───
             let show = MenuItemBuilder::with_id("show", "Mostra").build(app)?;
@@ -48,14 +50,6 @@ fn main() {
                 .build(app)?;
 
             // ─── Sidecar: C++ backend (background) ───
-            let exe = std::env::current_exe().expect("failed to get exe path");
-            let sidecar_name = if cfg!(target_os = "windows") {
-                "AniDownloader.exe"
-            } else {
-                "AniDownloader"
-            };
-            let sidecar_path = exe.parent().unwrap().join(sidecar_name);
-
             let port_in_use = TcpStream::connect_timeout(
                 &"127.0.0.1:8989".parse().unwrap(),
                 Duration::from_millis(200),
@@ -66,13 +60,22 @@ fn main() {
                 println!("Sidecar già in ascolto sulla 8989, skip lancio");
                 app.manage(SidecarChild(Mutex::new(None)));
             } else {
-                let child = Command::new(&sidecar_path)
-                    .args(["--web"])
-                    .spawn()
-                    .unwrap_or_else(|e| {
-                        panic!("Failed to spawn sidecar at {}: {e}", sidecar_path.display())
-                    });
-                app.manage(SidecarChild(Mutex::new(Some(child))));
+                match app.shell().sidecar("AniDownloader") {
+                    Ok(cmd) => match cmd.args(["--web"]).spawn() {
+                        Ok((_rx, child)) => {
+                            println!("Sidecar C++ avviato con successo");
+                            app.manage(SidecarChild(Mutex::new(Some(child))));
+                        }
+                        Err(e) => {
+                            eprintln!("Errore nello spawn del sidecar: {e}");
+                            app.manage(SidecarChild(Mutex::new(None)));
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Errore nella creazione del comando sidecar: {e}");
+                        app.manage(SidecarChild(Mutex::new(None)));
+                    }
+                }
             }
 
             // ─── Crea finestra webview → frontend Tauri ───
@@ -99,7 +102,6 @@ fn main() {
                 if let Ok(mut guard) = state.0.lock() {
                     if let Some(mut child) = guard.take() {
                         let _ = child.kill();
-                        let _ = child.wait();
                     }
                 }
             }
@@ -107,4 +109,4 @@ fn main() {
     });
 }
 
-struct SidecarChild(Mutex<Option<Child>>);
+struct SidecarChild(Mutex<Option<CommandChild>>);
