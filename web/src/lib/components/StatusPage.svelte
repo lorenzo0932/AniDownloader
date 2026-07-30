@@ -23,14 +23,8 @@
   let stats = $state({ total: 0, done: 0, skipped: 0, errors: 0, dlTime: 0, convTime: 0 });
   let phase = $state('idle');
   let results = $state([]);
-  let analysed = $state({});
-  let analysedCount = $state(0);
   let recentAdded = $state([]);
   let recentlyDownloaded = $state([]);
-
-  let scaricateData = $derived(
-    doneSeries.map(s => ({ name: s.name, path: s.path, service: s.service })).slice(0, 10)
-  );
 
   async function loadRecentAdded() {
     try {
@@ -46,29 +40,43 @@
     } catch {}
   }
 
-  let activeCount = $derived(seriesList.filter(s => seriesProgress[s.name]?.isActive).length);
-  let doneCount = $derived(seriesList.filter(s => seriesProgress[s.name]?.result === 'done').length);
-  let skippedCount = $derived(seriesList.filter(s => seriesProgress[s.name]?.result === 'skipped').length);
+  let taskValues = $derived(Object.values(seriesProgress));
+  let activeCount = $derived(taskValues.filter(t => t.isActive).length);
+  let doneCount = $derived(taskValues.filter(t => t.result === 'done').length);
+  let skippedCount = $derived(taskValues.filter(t => t.result === 'skipped').length);
   let globalPercent = $derived.by(() => {
-    let vals = Object.values(seriesProgress).filter(s => s.isActive && s.percent > 0);
+    let vals = taskValues.filter(t => t.isActive && t.percent > 0);
     if (vals.length === 0) return 0;
-    return Math.round(vals.reduce((a, s) => a + s.percent, 0) / vals.length);
+    return Math.round(vals.reduce((a, t) => a + t.percent, 0) / vals.length);
   });
-  let activeSeries = $derived(seriesList.filter(s => seriesProgress[s.name]?.isActive));
-  let doneSeries = $derived(seriesList.filter(s => seriesProgress[s.name]?.result === 'done'));
-  let skippedSeries = $derived(seriesList.filter(s => seriesProgress[s.name]?.result === 'skipped'));
-  let waitingSeries = $derived(seriesList.filter(s => !seriesProgress[s.name]));
-  let analysisSeries = $derived(seriesList.filter(s =>
-    seriesProgress[s.name] && analysed[s.name] === false
-  ));
+  let activeTasks = $derived(taskValues.filter(t => t.episode > 0 && t.isActive));
+  let doneTasks = $derived(taskValues.filter(t => t.result === 'done'));
+  let skippedTasks = $derived(taskValues.filter(t => t.result === 'skipped'));
+  let analysisSeries = $derived.by(() => {
+    let tasksBySeries = new Map();
+    for (let t of taskValues) {
+      let existing = tasksBySeries.get(t.seriesName);
+      if (!existing) { tasksBySeries.set(t.seriesName, []); existing = []; }
+      existing.push(t);
+    }
+    return seriesList.filter(s => {
+      let tasks = tasksBySeries.get(s.name);
+      if (!tasks || tasks.length === 0) return false;
+      return tasks.some(t => t.episode === 0 && t.result === null)
+          && !tasks.some(t => t.episode > 0);
+    });
+  });
+  let waitingSeries = $derived(seriesList.filter(s => !taskValues.some(t => t.seriesName === s.name)));
 
   function navigateTo(r) { route = r; }
 
-  function updateProgress(name, msg) {
-    let state = seriesProgress[name];
+  function updateProgress(name, msg, ep) {
+    let taskKey = (ep > 0) ? `${name}_${ep}` : name;
+    let displayMsg = (ep > 0) ? `(Ep ${ep}) ${msg}` : msg;
+    let state = seriesProgress[taskKey];
     if (!state) {
-      state = { percent: 0, phaseMode: null, isActive: false, statusText: msg, result: null };
-      seriesProgress = { ...seriesProgress, [name]: state };
+      state = { seriesName: name, episode: ep || 0, key: taskKey, percent: 0, phaseMode: null, isActive: false, statusText: displayMsg, result: null };
+      seriesProgress = { ...seriesProgress, [taskKey]: state };
       return;
     }
     if (state.result === 'done' || state.result === 'error') return;
@@ -76,7 +84,7 @@
     if (msg === 'MODE:BOTH' || msg === 'MODE:DL' || msg === 'MODE:CONV') {
       state.phaseMode = msg;
       state.isActive = true;
-      state.statusText = msg;
+      state.statusText = displayMsg;
       seriesProgress = { ...seriesProgress };
       return;
     }
@@ -85,7 +93,7 @@
       state.percent = 100;
       state.isActive = false;
       state.result = 'done';
-      state.statusText = msg;
+      state.statusText = displayMsg;
       seriesProgress = { ...seriesProgress };
       return;
     }
@@ -93,7 +101,7 @@
     if (msg.includes('\u274C')) {
       state.isActive = false;
       state.result = 'error';
-      state.statusText = msg;
+      state.statusText = displayMsg;
       seriesProgress = { ...seriesProgress };
       return;
     }
@@ -101,7 +109,7 @@
     if (msg.includes('\uD83D\uDFAB') || msg.toLowerCase().includes('saltato')) {
       state.isActive = false;
       state.result = 'skipped';
-      state.statusText = msg;
+      state.statusText = displayMsg;
       seriesProgress = { ...seriesProgress };
       return;
     }
@@ -115,13 +123,13 @@
         state.percent = p;
       }
       state.isActive = true;
-      state.statusText = msg;
+      state.statusText = displayMsg;
       seriesProgress = { ...seriesProgress };
       return;
     }
 
     state.isActive = true;
-    state.statusText = msg;
+    state.statusText = displayMsg;
     seriesProgress = { ...seriesProgress };
   }
 
@@ -149,8 +157,6 @@
     summary = null;
     stats = { total: 0, done: 0, skipped: 0, errors: 0, dlTime: 0, convTime: 0 };
     results = [];
-    analysed = {};
-    analysedCount = 0;
     phase = 'analysis';
     hasRun = true;
     addLog({ type: 'overall', status: 'Avvio download...' });
@@ -197,15 +203,7 @@
 
         switch (data.type) {
           case 'progress':
-            if (data.message === 'Analisi...' || data.message.startsWith('Analisi:')) {
-              if (analysed[data.series] === undefined) {
-                analysed = { ...analysed, [data.series]: false };
-              }
-            } else if (analysed[data.series] === false) {
-              analysed = { ...analysed, [data.series]: true };
-              analysedCount++;
-            }
-            updateProgress(data.series, data.message);
+            updateProgress(data.series, data.message, data.episode);
             break;
           case 'overall':
             overallStatus = data.status;
@@ -225,27 +223,21 @@
             } else {
               stats.errors++;
             }
-            if (analysed[data.series] === false) {
-              analysed = { ...analysed, [data.series]: true };
-              analysedCount++;
-            }
-            results = [...results, { name: data.series, success: data.success, error: data.error || null, dlTime: Number(data.dlTime || 0), convTime: Number(data.convTime || 0), skipped: false }];
-            if (seriesProgress[data.series]) {
-              let st = seriesProgress[data.series];
+            let taskKey = (data.episode > 0) ? `${data.series}_${data.episode}` : data.series;
+            let suffix = data.episode ? ` (Ep ${data.episode})` : '';
+            results = [...results, { name: data.series + suffix, success: data.success, error: data.error || null, dlTime: Number(data.dlTime || 0), convTime: Number(data.convTime || 0), skipped: false }];
+            if (seriesProgress[taskKey]) {
+              let st = seriesProgress[taskKey];
               st.percent = 100;
               st.isActive = false;
               st.result = data.success ? 'done' : 'error';
-              st.statusText = data.success ? '✅ Completato' : 'Errore: ' + (data.error || '');
+              st.statusText = data.success ? (suffix + ' ✅ Completato') : 'Errore: ' + (data.error || '');
               seriesProgress = { ...seriesProgress };
             }
             break;
           case 'skipped':
             stats.total++;
             stats.skipped++;
-            if (analysed[data.series] === false) {
-              analysed = { ...analysed, [data.series]: true };
-              analysedCount++;
-            }
             results = [...results, { name: data.series, success: true, skipped: true, error: null, dlTime: 0, convTime: 0 }];
             if (seriesProgress[data.series]) {
               let st = seriesProgress[data.series];
@@ -254,7 +246,7 @@
               st.statusText = data.reason;
               seriesProgress = { ...seriesProgress };
             } else {
-              seriesProgress = { ...seriesProgress, [data.series]: { percent: 0, phaseMode: null, isActive: false, statusText: data.reason, result: 'skipped' } };
+              seriesProgress = { ...seriesProgress, [data.series]: { seriesName: data.series, episode: 0, key: data.series, percent: 0, phaseMode: null, isActive: false, statusText: data.reason, result: 'skipped' } };
             }
             break;
           case 'done':
@@ -351,7 +343,7 @@
     </div>
   {/if}
 
-  {#if !hasRun && activeSeries.length === 0 && doneSeries.length === 0 && skippedSeries.length === 0 && !summary}
+  {#if !hasRun && taskValues.length === 0 && !summary}
     <div class="dashboard-tables">
       <div class="table-col">
         <div class="group-label">Ultime serie aggiunte</div>
@@ -444,53 +436,48 @@
         {/each}
       {/if}
 
-      {#if activeSeries.length > 0}
-        <div class="group-label">In elaborazione ({activeSeries.length})</div>
-        {#each activeSeries as s (s.name)}
-          {@const prog = seriesProgress[s.name]}
+      {#if activeTasks.length > 0}
+        <div class="group-label">In elaborazione ({activeTasks.length})</div>
+        {#each activeTasks as task (task.key)}
           <div class="series-row active">
-            <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
             <div class="series-info">
-              <span class="series-name">{s.name}</span>
-              <span class="series-status">{prog.statusText}</span>
+              <span class="series-name">{task.seriesName}{task.episode > 0 ? ` (Ep ${task.episode})` : ''}</span>
+              <span class="series-status">{task.statusText}</span>
             </div>
             <div class="pbar-wrap">
               <div class="pbar">
-                <div class="pbar-fill" style="width:{prog.percent}%"></div>
+                <div class="pbar-fill" style="width:{task.percent}%"></div>
               </div>
-              <span class="pbar-text">{Math.round(prog.percent)}%</span>
+              <span class="pbar-text">{Math.round(task.percent)}%</span>
             </div>
           </div>
         {/each}
       {/if}
 
-      {#if doneSeries.length > 0}
-        <div class="group-label">Completate ({doneSeries.length})</div>
-        {#each doneSeries as s (s.name)}
-          {@const prog = seriesProgress[s.name]}
+      {#if doneTasks.length > 0}
+        <div class="group-label">Completate ({doneTasks.length})</div>
+        {#each doneTasks as task (task.key)}
           <div class="series-row done">
-            <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
             <div class="series-info">
-              <span class="series-name">{s.name}</span>
-              <span class="series-status ok">{prog.statusText}</span>
+              <span class="series-name">{task.seriesName}{task.episode > 0 ? ` (Ep ${task.episode})` : ''}</span>
+              <span class="series-status ok">{task.statusText}</span>
             </div>
           </div>
         {/each}
       {/if}
 
-      {#if skippedSeries.length > 0}
+      {#if skippedTasks.length > 0}
         <div class="group-label">
           <button class="group-toggle" onclick={() => skipExpanded = !skipExpanded}>
-            Saltate ({skippedSeries.length}) {skipExpanded ? '\u25BC' : '\u25B6'}
+            Saltate ({skippedTasks.length}) {skipExpanded ? '\u25BC' : '\u25B6'}
           </button>
         </div>
         {#if skipExpanded}
-          {#each skippedSeries as s (s.name)}
-            {@const prog = seriesProgress[s.name]}
+          {#each skippedTasks as task (task.key)}
             <div class="series-row skipped">
               <div class="series-info">
-                <span class="series-name">{s.name}</span>
-                <span class="series-status skip">{prog.statusText}</span>
+                <span class="series-name">{task.seriesName}{task.episode > 0 ? ` (Ep ${task.episode})` : ''}</span>
+                <span class="series-status skip">{task.statusText}</span>
               </div>
             </div>
           {/each}
@@ -536,11 +523,11 @@
           {#each logEvents as ev, idx (idx)}
             <div class="log-line type-{ev.type}">
               {#if ev.type === 'progress'}
-                <strong>{ev.series}</strong>: {ev.message}
+                <strong>{ev.series}</strong>{ev.episode ? ` (Ep ${ev.episode})` : ''}: {ev.message}
               {:else if ev.type === 'overall'}
                 <em>{ev.status}</em>
               {:else if ev.type === 'finished'}
-                <strong>{ev.series}</strong>: {ev.success ? 'Completato' : 'Errore'} ({Number(ev.dlTime).toFixed(1)}s / {Number(ev.convTime).toFixed(1)}s)
+                <strong>{ev.series}</strong>{ev.episode ? ` (Ep ${ev.episode})` : ''}: {ev.success ? 'Completato' : 'Errore'} ({Number(ev.dlTime).toFixed(1)}s / {Number(ev.convTime).toFixed(1)}s)
               {:else if ev.type === 'skipped'}
                 <strong>{ev.series}</strong>: saltato -- {ev.reason}
               {:else if ev.type === 'done'}
