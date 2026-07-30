@@ -17,7 +17,7 @@
       "icons/icon.ico"
     ],
     "externalBin": ["binaries/AniDownloader"],
-    "targets": ["appimage", "msi", "dmg"]
+    "targets": ["appimage", "nsis", "dmg"]
   },
   "app": {
     "trayIcon": {
