@@ -42,6 +42,11 @@ jobs:
           npm run build
           cd ..
 
+      - name: Copy binary to Tauri binaries
+        run: |
+          mkdir -p src-tauri/binaries
+          cp build/AniDownloader src-tauri/binaries/AniDownloader-x86_64-unknown-linux-gnu
+
       - name: Build Tauri (AppImage)
         run: npx @tauri-apps/cli build
         env:
@@ -97,6 +102,12 @@ jobs:
           npm run build
           cd ..
 
+      - name: Copy binary to Tauri binaries
+        shell: cmd
+        run: |
+          if not exist src-tauri\binaries mkdir src-tauri\binaries
+          copy build\Release\AniDownloader.exe src-tauri\binaries\AniDownloader-x86_64-pc-windows-msvc.exe
+
       - name: Build Tauri (NSIS)
         run: npx @tauri-apps/cli build
         env:
@@ -145,6 +156,11 @@ jobs:
           npm ci
           npm run build
           cd ..
+
+      - name: Copy binary to Tauri binaries
+        run: |
+          mkdir -p src-tauri/binaries
+          cp build/AniDownloader src-tauri/binaries/AniDownloader-aarch64-apple-darwin
 
       - name: Build Tauri (DMG)
         run: npx @tauri-apps/cli build
