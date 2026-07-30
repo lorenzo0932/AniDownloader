@@ -13,7 +13,6 @@ web/node_modules/
 
 # IDE / Config personali
 opencode.json
-AGENTS.md
 
 # Tauri (Rust)
 src-tauri/target/

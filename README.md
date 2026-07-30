@@ -1,41 +1,156 @@
-# AniDownloader 2.0
+# AniDownloader
 
-Una riscrittura completa in **C++17** del sistema AniDownloader. Massima velocità, efficienza e integrazione nativa con Linux e Windows.
+> Scarica, converti e organizza automaticamente i tuoi anime preferiti.
 
-UI: **Web Interface** (Svelte 5 SPA) con wrapper nativo Tauri (AppImage/.dmg/.msi).
+Sei stanco di controllare manualmente se è uscito il nuovo episodio?
+AniDownloader è un demone scritto in **C++17** che controlla i siti di streaming italiani
+(AnimeWorld, AnimeUnity), scarica i nuovi episodi via **aria2c**, li converte in
+**H.265 (HEVC)** risparmiando fino al 50% di spazio, e li organizza automaticamente.
+
+Niente Python. Niente browser. Solo C++ nativo, veloce ed efficiente.
+
+<div align="center">
+
+---
+
+## Perché un altro downloader di anime?
+
+L'ecosistema italiano dello streaming amatoriale è frammentato e in continuo
+cambiamento. I tool esistenti sono spesso script Python fragili, dipendono da
+browser automation pesante (Selenium/Playwright), o semplicemente non supportano
+la conversione H.265.
+
+AniDownloader nasce per risolvere questi problemi:
+
+- **Scrapers nativi C++** — niente Python, niente Puppeteer. Solo ChromeDriver
+  leggero per il rendering JavaScript, chiamato direttamente via pipe.
+- **Conversione H.265 automatica** — FFmpeg con chunking parallelo per
+  sfruttare tutti i core della CPU. Codec video moderno, spazio dimezzato.
+- **Dual delivery** — stessa UI Svelte 5 accessibile via browser (`--web`)
+  o come app nativa con tray icon (Tauri). Scegli tu.
+- **Silent mode** — nessuna output, perfetto per cron/systemd su un server
+  o NAS. Il resoconto finale è l'unica cosa che vedi.
+- **Burst mode** — massima concorrenza, dashboard ANSI live, tutto il throughput
+  possibile. Per quando vuoi guardare la barra di progresso.
 
 ---
 
 ## Funzionalità
 
-* **Web UI moderna** (Svelte 5): dashboard download real-time con SSE, gestione serie CRUD con griglia di card e poster, configurazione temi dark/light, log viewer. Accessibile da browser locale o remoto.
-* **App Nativa Tauri**: tray icon, notifiche desktop, finestra dedicata. Packaging AppImage (Linux), .dmg (macOS), .msi (Windows).
-* **Download Parallelo ad alte prestazioni**: `ExecutionEngine` multi-thread con controllo granulare della concorrenza.
-* **Conversione Automatica H.265**: Trascodifica HEVC post-download per risparmiare spazio (~50%).
-* **Scrapers Nativi**: Parser C++ per AnimeWorld e AnimeUnity. Nessuna dipendenza Python.
-* **Retry di Rete Automatico**: Exponential backoff su errori HTTP, aria2c e ChromeDriver.
-* **Notifiche Desktop**: Native per completamento, errori e skip.
-* **Aggiornamenti Automatici**: GitHub API con confronto semver.
-* **Gestione Serie Avanzata**: Multi-stagione, numerazione continua, episodi passati, fonti multiple.
-* **Monitoraggio Real-Time**: Progresso live via SSE (Web UI).
-* **Automazione Systemd**: Servizio `.service` e `.timer` per esecuzione periodica.
-* **Installazione Cross-Platform**: Script per Linux e Windows.
-
-<div align="center">
-
-<!-- [PLACEHOLDER: GIF della gestione serie] -->
-<!-- Inserire qui la GIF che mostra la vista Gestione Serie con tabella, anteprima e bottoni -->
-
-</div>
+|                                      |                                                                                                                                              |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🎯**Scrapers nativi**          | AnimeWorld (`AnimeWScraper`), AnimeUnity (`AnimeUScraper`). C++ puro, leggero, senza dipendenze esterne oltre a ChromeDriver.            |
+| ⚡**Download parallelo**       | Fino a 16 connessioni per file con aria2c. Concorrenza multi-serie configurabile automaticamente in base alla CPU.                           |
+| 🎞️**HEVC automatico**        | Conversione post-download con FFmpeg. Uso intelligente di`/dev/shm` se la RAM è sufficiente. Chunking parallelo per encoding più veloce. |
+| 🌐**Web UI moderna**           | Svelte 5 SPA con dashboard live in tempo reale (SSE), gestione serie CRUD, tema dark/light, log viewer.                                      |
+| 🖥️**App nativa**             | Tauri v2: tray icon, notifiche desktop, finestra dedicata. Packaging AppImage / .dmg / .msi.                                                 |
+| 🔄**Aggiornamenti automatici** | Check versioni via GitHub API con confronto semver.                                                                                          |
+| 🔔**Notifiche desktop**        | Completamento, errori e skip segnalati nativamente dal sistema.                                                                              |
+| 🕐**Automazione systemd**      | Timer per controllo periodico (default ogni 15 minuti). Servizio web permanente.                                                             |
+| 💾**Ripresa crash**            | Rilevamento file parziali (.aria2 residui), verifica integrità con ffprobe, cleanup automatico.                                             |
+| 📦**Singolo binario**          | Frontend embedded nel C++: un solo file`.service` o `.AppImage`, zero dipendenze runtime.                                                |
 
 ---
 
-## Requisiti di Sistema
+## Installazione
 
-### Dipendenze Runtime
+### Linux (consigliato)
 
-* **aria2c**: Download accelerato e parallelo.
-* **ffmpeg**: Conversione e verifica integrità video.
+```bash
+curl -fsSL https://raw.githubusercontent.com/lorenzo0932/AniDownloader/main/install.sh | bash
+```
+
+Oppure scarica e lancia:
+
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+Il menu ti guida nella scelta:
+
+1. **Solo Desktop** (AppImage + launcher)
+2. **Solo Headless** (daemon systemd per server/NAS)
+3. **Entrambi** (consigliato)
+
+### Windows
+
+```powershell
+.\install.ps1
+```
+
+### macOS
+
+Tramite Tauri build:
+
+```bash
+npx @tauri-apps/cli build
+```
+
+### Disinstallazione
+
+```bash
+# Linux
+./uninstall.sh
+
+# Windows
+.\uninstall.ps1
+```
+
+Gli script chiedono se mantenere la configurazione prima di rimuovere i file.
+
+---
+
+## Utilizzo
+
+### Web UI (raccomandata)
+
+```bash
+anidownloaderd --web
+# Web UI: http://localhost:8989
+```
+
+Accessibile da qualsiasi browser sulla rete locale. Interfaccia completa con
+dashboard, gestione serie, configurazione e log.
+
+### Porta personalizzata
+
+```bash
+anidownloaderd --web --port 9090
+```
+
+### Modalità CLI
+
+```bash
+anidownloaderd              # Normale (silenziosa, sequenziale)
+anidownloaderd --burst      # Massima concorrenza + dashboard ANSI
+```
+
+### Automazione systemd
+
+L'installer configura automaticamente:
+
+- `anidownloaderd.service` — server web persistente
+- `anidownloader-check.timer` — controllo nuovi episodi ogni 15 minuti
+
+```bash
+journalctl --user -u anidownloaderd.service -f
+```
+
+---
+
+## Screenshot
+
+> *(Aggiungi qui screenshot della Web UI, della dashboard CLI, del tray icon)*
+
+---
+
+## Requisiti
+
+### Runtime
+
+- **aria2c** — download accelerato
+- **ffmpeg** — conversione e verifica video
 
 ```bash
 # Debian/Ubuntu
@@ -44,95 +159,56 @@ sudo apt install ffmpeg aria2
 # Fedora
 sudo dnf install ffmpeg aria2
 
-# macOS (Homebrew)
-brew install ffmpeg aria2
-
-# Windows (Winget)
-winget install "FFmpeg (Essentials Build)"
-winget install aria2
+# Arch Linux
+sudo pacman -S ffmpeg aria2
 ```
 
-### Dipendenze di Build (solo per compilazione da sorgente)
+### Build
 
-* **CMake** >= 3.17
-* **Compilatore C++17** (GCC, Clang, MSVC)
-* **Node.js** >= 18 (per build frontend Web UI)
-* **Ninja** (consigliato, opzionale)
-* **OpenSSL** / **libcurl** (gestite automaticamente via FetchContent)
-
-Le librerie **nlohmann_json**, **cpr** e **cpp-httplib** sono scaricate automaticamente durante il build tramite CMake FetchContent.
+- **CMake** >= 3.17
+- **Compilatore C++17** (GCC 8+, Clang 7+, MSVC 2019+)
+- **Node.js** >= 18
+- **OpenSSL** / **libcurl** (gestite via FetchContent o di sistema)
 
 ---
 
-## Installazione
-
-### Linux
-
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-Lo script compila il progetto, installa l'eseguibile in `~/.local/bin/`, configura icone e file `.desktop`, e abilita il timer systemd per i controlli automatici.
-
-### Windows
-
-```powershell
-.\install.ps1
-```
-
-Installa l'eseguibile in `%LOCALAPPDATA%\AniDownloader` e crea un shortcut nel menu Start.
-
-### Disinstallazione
-
-```bash
-# Linux
-chmod +x uninstall.sh
-./uninstall.sh
-
-# Windows
-.\uninstall.ps1
-```
-
-Gli script di disinstallazione chiedono se mantenere la configurazione prima di rimuovere i file.
-
----
-
-## Compilazione da Sorgente
+## Compilazione da sorgente
 
 ```bash
 git clone https://github.com/lorenzo0932/AniDownloader.git
 cd AniDownloader
 
-# 1. Build frontend Web UI (Svelte 5)
+# 1. Frontend
 cd web && npm install && npm run build && cd ..
 
-# 2. Build backend C++
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+# 2. Backend
+cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
+
+# (Opzionale) App nativa Tauri
+npx @tauri-apps/cli build
 ```
 
-L'eseguibile e il frontend compilato (`build/frontend/`) vengono generati automaticamente.
+Vedi [docs/BUILD.md](docs/BUILD.md) per dettagli su opzioni CMake, cross-compilazione e troubleshooting.
 
 ---
 
 ## Configurazione
 
-La configurazione è gestita tramite il file `series_data.json`. È fortemente consigliato usare l'interfaccia grafica ("Gestione Serie") per evitare errori di sintassi.
+La configurazione è in `~/.config/AniDownloader/config.json`. Usa l'interfaccia
+Web (pagine "Impostazioni") per modificarla senza rischi.
 
-All'avvio, l'applicazione crea automaticamente i file di configurazione necessari.
-
-### Esempio
+### Esempio `series_data.json`
 
 ```json
 [
     {
-        "name": "Nome Serie",
-        "path": "/percorso/di/destinazione",
+        "name": "One Piece",
+        "path": "~/Video/Anime/One Piece",
         "series_page_url": "https://animeworld.so/...",
         "service": "animeW_scraper",
-        "continue": false,
-        "passed_episodes": 0,
+        "continue": true,
+        "passed_episodes": 1100,
         "alternate_sources": [
             {
                 "service": "animeU_scraper",
@@ -143,163 +219,68 @@ All'avvio, l'applicazione crea automaticamente i file di configurazione necessar
 ]
 ```
 
-| Campo | Tipo | Descrizione |
-|-------|------|-------------|
-| `name` | string | Nome visualizzato della serie |
-| `path` | string | Cartella di destinazione per gli episodi |
-| `series_page_url` | string | URL della pagina serie sul sito di streaming |
-| `service` | string | Scraper da usare: `animeW_scraper` o `animeU_scraper` |
-| `continue` | bool | `true` se la serie continua da una stagione precedente |
-| `passed_episodes` | int | Numero di episodi già visti (richiesto se `continue` è `true`) |
-| `alternate_sources` | array | Fonti alternative per la stessa serie (opzionale) |
-| `alternate_sources[].service` | string | Scraper della fonte alternativa |
-| `alternate_sources[].series_page_url` | string | URL della pagina serie sulla fonte alternativa |
-
-### Configurazione Applicazione
-
-Il file di configurazione globale (`config.json`) supporta i seguenti campi aggiuntivi:
-
-| Campo | Tipo | Default | Descrizione |
-|-------|------|---------|-------------|
-| `max_network_retries` | int | `3` | Numero massimo di tentativi retry per HTTP/aria2c |
-| `retry_delay_ms` | int | `2000` | Delay iniziale tra retry (raddoppia ad ogni tentativo) |
-| `convert_to_h265` | bool | `true` | Abilita conversione H.265 post-download |
-| `num_chunks` | int | `0` | Chunk FFmpeg (0 = modalita auto dinamica) |
-| `auto_cleanup_on_close` | bool | `true` | Pulisce file parziali alla chiusura |
+Vedi [docs/CONFIGURAZIONE.md](docs/CONFIGURAZIONE.md) per la reference completa
+di tutti i campi.
 
 ---
 
-## Utilizzo
+## Architettura (per sviluppatori)
 
-### Web UI (Raccomandata)
-
-```bash
-./build/AniDownloader --web
-# Web UI: http://localhost:8989
 ```
-
-Accessibile da qualsiasi browser sulla rete locale. Interfaccia completa con dashboard download in tempo reale, gestione serie, configurazione e log.
-
-### Web UI (Porta Personalizzata)
-
-```bash
-./build/AniDownloader --web --port 9090
-```
-
-### Modalità CLI
-
-```bash
-./build/AniDownloader                # Normale
-./build/AniDownloader --burst        # Massima concorrenza
-```
-
-### Automazione Systemd (Linux)
-
-```bash
-# L'installer genera ed abilita automaticamente i servizi:
-./install.sh          # Scegli "Headless" o "Entrambi"
-
-# Manualmente, se preferisci:
-anidownloaderd --web --silent &
-```
-
----
-
-## Struttura del Progetto
-
-```text
 AniDownloader_dev/
-├── include/                    # Header C++ (.hpp)
-│   ├── core/                   # ExecutionEngine, MediaProcessor, Logger, MediaProbe
-│   ├── config/                 # AppConfigManager, PathHelper
-│   ├── scrapers/               # AnimeWScraper, AnimeUScraper, ScraperUtils
-│   └── web/                    # WebServer, CryptoUtils (JWT)
-├── src/                        # Implementazioni (.cpp)
-│   ├── core/                   # Logica di processing e gestione dati
-│   ├── config/                 # Configurazione e percorsi
-│   ├── scrapers/               # Parser nativi per i servizi
-│   ├── web/                    # HTTP server (httplib), SSE, API REST
-│   └── main.cpp                # Entry point (--web, --burst, silent)
-├── web/                        # Frontend Svelte 5 SPA
-│   ├── src/                    # Componenti (StatusPage, DashboardPage, ConfigPage, LogsPage)
-│   ├── lib/                    # API client, tema, auth
-│   └── package.json            # Dipendenze Node.js
-├── src-tauri/                  # Wrapper Tauri v2 (AppImage/.dmg/.msi)
-│   ├── src/                    # main.rs (sidecar launch, tray icon)
-│   ├── icons/                  # Icone applicazione
-│   ├── capabilities/           # Permessi Tauri
-│   └── tauri.conf.json         # Configurazione Tauri
-├── resources/                  # Logo applicazione
-├── scripts/                    # Utility di build (embed_web.py)
-├── install.sh                  # Installatore Linux
-├── install.ps1                 # Installatore Windows
-├── uninstall.sh                # Disinstallatore Linux
-└── CMakeLists.txt              # Sistema di build
+├── include/               # Header C++
+│   ├── core/              # Engine, processor, logger, probe
+│   ├── config/            # Config manager, path helper
+│   ├── scrapers/          # Scraper base, AnimeW, AnimeU
+│   └── web/               # WebServer, Crypto, embedded frontend
+├── src/                   # Implementazioni C++
+├── web/                   # Frontend Svelte 5 SPA
+├── src-tauri/             # Wrapper Tauri v2 (Rust)
+├── scripts/               # embed_web.py (frontend → binario)
+├── docs/                  # Documentazione tecnica
+├── install.sh / .ps1      # Installer cross-platform
+└── CMakeLists.txt         # Build system
 ```
 
----
-
-## Roadmap
-
-### Completato in 2.0
-
-- [x] Riscrittura completa in C++17
-- [x] Web UI (Svelte 5 SPA) con dashboard, gestione serie, configurazione, log
-- [x] API REST con SSE per progresso live
-- [x] App Nativa Tauri (tray icon, notifiche, finestra dedicata)
-- [x] Download parallelo multi-thread
-- [x] Conversione H.265 automatica
-- [x] Scrapers nativi (AnimeWorld, AnimeUnity)
-- [x] Compatibilita Windows (installazione, percorsi, User-Agent)
-- [x] Logger con rotazione file
-- [x] Cache immagini poster
-- [x] Installazione e disinstallazione cross-platform
-- [x] Retry di rete automatico (HTTP, aria2c, ChromeDriver)
-- [x] Notifiche desktop (completamento, errori, skip)
-- [x] Aggiornamenti automatici (GitHub API, semver)
-- [x] Struttura dati fonti multiple (alternate_sources)
-
-### Funzionalita Future
-
-- [ ] Fallback automatico sulle fonti alternative
-- [ ] Interfaccia editor per fonti alternative nella UI
-
----
-
-## Monitoraggio
-
-```bash
-# Log del servizio systemd (headless)
-journalctl --user -u anidownloaderd.service -f
-
-# Log interno dell'applicazione
-# Si trovano in ~/.config/AniDownloader/logs/
-```
-
-<div align="center">
-
-<!-- [PLACEHOLDER: Screenshot dei log e monitoraggio] -->
-
-</div>
+Approfondimenti: [docs/ARCHITETTURA.md](docs/ARCHITETTURA.md).
 
 ---
 
 ## Sviluppo
 
-Il progetto segue un approccio **monorepo trunk-based**:
-
-- **Branch attivo**: `feat/tauri` — contiene backend C++, frontend Svelte e wrapper Tauri
-- **Feature branch temporanei** per lavori consistenti (es. `feat/search-refactor`)
-- **Convenzione commit**: `tipo(area): messaggio` — `feat(core):`, `fix(web):`, `chore:`, `docs:`
-
-Aree: `core` (C++ engine), `web` (Svelte), `tauri` (desktop wrapper), `config`/`scrapers` per i rispettivi moduli C++.
+- **Branch**: `main` (stabile), `dev` (pre-release), `feat/*` (feature)
+- **Commit**: `tipo(area): messaggio` — es. `feat(core): parallel planning`, `fix(web): sse reconnect`
+- **Aree**: `core` (C++ engine), `web` (Svelte), `tauri` (desktop), `config`, `scrapers`
 
 ### Supporto AI
 
-Questo progetto è stato sviluppato con il supporto di **opencode** e diversi modelli di intelligenza artificiale, utilizzati come assistenti alla programmazione. Ogni decisione architetturale e ogni linea di codice sono state comunque revisionate e approvate manualmente.
+Questo progetto è sviluppato con **opencode** e modelli di AI come assistenti
+alla programmazione. Ogni decisione architetturale e linea di codice è
+revisionata e approvata manualmente.
 
 ---
 
-## Licenza
+## Roadmap
 
-Questo progetto è distribuito sotto licenza personale. Consulta il file LICENSE per i dettagli.
+### Fatto in 2.0
+
+- [X] Riscrittura completa in C++17
+- [X] Web UI Svelte 5 (dashboard, CRUD, config, log)
+- [X] API REST + SSE progresso live
+- [X] App nativa Tauri (tray, notifiche, finestra)
+- [X] Download parallelo multi-thread
+- [X] Conversione H.265 automatica
+- [X] Scrapers nativi (AnimeWorld, AnimeUnity)
+- [X] Installazione/disinstallazione cross-platform
+- [X] Retry automatico (HTTP, aria2c, ChromeDriver)
+- [X] Logger con rotazione
+- [X] Cache poster immagini
+- [X] Aggiornamenti automatici (GitHub API)
+
+### In arrivo
+
+- [ ] Fallback automatico su fonti alternative
+- [ ] Editor UI per fonti alternative
+- [ ] Supporto più servizi di streaming
+
+---
