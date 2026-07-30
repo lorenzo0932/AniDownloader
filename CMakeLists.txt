@@ -151,11 +151,7 @@ set(SOURCES
     ${EMBEDDED_CPP})
 
 # --- TARGET ---
-if(WIN32)
-    add_executable(AniDownloader WIN32 ${SOURCES} ${HEADERS})
-else()
-    add_executable(AniDownloader ${SOURCES} ${HEADERS})
-endif()
+add_executable(AniDownloader ${SOURCES} ${HEADERS})
 
 target_include_directories(AniDownloader PRIVATE include src)
 
