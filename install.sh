@@ -295,9 +295,9 @@ Categories=Network;Video;AudioVideo;
 EOF
 fi
 
-# 7b. CLI — terminale con dashboard burst
-CLI_BIN="$INSTALL_DIR/AniDownloader"
-if $INSTALL_DESKTOP; then
+# 7b. CLI — terminale con dashboard burst (solo se headless installato)
+if $INSTALL_HEADLESS; then
+    CLI_BIN="$INSTALL_DIR/anidownloaderd"
     cat << EOF > "$APP_DIR/${APP_NAME}-CLI.desktop"
 [Desktop Entry]
 Version=1.0
