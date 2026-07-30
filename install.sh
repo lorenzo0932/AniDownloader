@@ -97,21 +97,36 @@ esac
 echo ""
 
 # ──────────────────────────────────────────────
+# 1b. Parsing argomenti
+# ──────────────────────────────────────────────
+FORCE_LOCAL=false
+VERSION=""
+for arg in "$@"; do
+    case "$arg" in
+        --local) FORCE_LOCAL=true ;;
+        *) VERSION="$arg" ;;
+    esac
+done
+
+# ──────────────────────────────────────────────
 # 2. Determina versione
 # ──────────────────────────────────────────────
 BUILD_LOCAL=true
-VERSION="${1:-}"
-if [ -z "$VERSION" ]; then
-    echo "Recupero ultima release da GitHub..."
-    VERSION=$(get_latest_release) || true
-    if [ -n "$VERSION" ]; then
-        echo "  Trovata: $VERSION"
-        BUILD_LOCAL=false
-    else
-        echo "  GitHub non raggiungibile. Procedo con build locale."
-    fi
+if $FORCE_LOCAL; then
+    echo "  Build locale forzata (--local)"
 else
-    echo "  Versione richiesta: $VERSION"
+    if [ -z "$VERSION" ]; then
+        echo "Recupero ultima release da GitHub..."
+        VERSION=$(get_latest_release) || true
+        if [ -n "$VERSION" ]; then
+            echo "  Trovata: $VERSION"
+            BUILD_LOCAL=false
+        else
+            echo "  GitHub non raggiungibile. Procedo con build locale."
+        fi
+    else
+        echo "  Versione richiesta: $VERSION"
+    fi
 fi
 echo ""
 
