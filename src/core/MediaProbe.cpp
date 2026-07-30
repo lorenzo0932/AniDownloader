@@ -104,7 +104,7 @@ bool isMediaFileHealthy(const std::string& filePath, std::atomic<bool>& stopSign
 bool verifyIntegrity(const std::string& filePath, double expectedDuration, std::atomic<bool>& stopSignal) {
     double actualDuration = getVideoDuration(filePath, stopSignal);
 
-    double tolerance = std::max(10.0, expectedDuration * 0.02);
+    double tolerance = (std::max)(10.0, expectedDuration * 0.02);
 
     if (std::abs(actualDuration - expectedDuration) > tolerance) {
         Logger::error(filePath + ": Verifica fallita: file troncato. Durata attesa: " +

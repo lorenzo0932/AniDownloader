@@ -118,8 +118,8 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
 
     std::atomic<size_t> nextIndex(0);
     std::vector<std::future<void>> workers;
-    int downloadWorkers = std::min(static_cast<int>(toProcess.size()),
-                                   std::max(strategy.maxConcurrentTasks * 2, 4));
+    int downloadWorkers = (std::min)(static_cast<int>(toProcess.size()),
+                                   (std::max)(strategy.maxConcurrentTasks * 2, 4));
     for (int i = 0; i < downloadWorkers; ++i) {
         workers.push_back(std::async(std::launch::async, [&, i]() {
             while (true) {

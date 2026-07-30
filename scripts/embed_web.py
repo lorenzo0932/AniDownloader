@@ -2,6 +2,7 @@
 import os
 import sys
 import re
+import subprocess
 
 def mime_type(path):
     ext = os.path.splitext(path)[1].lower()
@@ -30,12 +31,26 @@ def c_identifier(path):
     return name
 
 def main():
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <input_dir> <output_hpp>")
+    if len(sys.argv) != 4:
+        print(f"Usage: {sys.argv[0]} <web_dir> <input_dir> <output_hpp>")
         sys.exit(1)
 
-    input_dir = sys.argv[1]
-    output_hpp = sys.argv[2]
+    web_dir = sys.argv[1]
+    input_dir = sys.argv[2]
+    output_hpp = sys.argv[3]
+
+    # Build frontend via npm
+    os.chdir(web_dir)
+    if subprocess.call("npm install", shell=True) != 0:
+        print("npm install failed")
+        sys.exit(1)
+    if subprocess.call("npm run build", shell=True) != 0:
+        print("npm run build failed")
+        sys.exit(1)
+
+    if not os.path.isdir(input_dir):
+        print(f"Error: input directory '{input_dir}' not found after build")
+        sys.exit(1)
 
     files = []
     for root, dirs, names in os.walk(input_dir):

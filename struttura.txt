@@ -1,0 +1,621 @@
+.
+├── AGENTS.md
+├── bugs_analysis.md
+├── build
+│   ├── AniDownloader
+│   ├── build.ninja
+│   ├── CMakeCache.txt
+│   ├── CMakeFiles
+│   │   ├── 3.31.11
+│   │   │   ├── CMakeCCompiler.cmake
+│   │   │   ├── CMakeCXXCompiler.cmake
+│   │   │   ├── CMakeDetermineCompilerABI_C.bin
+│   │   │   ├── CMakeDetermineCompilerABI_CXX.bin
+│   │   │   ├── CMakeSystem.cmake
+│   │   │   ├── CompilerIdC
+│   │   │   └── CompilerIdCXX
+│   │   ├── AniDownloader.dir
+│   │   │   └── src
+│   │   ├── CheckTypeSize
+│   │   │   ├── OFF64_T.bin
+│   │   │   ├── SIZEOF_CURL_OFF_T.bin
+│   │   │   ├── SIZEOF_CURL_SOCKET_T.bin
+│   │   │   ├── SIZEOF_INT.bin
+│   │   │   ├── SIZEOF_LONG.bin
+│   │   │   ├── SIZEOF_LONG_LONG.bin
+│   │   │   ├── SIZEOF_OFF_T.bin
+│   │   │   ├── SIZEOF_SA_FAMILY_T.bin
+│   │   │   ├── SIZEOF_SIZE_T.bin
+│   │   │   ├── SIZEOF_SSIZE_T.bin
+│   │   │   ├── SIZEOF_STRUCT_SOCKADDR_STORAGE.bin
+│   │   │   ├── SIZEOF_SUSECONDS_T.bin
+│   │   │   └── SIZEOF_TIME_T.bin
+│   │   ├── cmake.check_cache
+│   │   ├── CMakeConfigureLog.yaml
+│   │   ├── CMakeError.log
+│   │   ├── _CMakeLTOTest-CXX
+│   │   │   ├── bin
+│   │   │   └── src
+│   │   ├── CMakeOutput.log
+│   │   ├── CMakeTmp
+│   │   ├── cmake.verify_globs
+│   │   ├── pkgRedirects
+│   │   ├── rules.ninja
+│   │   ├── TargetDirectories.txt
+│   │   └── VerifyGlobs.cmake
+│   ├── cmake_install.cmake
+│   ├── compile_commands.json
+│   ├── CPackConfig.cmake
+│   ├── CPackSourceConfig.cmake
+│   ├── _deps
+│   │   ├── cpr-build
+│   │   │   ├── CMakeFiles
+│   │   │   ├── cmake_install.cmake
+│   │   │   ├── cpr
+│   │   │   ├── cpr_generated_includes
+│   │   │   └── include
+│   │   ├── cpr-src
+│   │   │   ├── cmake
+│   │   │   ├── CMakeLists.txt
+│   │   │   ├── CODE_OF_CONDUCT.md
+│   │   │   ├── CONTRIBUTING.md
+│   │   │   ├── CppCheckSuppressions.txt
+│   │   │   ├── cpr
+│   │   │   ├── cpr-config.cmake
+│   │   │   ├── include
+│   │   │   ├── LICENSE
+│   │   │   ├── nuget
+│   │   │   ├── package-build
+│   │   │   ├── README.md
+│   │   │   └── test
+│   │   ├── cpr-subbuild
+│   │   │   ├── build.ninja
+│   │   │   ├── CMakeCache.txt
+│   │   │   ├── CMakeFiles
+│   │   │   ├── cmake_install.cmake
+│   │   │   ├── CMakeLists.txt
+│   │   │   └── cpr-populate-prefix
+│   │   ├── curl-build
+│   │   │   ├── CMake
+│   │   │   ├── CMakeFiles
+│   │   │   ├── cmake_install.cmake
+│   │   │   ├── curl-config
+│   │   │   ├── generated
+│   │   │   ├── lib
+│   │   │   ├── libcurl.pc
+│   │   │   └── libcurl-target.cmake
+│   │   ├── curl-src
+│   │   │   ├── acinclude.m4
+│   │   │   ├── aclocal.m4
+│   │   │   ├── buildconf
+│   │   │   ├── buildconf.bat
+│   │   │   ├── CHANGES
+│   │   │   ├── CMake
+│   │   │   ├── CMakeLists.txt
+│   │   │   ├── compile
+│   │   │   ├── config.guess
+│   │   │   ├── config.sub
+│   │   │   ├── configure
+│   │   │   ├── configure.ac
+│   │   │   ├── COPYING
+│   │   │   ├── curl-config.in
+│   │   │   ├── depcomp
+│   │   │   ├── docs
+│   │   │   ├── include
+│   │   │   ├── install-sh
+│   │   │   ├── lib
+│   │   │   ├── libcurl.def
+│   │   │   ├── libcurl.pc.in
+│   │   │   ├── ltmain.sh
+│   │   │   ├── m4
+│   │   │   ├── MacOSX-Framework
+│   │   │   ├── Makefile
+│   │   │   ├── Makefile.am
+│   │   │   ├── Makefile.in
+│   │   │   ├── maketgz
+│   │   │   ├── missing
+│   │   │   ├── packages
+│   │   │   ├── plan9
+│   │   │   ├── projects
+│   │   │   ├── README
+│   │   │   ├── RELEASE-NOTES
+│   │   │   ├── scripts
+│   │   │   ├── src
+│   │   │   ├── test-driver
+│   │   │   ├── tests
+│   │   │   └── winbuild
+│   │   ├── curl-subbuild
+│   │   │   ├── build.ninja
+│   │   │   ├── CMakeCache.txt
+│   │   │   ├── CMakeFiles
+│   │   │   ├── cmake_install.cmake
+│   │   │   ├── CMakeLists.txt
+│   │   │   └── curl-populate-prefix
+│   │   ├── httplib-build
+│   │   │   ├── CMakeFiles
+│   │   │   ├── cmake_install.cmake
+│   │   │   ├── httplibConfig.cmake
+│   │   │   └── httplibConfigVersion.cmake
+│   │   ├── httplib-src
+│   │   │   ├── benchmark
+│   │   │   ├── cmake
+│   │   │   ├── CMakeLists.txt
+│   │   │   ├── docker
+│   │   │   ├── docker-compose.yml
+│   │   │   ├── Dockerfile
+│   │   │   ├── example
+│   │   │   ├── httplib.h
+│   │   │   ├── LICENSE
+│   │   │   ├── meson.build
+│   │   │   ├── meson_options.txt
+│   │   │   ├── README.md
+│   │   │   ├── split.py
+│   │   │   └── test
+│   │   ├── httplib-subbuild
+│   │   │   ├── build.ninja
+│   │   │   ├── CMakeCache.txt
+│   │   │   ├── CMakeFiles
+│   │   │   ├── cmake_install.cmake
+│   │   │   ├── CMakeLists.txt
+│   │   │   └── httplib-populate-prefix
+│   │   ├── json-build
+│   │   │   ├── CMakeFiles
+│   │   │   ├── cmake_install.cmake
+│   │   │   ├── nlohmann_jsonConfig.cmake
+│   │   │   ├── nlohmann_jsonConfigVersion.cmake
+│   │   │   └── nlohmann_json.pc
+│   │   ├── json-src
+│   │   │   ├── cmake
+│   │   │   ├── CMakeLists.txt
+│   │   │   ├── include
+│   │   │   ├── LICENSE.MIT
+│   │   │   ├── nlohmann_json.natvis
+│   │   │   └── single_include
+│   │   ├── json-subbuild
+│   │   │   ├── build.ninja
+│   │   │   ├── CMakeCache.txt
+│   │   │   ├── CMakeFiles
+│   │   │   ├── cmake_install.cmake
+│   │   │   ├── CMakeLists.txt
+│   │   │   └── json-populate-prefix
+│   │   ├── zlib-build
+│   │   │   ├── CMakeFiles
+│   │   │   ├── cmake_install.cmake
+│   │   │   ├── libz.so -> libz.so.1
+│   │   │   ├── libz.so.1 -> libz.so.1.2.11.zlib-ng
+│   │   │   ├── libz.so.1.2.11.zlib-ng
+│   │   │   ├── zconf.h
+│   │   │   ├── zconf.h.cmakein
+│   │   │   └── zlib.pc
+│   │   ├── zlib-src
+│   │   │   ├── adler32.c
+│   │   │   ├── adler32_p.h
+│   │   │   ├── arch
+│   │   │   ├── chunkset.c
+│   │   │   ├── chunkset_tpl.h
+│   │   │   ├── cmake
+│   │   │   ├── CMakeLists.txt
+│   │   │   ├── compare258.c
+│   │   │   ├── compress.c
+│   │   │   ├── configure
+│   │   │   ├── crc32.c
+│   │   │   ├── crc32_comb.c
+│   │   │   ├── crc32_comb_tbl.h
+│   │   │   ├── crc32_p.h
+│   │   │   ├── crc32_tbl.h
+│   │   │   ├── deflate.c
+│   │   │   ├── deflate_fast.c
+│   │   │   ├── deflate.h
+│   │   │   ├── deflate_medium.c
+│   │   │   ├── deflate_p.h
+│   │   │   ├── deflate_quick.c
+│   │   │   ├── deflate_slow.c
+│   │   │   ├── doc
+│   │   │   ├── fallback_builtins.h
+│   │   │   ├── FAQ.zlib
+│   │   │   ├── functable.c
+│   │   │   ├── functable.h
+│   │   │   ├── gzguts.h
+│   │   │   ├── gzlib.c
+│   │   │   ├── gzread.c
+│   │   │   ├── gzwrite.c
+│   │   │   ├── INDEX.md
+│   │   │   ├── infback.c
+│   │   │   ├── inffast.c
+│   │   │   ├── inffast.h
+│   │   │   ├── inffixed_tbl.h
+│   │   │   ├── inflate.c
+│   │   │   ├── inflate.h
+│   │   │   ├── inflate_p.h
+│   │   │   ├── inftrees.c
+│   │   │   ├── inftrees.h
+│   │   │   ├── insert_string.c
+│   │   │   ├── insert_string_tpl.h
+│   │   │   ├── LICENSE.md
+│   │   │   ├── Makefile.in
+│   │   │   ├── match_tpl.h
+│   │   │   ├── PORTING.md
+│   │   │   ├── README.md
+│   │   │   ├── test
+│   │   │   ├── tools
+│   │   │   ├── trees.c
+│   │   │   ├── trees_emit.h
+│   │   │   ├── trees.h
+│   │   │   ├── trees_tbl.h
+│   │   │   ├── uncompr.c
+│   │   │   ├── win32
+│   │   │   ├── zbuild.h
+│   │   │   ├── zconf.h.in
+│   │   │   ├── zconf-ng.h.in
+│   │   │   ├── zendian.h
+│   │   │   ├── zlib.h
+│   │   │   ├── zlib.map
+│   │   │   ├── zlib-ng.h
+│   │   │   ├── zlib-ng.map
+│   │   │   ├── zlib.pc.cmakein
+│   │   │   ├── zlib.pc.in
+│   │   │   ├── zutil.c
+│   │   │   ├── zutil.h
+│   │   │   └── zutil_p.h
+│   │   └── zlib-subbuild
+│   │       ├── build.ninja
+│   │       ├── CMakeCache.txt
+│   │       ├── CMakeFiles
+│   │       ├── cmake_install.cmake
+│   │       ├── CMakeLists.txt
+│   │       └── zlib-populate-prefix
+│   └── install_manifest.txt
+├── CMakeLists.txt
+├── docs
+│   ├── API.md
+│   ├── ARCHITETTURA.md
+│   ├── BUILD.md
+│   ├── CONFIGURAZIONE.md
+│   ├── CORE.md
+│   ├── DATI.md
+│   ├── DESKTOP.md
+│   ├── DISTRIBUZIONE.md
+│   ├── SCRAPERS.md
+│   └── WEB.md
+├── include
+│   ├── config
+│   │   ├── AppConfigManager.hpp
+│   │   └── PathHelper.hpp
+│   ├── core
+│   │   ├── ExecutionEngine.hpp
+│   │   ├── FileUtils.hpp
+│   │   ├── Logger.hpp
+│   │   ├── LogUtils.hpp
+│   │   ├── MediaProbe.hpp
+│   │   ├── MediaProcessor.hpp
+│   │   ├── PlanningService.hpp
+│   │   ├── ProcessUtils.hpp
+│   │   ├── Series.hpp
+│   │   ├── SeriesRepository.hpp
+│   │   ├── SeriesUtils.hpp
+│   │   └── UpdateChecker.hpp
+│   ├── scrapers
+│   │   ├── AnimeUScraper.hpp
+│   │   ├── AnimeWScraper.hpp
+│   │   ├── BaseScraper.hpp
+│   │   └── ScraperUtils.hpp
+│   └── web
+│       ├── CryptoUtils.hpp
+│       ├── embedded_web.hpp
+│       └── WebServer.hpp
+├── install.ps1
+├── install.sh
+├── package-lock.json
+├── README.md
+├── resources
+│   └── logo.png
+├── scripts
+│   └── embed_web.py
+├── src
+│   ├── config
+│   │   ├── AppConfigManager.cpp
+│   │   └── PathHelper.cpp
+│   ├── core
+│   │   ├── ExecutionEngine.cpp
+│   │   ├── FileUtils.cpp
+│   │   ├── Logger.cpp
+│   │   ├── LogUtils.cpp
+│   │   ├── MediaProbe.cpp
+│   │   ├── MediaProcessor.cpp
+│   │   ├── PlanningService.cpp
+│   │   ├── ProcessUtils.cpp
+│   │   ├── Series.cpp
+│   │   ├── SeriesRepository.cpp
+│   │   ├── SeriesUtils.cpp
+│   │   └── UpdateChecker.cpp
+│   ├── main.cpp
+│   ├── scrapers
+│   │   ├── AnimeUScraper.cpp
+│   │   ├── AnimeWScraper.cpp
+│   │   └── ScraperUtils.cpp
+│   └── web
+│       ├── CryptoUtils.cpp
+│       ├── embedded_web_data.cpp
+│       └── WebServer.cpp
+├── src-tauri
+│   ├── binaries
+│   │   └── AniDownloader-x86_64-unknown-linux-gnu
+│   ├── build.rs
+│   ├── capabilities
+│   │   └── default.json
+│   ├── Cargo.lock
+│   ├── Cargo.toml
+│   ├── gen
+│   │   └── schemas
+│   │       ├── acl-manifests.json
+│   │       ├── capabilities.json
+│   │       ├── desktop-schema.json
+│   │       └── linux-schema.json
+│   ├── icons
+│   │   ├── 128x128@2x.png
+│   │   ├── 128x128.png
+│   │   ├── 32x32.png
+│   │   ├── icon.icns
+│   │   └── icon.ico
+│   ├── src
+│   │   └── main.rs
+│   ├── target
+│   │   ├── CACHEDIR.TAG
+│   │   ├── debug
+│   │   │   ├── AniDownloader
+│   │   │   ├── build
+│   │   │   ├── deps
+│   │   │   ├── examples
+│   │   │   └── incremental
+│   │   └── release
+│   │       ├── anidownloader
+│   │       ├── AniDownloader
+│   │       ├── anidownloader.d
+│   │       ├── build
+│   │       ├── bundle
+│   │       ├── deps
+│   │       ├── examples
+│   │       └── incremental
+│   └── tauri.conf.json
+├── struttura.txt
+├── uninstall.ps1
+├── uninstall.sh
+└── web
+    ├── dist
+    │   ├── assets
+    │   │   ├── index-CBevqW_x.css
+    │   │   └── index-Dlr-1FbV.js
+    │   ├── index.html
+    │   └── logo.png
+    ├── index.html
+    ├── node_modules
+    │   ├── acorn
+    │   │   ├── bin
+    │   │   ├── CHANGELOG.md
+    │   │   ├── dist
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   └── README.md
+    │   ├── aria-query
+    │   │   ├── lib
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   └── README.md
+    │   ├── axobject-query
+    │   │   ├── lib
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   └── README.md
+    │   ├── clsx
+    │   │   ├── clsx.d.mts
+    │   │   ├── clsx.d.ts
+    │   │   ├── dist
+    │   │   ├── license
+    │   │   ├── package.json
+    │   │   └── readme.md
+    │   ├── debug
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   └── src
+    │   ├── deepmerge
+    │   │   ├── changelog.md
+    │   │   ├── dist
+    │   │   ├── index.d.ts
+    │   │   ├── index.js
+    │   │   ├── license.txt
+    │   │   ├── package.json
+    │   │   ├── readme.md
+    │   │   └── rollup.config.js
+    │   ├── devalue
+    │   │   ├── index.js
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   ├── src
+    │   │   └── types
+    │   ├── @esbuild
+    │   │   └── linux-x64
+    │   ├── esbuild
+    │   │   ├── bin
+    │   │   ├── install.js
+    │   │   ├── lib
+    │   │   ├── LICENSE.md
+    │   │   ├── package.json
+    │   │   └── README.md
+    │   ├── esm-env
+    │   │   ├── browser-fallback.js
+    │   │   ├── CHANGELOG.md
+    │   │   ├── dev-fallback.js
+    │   │   ├── false.js
+    │   │   ├── index.d.ts
+    │   │   ├── index.js
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   └── true.js
+    │   ├── esrap
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   ├── src
+    │   │   └── types
+    │   ├── fdir
+    │   │   ├── dist
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   └── README.md
+    │   ├── is-reference
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   ├── src
+    │   │   └── types
+    │   ├── @jridgewell
+    │   │   ├── gen-mapping
+    │   │   ├── remapping
+    │   │   ├── resolve-uri
+    │   │   ├── sourcemap-codec
+    │   │   └── trace-mapping
+    │   ├── kleur
+    │   │   ├── colors.d.ts
+    │   │   ├── colors.js
+    │   │   ├── colors.mjs
+    │   │   ├── index.d.ts
+    │   │   ├── index.js
+    │   │   ├── index.mjs
+    │   │   ├── license
+    │   │   ├── package.json
+    │   │   └── readme.md
+    │   ├── locate-character
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   ├── src
+    │   │   └── types
+    │   ├── magic-string
+    │   │   ├── dist
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   └── README.md
+    │   ├── ms
+    │   │   ├── index.js
+    │   │   ├── license.md
+    │   │   ├── package.json
+    │   │   └── readme.md
+    │   ├── nanoid
+    │   │   ├── async
+    │   │   ├── bin
+    │   │   ├── index.browser.cjs
+    │   │   ├── index.browser.js
+    │   │   ├── index.cjs
+    │   │   ├── index.d.cts
+    │   │   ├── index.d.ts
+    │   │   ├── index.js
+    │   │   ├── LICENSE
+    │   │   ├── nanoid.js
+    │   │   ├── non-secure
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   └── url-alphabet
+    │   ├── picocolors
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   ├── picocolors.browser.js
+    │   │   ├── picocolors.d.ts
+    │   │   ├── picocolors.js
+    │   │   ├── README.md
+    │   │   └── types.d.ts
+    │   ├── picomatch
+    │   │   ├── index.js
+    │   │   ├── lib
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   ├── posix.js
+    │   │   └── README.md
+    │   ├── postcss
+    │   │   ├── lib
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   └── README.md
+    │   ├── @rollup
+    │   │   ├── rollup-linux-x64-gnu
+    │   │   └── rollup-linux-x64-musl
+    │   ├── rollup
+    │   │   ├── dist
+    │   │   ├── LICENSE.md
+    │   │   ├── package.json
+    │   │   └── README.md
+    │   ├── source-map-js
+    │   │   ├── lib
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   ├── source-map.d.ts
+    │   │   └── source-map.js
+    │   ├── svelte
+    │   │   ├── action.d.ts
+    │   │   ├── animate.d.ts
+    │   │   ├── compiler
+    │   │   ├── compiler.d.ts
+    │   │   ├── easing.d.ts
+    │   │   ├── elements.d.ts
+    │   │   ├── index.d.ts
+    │   │   ├── legacy.d.ts
+    │   │   ├── LICENSE.md
+    │   │   ├── motion.d.ts
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   ├── src
+    │   │   ├── store.d.ts
+    │   │   ├── svelte-html.d.ts
+    │   │   ├── transition.d.ts
+    │   │   └── types
+    │   ├── @sveltejs
+    │   │   ├── acorn-typescript
+    │   │   ├── vite-plugin-svelte
+    │   │   └── vite-plugin-svelte-inspector
+    │   ├── tinyglobby
+    │   │   ├── dist
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   └── README.md
+    │   ├── @types
+    │   │   ├── estree
+    │   │   └── trusted-types
+    │   ├── vite
+    │   │   ├── bin
+    │   │   ├── client.d.ts
+    │   │   ├── dist
+    │   │   ├── index.cjs
+    │   │   ├── index.d.cts
+    │   │   ├── LICENSE.md
+    │   │   ├── misc
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   └── types
+    │   ├── vitefu
+    │   │   ├── LICENSE
+    │   │   ├── package.json
+    │   │   ├── README.md
+    │   │   └── src
+    │   └── zimmerframe
+    │       ├── LICENSE
+    │       ├── package.json
+    │       ├── README.md
+    │       ├── src
+    │       └── types
+    ├── package.json
+    ├── package-lock.json
+    ├── public
+    │   └── logo.png
+    ├── src
+    │   ├── App.svelte
+    │   ├── lib
+    │   │   ├── api.js
+    │   │   ├── components
+    │   │   ├── Dropdown.svelte
+    │   │   └── theme.svelte.js
+    │   └── main.js
+    ├── svelte.config.js
+    └── vite.config.js
+
+206 directories, 413 files

@@ -67,7 +67,7 @@ int UpdateChecker::compareVersions(const std::string& a, const std::string& b) {
 
     std::vector<int> va = parse(a);
     std::vector<int> vb = parse(b);
-    size_t maxLen = std::max(va.size(), vb.size());
+    size_t maxLen = (std::max)(va.size(), vb.size());
 
     for (size_t i = 0; i < maxLen; ++i) {
         int na = (i < va.size()) ? va[i] : 0;
