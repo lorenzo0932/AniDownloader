@@ -64,10 +64,15 @@ FetchContent_MakeAvailable(json)
 # CPR (C++ Requests - basato su libcurl)
 set(BUILD_CPR_TESTS OFF CACHE BOOL "" FORCE)
 set(CPR_ENABLE_SSL ON CACHE BOOL "" FORCE)
-if(DEFINED CMAKE_TOOLCHAIN_FILE)
-    # Su Windows (vcpkg) usa curl di sistema per evitare bug di build da fonte
-    find_package(CURL REQUIRED)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+# Usa curl di sistema se disponibile (vcpkg, brew, apt) per evitare
+# bug di build da fonte su Windows (MSVC access violation in __create_def)
+find_package(CURL QUIET)
+if(CURL_FOUND)
     set(CPR_FORCE_USE_SYSTEM_CURL ON CACHE BOOL "" FORCE)
+    message(STATUS "Using system curl: ${CURL_LIBRARIES}")
+else()
+    message(STATUS "System curl not found, CPR will fetch its own")
 endif()
 FetchContent_Declare(
     cpr
