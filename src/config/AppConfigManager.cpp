@@ -126,10 +126,10 @@ ExecutionStrategy AppConfigManager::getExecutionStrategy(size_t pendingTasks, bo
             if (idealConcurrent < 1) idealConcurrent = 1;
             
             // Applica il limite di sicurezza basato sulla cache/disco
-            idealConcurrent = std::min(idealConcurrent, maxAllowedConcurrent);
+            idealConcurrent = (std::min)(idealConcurrent, maxAllowedConcurrent);
             
             // Imposta la concorrenza reale limitata dai task effettivamente pendenti
-            strategy.maxConcurrentTasks = std::min(idealConcurrent, static_cast<int>(pendingTasks));
+            strategy.maxConcurrentTasks = (std::min)(idealConcurrent, static_cast<int>(pendingTasks));
             
             // Dividiamo i thread allocati per ogni file in chunk da ~6 thread ciascuno
             int threadsPerFile = targetThreadsBudget / strategy.maxConcurrentTasks;
@@ -141,9 +141,9 @@ ExecutionStrategy AppConfigManager::getExecutionStrategy(size_t pendingTasks, bo
         strategy.chunksPerTask = userChunks;
         
         int idealConcurrent = targetThreadsBudget / (strategy.chunksPerTask * 6);
-        idealConcurrent = std::min(idealConcurrent, maxAllowedConcurrent);
+        idealConcurrent = (std::min)(idealConcurrent, maxAllowedConcurrent);
         if (idealConcurrent < 1) idealConcurrent = 1;
-        strategy.maxConcurrentTasks = std::min(idealConcurrent, static_cast<int>(pendingTasks));
+        strategy.maxConcurrentTasks = (std::min)(idealConcurrent, static_cast<int>(pendingTasks));
     }
 
     // 5. Calcolo finale dei thread effettivi per singolo comando FFmpeg

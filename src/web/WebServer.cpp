@@ -755,7 +755,7 @@ void WebServer::runDownloads(const std::vector<Core::Series>& seriesList, bool b
             [this, &mapMutex, &maxEpisodes](const Core::TaskReport& report) {
                 if (report.success && report.episodeNumber > 0) {
                     std::lock_guard<std::mutex> lock(mapMutex);
-                    maxEpisodes[report.name] = std::max(maxEpisodes[report.name], report.episodeNumber);
+                    maxEpisodes[report.name] = (std::max)(maxEpisodes[report.name], report.episodeNumber);
                 }
                 nlohmann::json ev = {
                     {"type", "finished"}, {"series", report.name},

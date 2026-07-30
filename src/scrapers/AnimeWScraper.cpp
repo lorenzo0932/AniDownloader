@@ -424,7 +424,7 @@ std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series, st
 
         size_t batchNum = offset / maxTabs + 1;
         size_t remaining = candidates.size() - offset;
-        size_t batchSize = std::min(static_cast<size_t>(maxTabs), remaining);
+        size_t batchSize = (std::min)(static_cast<size_t>(maxTabs), remaining);
         std::vector<EpisodeCandidate> batch(
             candidates.begin() + static_cast<std::ptrdiff_t>(offset),
             candidates.begin() + static_cast<std::ptrdiff_t>(offset + batchSize)

@@ -232,7 +232,7 @@ int main(int argc, char* argv[]) {
         std::map<std::string, int> maxEpisodes;
         for (const auto& r : g_reports) {
             if (r.success && r.episodeNumber > 0) {
-                maxEpisodes[r.name] = std::max(maxEpisodes[r.name], r.episodeNumber);
+                maxEpisodes[r.name] = (std::max)(maxEpisodes[r.name], r.episodeNumber);
                 Core::Logger::info("[DEBUG] Report: " + r.name + " ep=" + std::to_string(r.episodeNumber) + " success=true");
             } else {
                 Core::Logger::info("[DEBUG] Report: " + r.name + " ep=" + std::to_string(r.episodeNumber) + " success=" + (r.success ? "true" : "false"));
