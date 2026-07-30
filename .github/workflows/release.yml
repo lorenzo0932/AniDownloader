@@ -19,7 +19,7 @@ jobs:
           sudo apt-get install -y -qq \
             cmake ninja-build pkg-config \
             libcurl4-openssl-dev libssl-dev \
-            libwebkit2gtk-4.1-dev libappindicator-gtk3-dev librsvg2-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
             patchelf
 
       - name: Install Rust
@@ -79,10 +79,10 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install OpenSSL
+      - name: Install OpenSSL & libcurl (vcpkg)
         shell: pwsh
         run: |
-          & "C:\vcpkg\vcpkg.exe" install openssl:x64-windows
+          & "C:\vcpkg\vcpkg.exe" install curl[openssl]:x64-windows
 
       - name: Setup Node
         uses: actions/setup-node@v4

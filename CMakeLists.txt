@@ -64,6 +64,11 @@ FetchContent_MakeAvailable(json)
 # CPR (C++ Requests - basato su libcurl)
 set(BUILD_CPR_TESTS OFF CACHE BOOL "" FORCE)
 set(CPR_ENABLE_SSL ON CACHE BOOL "" FORCE)
+if(DEFINED CMAKE_TOOLCHAIN_FILE)
+    # Su Windows (vcpkg) usa curl di sistema per evitare bug di build da fonte
+    find_package(CURL REQUIRED)
+    set(CPR_FORCE_USE_SYSTEM_CURL ON CACHE BOOL "" FORCE)
+endif()
 FetchContent_Declare(
     cpr
     GIT_REPOSITORY https://github.com/libcpr/cpr.git
