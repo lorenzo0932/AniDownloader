@@ -33,6 +33,7 @@ namespace Config {
 
         void set(const std::string& key, const nlohmann::json& value);
         nlohmann::json getAll() const;
+        void reloadConfig();
 
         int getMaxNetworkRetries() const;
         int getRetryDelayMs() const;

@@ -21,7 +21,7 @@ namespace Core {
 
     class ExecutionEngine {
     public:
-        using ProgressCb   = std::function<void(const std::string& name, const std::string& msg)>;
+        using ProgressCb   = std::function<void(const std::string& name, int episode, const std::string& msg)>;
         using StatusCb     = std::function<void(const std::string& overallStatus)>;
         using FinishedCb   = std::function<void(const TaskReport& report)>;
         using SkippedCb    = std::function<void(const std::string& name, const std::string& reason)>; // NUOVO

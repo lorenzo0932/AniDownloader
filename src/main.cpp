@@ -197,10 +197,12 @@ int main(int argc, char* argv[]) {
     #endif
 
     engine.run(seriesList, burstMode, stop,
-        [&](const std::string& n, const std::string& m) {
+        [&](const std::string& n, int ep, const std::string& m) {
             {
                 std::lock_guard<std::mutex> l(g_statusMutex);
-                g_statusMap[n] = m;
+                std::string key = (ep > 0) ? n + " (Ep " + std::to_string(ep) + ")" : n;
+                if (ep > 0) g_statusMap.erase(n);
+                g_statusMap[key] = m;
             }
             if (burstMode) refreshTerminal(burstMode);
         },
@@ -216,39 +218,73 @@ int main(int argc, char* argv[]) {
                 std::lock_guard<std::mutex> l(g_statusMutex);
                 g_reports.push_back(r);
             }
-            if (r.success && r.episodeNumber > 0) {
-                auto now = std::chrono::system_clock::now();
-                auto tt = std::chrono::system_clock::to_time_t(now);
-                auto tm = *std::gmtime(&tt);
-                char ts[24] = {};
-                std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &tm);
-                SeriesRepository saveRepo(configManager.get<std::string>("json_file_path", ""));
-                auto currentList = saveRepo.loadSeriesData();
-                for (auto& s : currentList) {
-                    if (s.name == r.name) {
-                        s.lastDownloadedAt = ts;
-                        if (r.episodeNumber > s.lastDownloadedEpisode) {
-                            s.lastDownloadedEpisode = r.episodeNumber;
-                        }
-                        break;
-                    }
-                }
-                saveRepo.saveSeriesData(currentList);
-            }
         },
         [&](const std::string&, const std::string&) {
-            // Skip: silently, senza mostrare in dashboard CLI
         },
         nullptr
     );
 
+    // Salvataggio unico post-esecuzione: lastDownloadedEpisode per serie
+    {
+        Core::Logger::info("[DEBUG] Post-run save: processing " + std::to_string(g_reports.size()) + " reports");
+        std::map<std::string, int> maxEpisodes;
+        for (const auto& r : g_reports) {
+            if (r.success && r.episodeNumber > 0) {
+                maxEpisodes[r.name] = std::max(maxEpisodes[r.name], r.episodeNumber);
+                Core::Logger::info("[DEBUG] Report: " + r.name + " ep=" + std::to_string(r.episodeNumber) + " success=true");
+            } else {
+                Core::Logger::info("[DEBUG] Report: " + r.name + " ep=" + std::to_string(r.episodeNumber) + " success=" + (r.success ? "true" : "false"));
+            }
+        }
+
+        for (const auto& [name, ep] : maxEpisodes) {
+            Core::Logger::info("[DEBUG] maxEpisodes: " + name + " -> " + std::to_string(ep));
+        }
+
+        if (!maxEpisodes.empty()) {
+            auto now = std::chrono::system_clock::now();
+            auto tt = std::chrono::system_clock::to_time_t(now);
+            auto tm = *std::gmtime(&tt);
+            char ts[24] = {};
+            std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &tm);
+
+            SeriesRepository saveRepo(configManager.get<std::string>("json_file_path", ""));
+            auto currentList = saveRepo.loadSeriesData();
+            Core::Logger::info("[DEBUG] loaded " + std::to_string(currentList.size()) + " series from JSON");
+            bool updated = false;
+
+            for (auto& s : currentList) {
+                auto it = maxEpisodes.find(s.name);
+                if (it != maxEpisodes.end()) {
+                    Core::Logger::info("[DEBUG] updating " + s.name + ": lastDownloadedEpisode " +
+                        std::to_string(s.lastDownloadedEpisode) + " -> " + std::to_string(it->second) +
+                        " (maxEpisodes=" + std::to_string(it->second) + ")");
+                    s.lastDownloadedAt = ts;
+                    if (it->second > s.lastDownloadedEpisode) {
+                        s.lastDownloadedEpisode = it->second;
+                    }
+                    updated = true;
+                }
+            }
+            if (updated) {
+                Core::Logger::info("[DEBUG] calling saveSeriesData");
+                saveRepo.saveSeriesData(currentList);
+            } else {
+                Core::Logger::info("[DEBUG] saveSeriesData NOT called (no series matched)");
+            }
+        } else {
+            Core::Logger::info("[DEBUG] maxEpisodes empty, skipping save");
+        }
+    }
+
     // Visualizzazione finale resoconto
     std::cout << "\n\n--- RESOCONTO FINALE ---\n";
     for (const auto& r : g_reports) {
+        std::string label = (r.episodeNumber > 0) ? r.name + " (Ep " + std::to_string(r.episodeNumber) + ")" : r.name;
         if (!r.success) {
-            std::cout << "❌ " << std::left << std::setw(35) << r.name << " | Errore: " << r.error << "\n";
+            std::cout << "❌ " << std::left << std::setw(35) << label << " | Errore: " << r.error << "\n";
         } else {
-            std::cout << "✅ " << std::left << std::setw(35) << r.name 
+            std::cout << "✅ " << std::left << std::setw(35) << label
                       << " | DL: " << std::fixed << std::setprecision(1) << r.dlTime << "s"
                       << " | Conv: " << r.convTime << "s\n";
         }

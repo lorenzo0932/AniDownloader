@@ -113,15 +113,67 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
     if (!tabs.empty()) {
         try {
             auto poolStart = std::chrono::steady_clock::now();
+
+            // MAPPA GLOBALE: frameId -> Lista di URL video trovati
+            std::map<std::string, std::vector<std::string>> capturedUrlsByFrame;
+
             while (!stopSignal.load()) {
                 bool allDone = true;
+
+                // --- 1. LETTURA LOG GLOBALE (Assegna gli URL alle rispettive "cassette della posta") ---
+                json logRes = webdriverCommand("/session/" + sessionId + "/log", "POST", {{"type", "performance"}});
+                if (logRes.contains("value") && logRes["value"].is_array()) {
+                    for (auto& entry : logRes["value"]) {
+                        if (!entry.contains("message")) continue;
+                        std::string msgStr = entry["message"].get<std::string>();
+                        std::string url = extractUrlFromLog(msgStr);
+
+                        if (!url.empty()) {
+                            std::string frameId;
+                            try {
+                                json inner = json::parse(msgStr);
+                                if (inner.contains("message") && inner["message"].contains("params") &&
+                                    inner["message"]["params"].contains("frameId")) {
+                                    frameId = inner["message"]["params"]["frameId"].get<std::string>();
+                                }
+                            } catch (...) {} // ignora errori di parsing json
+
+                            if (!frameId.empty()) {
+                                capturedUrlsByFrame[frameId].push_back(url);
+                            } else {
+                                Core::Logger::warn(seriesName + ": Trovato URL senza frameId -> " + url);
+                            }
+                        }
+                    }
+                }
+
+                // --- 2. MACCHINA A STATI DEI TAB ---
                 for (auto& tab : tabs) {
                     if (tab.state == SniffState::DONE || tab.state == SniffState::ERROR) continue;
                     allDone = false;
+
                     switchToWindow(sessionId, tab.windowHandle);
                     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                         std::chrono::steady_clock::now() - tab.stateEntered).count();
 
+                    // Aggiorna costantemente la lista degli iframe figli di questo tab
+                    json ft = getFrameTree(sessionId);
+                    if (ft.contains("value") && ft["value"].contains("frameTree")) {
+                        tab.frameIds.clear();
+                        collectFrameIdsRecursive(ft["value"]["frameTree"], tab.frameIds);
+                    }
+
+                    // Controlla se il log globale ha catturato un URL per uno degli iframe di QUESTO tab
+                    for (const auto& fid : tab.frameIds) {
+                        if (capturedUrlsByFrame.count(fid) && !capturedUrlsByFrame[fid].empty()) {
+                            tab.videoUrl = capturedUrlsByFrame[fid].front();
+                            tab.state = SniffState::DONE;
+                            break;
+                        }
+                    }
+                    if (tab.state == SniffState::DONE) continue; // URL trovato, vai al prossimo tab!
+
+                    // Logica standard di navigazione pagina
                     switch (tab.state) {
                         case SniffState::NAVIGATING: {
                             json eval = cdpCommand(sessionId, "Runtime.evaluate", {
@@ -135,10 +187,6 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
                             }
                             if (ready || elapsed > 15) {
                                 cdpCommand(sessionId, "Network.enable", json::object());
-                                json ft = getFrameTree(sessionId);
-                                if (ft.contains("value") && ft["value"].contains("frameTree")) {
-                                    collectFrameIdsRecursive(ft["value"]["frameTree"], tab.frameIds);
-                                }
                                 json altSearch = webdriverCommand("/session/" + sessionId + "/elements", "POST", {
                                     {"using", "css selector"}, {"value", "#alternative"}
                                 });
@@ -167,10 +215,6 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
                             if (found) {
                                 std::string fId = iframeSearch["value"][0].begin().value().get<std::string>();
                                 webdriverCommand("/session/" + sessionId + "/element/" + fId + "/click", "POST", json::object());
-                                json ft = getFrameTree(sessionId);
-                                if (ft.contains("value") && ft["value"].contains("frameTree")) {
-                                    collectFrameIdsRecursive(ft["value"]["frameTree"], tab.frameIds);
-                                }
                                 tab.state = SniffState::SNIFFING;
                                 tab.stateEntered = std::chrono::steady_clock::now();
                             } else if (elapsed > 10) {
@@ -180,26 +224,15 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
                             break;
                         }
                         case SniffState::SNIFFING: {
-                            json logRes = webdriverCommand("/session/" + sessionId + "/log", "POST", {{"type", "performance"}});
-                            if (logRes.contains("value") && logRes["value"].is_array()) {
-                                for (auto& entry : logRes["value"]) {
-                                    if (!entry.contains("message")) continue;
-                                    std::string url = extractUrlFromLog(entry["message"].get<std::string>());
-                                    if (!url.empty()) {
-                                        tab.videoUrl = url;
-                                        tab.state = SniffState::DONE;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (tab.state != SniffState::DONE && elapsed > 10) {
-                                tab.state = SniffState::DONE;
+                            if (elapsed > 10) {
+                                tab.state = SniffState::DONE; // Timeout sniffer
                             }
                             break;
                         }
                         default: break;
                     }
                 }
+
                 if (allDone) break;
                 if (std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::steady_clock::now() - poolStart).count() > 90) {
@@ -211,6 +244,8 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
 
             for (auto& tab : tabs) {
                 if (!tab.videoUrl.empty()) {
+                    Core::Logger::info(seriesName + ": Sniff completato -> [episodeNumber=" + std::to_string(tab.episodeNumber) +
+                                       "] pageUrl=" + tab.episodeUrl + " -> videoUrl=" + tab.videoUrl);
                     DownloadTask task;
                     task.shouldProcess = true;
                     task.videoUrl = tab.videoUrl;
@@ -301,6 +336,8 @@ std::vector<EpisodeCandidate> AnimeWScraper::getCandidates(const Series& series)
 
     for (const auto& ep : found) {
         int local = series.continueSeries ? (ep.n + series.passedEpisodes) : ep.n;
+        Core::Logger::info(series.name + ": candidate[local=" + std::to_string(local) +
+                           "] pageUrl=" + ep.url + " (da data-episode-num=" + std::to_string(ep.n) + " e href)");
         if (local >= nextNeeded) {
             results.push_back({local, ep.url});
         } else {

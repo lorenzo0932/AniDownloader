@@ -70,6 +70,7 @@ void AppConfigManager::set(const std::string& key, const nlohmann::json& value) 
 }
 
 nlohmann::json AppConfigManager::getAll() const { return m_config; }
+void AppConfigManager::reloadConfig() { loadConfig(); }
 
 int AppConfigManager::getMaxNetworkRetries() const { return get<int>("max_network_retries", 3); }
 int AppConfigManager::getRetryDelayMs() const { return get<int>("retry_delay_ms", 2000); }

@@ -736,38 +736,30 @@ void WebServer::runDownloads(const std::vector<Core::Series>& seriesList, bool b
     m_downloadRunning.store(true);
 
     m_downloadThread = std::thread([this, seriesList, burst]() {
+        m_configManager.reloadConfig();
         Core::ExecutionEngine engine(m_configManager);
 
+        std::mutex mapMutex;
+        std::map<std::string, int> maxEpisodes;
+
         engine.run(seriesList, burst, m_stopSignal,
-            [this](const std::string& name, const std::string& msg) {
+            [this](const std::string& name, int ep, const std::string& msg) {
                 nlohmann::json ev = {{"type", "progress"}, {"series", name}, {"message", msg}};
+                if (ep > 0) ev["episode"] = ep;
                 broadcastSseEvent(ev.dump());
             },
             [this](const std::string& status) {
                 nlohmann::json ev = {{"type", "overall"}, {"status", status}};
                 broadcastSseEvent(ev.dump());
             },
-            [this](const Core::TaskReport& report) {
-                if (report.success) {
-                    auto now = std::chrono::system_clock::now();
-                    auto tt = std::chrono::system_clock::to_time_t(now);
-                    auto tm = *std::gmtime(&tt);
-                    char buf[24] = {};
-                    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
-                    auto series = m_seriesRepository.loadSeriesData();
-                    for (auto& s : series) {
-                        if (s.name == report.name) {
-                            s.lastDownloadedAt = buf;
-                            if (report.episodeNumber > s.lastDownloadedEpisode) {
-                                s.lastDownloadedEpisode = report.episodeNumber;
-                            }
-                            break;
-                        }
-                    }
-                    m_seriesRepository.saveSeriesData(series);
+            [this, &mapMutex, &maxEpisodes](const Core::TaskReport& report) {
+                if (report.success && report.episodeNumber > 0) {
+                    std::lock_guard<std::mutex> lock(mapMutex);
+                    maxEpisodes[report.name] = std::max(maxEpisodes[report.name], report.episodeNumber);
                 }
                 nlohmann::json ev = {
                     {"type", "finished"}, {"series", report.name},
+                    {"episode", report.episodeNumber},
                     {"success", report.success}, {"dlTime", report.dlTime},
                     {"convTime", report.convTime}, {"error", report.error}
                 };
@@ -782,6 +774,30 @@ void WebServer::runDownloads(const std::vector<Core::Series>& seriesList, bool b
                 broadcastSseEvent(ev.dump());
             }
         );
+
+        if (!maxEpisodes.empty()) {
+            auto now = std::chrono::system_clock::now();
+            auto tt = std::chrono::system_clock::to_time_t(now);
+            auto tm = *std::gmtime(&tt);
+            char buf[24] = {};
+            std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+
+            auto series = m_seriesRepository.loadSeriesData();
+            bool updated = false;
+            for (auto& s : series) {
+                auto it = maxEpisodes.find(s.name);
+                if (it != maxEpisodes.end()) {
+                    s.lastDownloadedAt = buf;
+                    if (it->second > s.lastDownloadedEpisode) {
+                        s.lastDownloadedEpisode = it->second;
+                    }
+                    updated = true;
+                }
+            }
+            if (updated) {
+                m_seriesRepository.saveSeriesData(series);
+            }
+        }
 
         m_downloadRunning.store(false);
         m_stopSignal.store(false);

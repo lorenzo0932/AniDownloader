@@ -53,7 +53,7 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
             seriesCopy.path = ScraperUtils::expandTilde(s.path);
             auto tasks = PlanningService::planSingleSeries(seriesCopy,
                 [&onProgress, name = s.name](const std::string& stage) {
-                    if (onProgress) onProgress(name, stage);
+                    if (onProgress) onProgress(name, 0, stage);
                 });
 
             if (stopSignal) { (*pending)--; return; }
@@ -93,7 +93,7 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
         for (const auto& err : result->errors) {
             auto colon = err.find(':');
             if (colon != std::string::npos && onProgress) {
-                onProgress(err.substr(0, colon), "❌ Errore: " + err.substr(colon + 2));
+                onProgress(err.substr(0, colon), 0, "❌ Errore: " + err.substr(colon + 2));
             }
         }
     }
@@ -127,7 +127,10 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
                 if (idx >= toProcess.size() || stopSignal) break;
 
                 auto& item = toProcess[idx];
-                MediaProcessor mp(onProgress, stopSignal);
+                auto taskProgressCb = [onProgress, epNum = item.second.episodeNumber](const std::string& name, const std::string& msg) {
+                    if (onProgress) onProgress(name, epNum, msg);
+                };
+                MediaProcessor mp(taskProgressCb, stopSignal);
                 ProcessResult res = mp.processTask(item.second, item.first, strategy);
 
                 if (!res.success && stopSignal && m_config.get<bool>("auto_cleanup_on_close", true)) {
