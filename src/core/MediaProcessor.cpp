@@ -191,7 +191,7 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
                 auto f = std::async(std::launch::async, [&cmd, this]() { return ProcessUtils::runCommand(cmd, m_stopSignal, nullptr); });
                 while (f.wait_for(std::chrono::milliseconds(500)) != std::future_status::ready) {
                     if (m_stopSignal) { fs::remove_all(workDir); return false; }
-                    m_progressCallback(seriesName, "Conv " + std::to_string(std::min(100, (int)((ProcessUtils::parseProgressUs(progP) * 100) / (duration * 1000000)))) + "%");
+                    m_progressCallback(seriesName, "Conv " + std::to_string((std::min)(100, (int)((ProcessUtils::parseProgressUs(progP) * 100) / (duration * 1000000)))) + "%");
                 }
                 if (f.get() != 0 || m_stopSignal) { fs::remove_all(workDir); return false; }
             }
@@ -228,7 +228,7 @@ bool MediaProcessor::convertAndVerify(const std::string& inputPath, const std::s
                         if (j.f.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) allDone = false;
                         cur += ProcessUtils::parseProgressUs(j.prog);
                     }
-                    m_progressCallback(seriesName, "Conv " + std::to_string(std::min(100, (int)((cur * 100) / (duration * 1000000)))) + "%");
+                    m_progressCallback(seriesName, "Conv " + std::to_string((std::min)(100, (int)((cur * 100) / (duration * 1000000)))) + "%");
                     if (allDone) break;
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }

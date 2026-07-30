@@ -64,7 +64,7 @@ static std::string extractUrlFromLog(const std::string& msgStr);
 
 enum class SniffState {
     NAVIGATING, WAITING_ALT_CLICK,
-    WAITING_IFRAME, SNIFFING, DONE, ERROR
+    WAITING_IFRAME, SNIFFING, DONE, SNIFF_ERROR
 };
 
 struct SniffTab {
@@ -149,7 +149,7 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
 
                 // --- 2. MACCHINA A STATI DEI TAB ---
                 for (auto& tab : tabs) {
-                    if (tab.state == SniffState::DONE || tab.state == SniffState::ERROR) continue;
+                    if (tab.state == SniffState::DONE || tab.state == SniffState::SNIFF_ERROR) continue;
                     allDone = false;
 
                     switchToWindow(sessionId, tab.windowHandle);
@@ -219,7 +219,7 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
                                 tab.stateEntered = std::chrono::steady_clock::now();
                             } else if (elapsed > 10) {
                                 Core::Logger::warn(seriesName + ": Ep." + std::to_string(tab.episodeNumber) + " iframe timeout");
-                                tab.state = SniffState::ERROR;
+                                tab.state = SniffState::SNIFF_ERROR;
                             }
                             break;
                         }

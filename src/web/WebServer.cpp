@@ -343,7 +343,6 @@ void WebServer::setupRoutes() {
             return;
         }
         FILE* fp = popen(cmd.c_str(), "r");
-#endif
         if (!fp) {
             sendJson(res, errorJson("No dialog tool available (install zenity or kdialog)"), 501);
             return;
@@ -360,6 +359,7 @@ void WebServer::setupRoutes() {
             return;
         }
         sendJson(res, successJson({{"path", path}}));
+#endif
     });
 
     // ---- POSTER (path-based, stabile con ordinamento) ----

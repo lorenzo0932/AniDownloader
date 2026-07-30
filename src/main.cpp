@@ -8,7 +8,9 @@
 #include <chrono>
 #include <csignal>
 #include <thread>
+#ifndef _WIN32
 #include <sys/wait.h>
+#endif
 #include "core/SeriesRepository.hpp"
 #include "core/ExecutionEngine.hpp"
 #include "core/MediaProcessor.hpp"
