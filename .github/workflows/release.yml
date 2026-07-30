@@ -57,6 +57,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ''
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
 
+      - name: Rename AppImage for consistent naming
+        run: |
+          ARCH=$(uname -m)
+          mv src-tauri/target/release/bundle/appimage/*.AppImage \
+             "AniDownloader-${{ github.ref_name }}-linux-${ARCH}.AppImage"
+
       - name: Package headless
         run: |
           HEADLESS_DIR="anidownloaderd-${{ github.ref_name }}-linux-x86_64"
@@ -69,7 +75,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            src-tauri/target/release/bundle/appimage/*.AppImage
+            AniDownloader-*.AppImage
             anidownloaderd-*.tar.gz
 
   windows:

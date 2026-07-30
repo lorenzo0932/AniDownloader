@@ -230,7 +230,7 @@ else
 
     if $INSTALL_DESKTOP; then
         echo "Scarico AppImage..."
-        DESKTOP_ASSET="${APP_NAME}-${VERSION}-${ARCH}.AppImage"
+        DESKTOP_ASSET="${APP_NAME}-${VERSION}-linux-${ARCH}.AppImage"
         DESKTOP_DEST="$INSTALL_DIR/$APP_NAME.AppImage"
         download_asset "$VERSION" "$DESKTOP_ASSET" "$DESKTOP_DEST"
         chmod +x "$DESKTOP_DEST"
