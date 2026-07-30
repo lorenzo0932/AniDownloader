@@ -111,7 +111,8 @@ file(GLOB_RECURSE WEB_SOURCES CONFIGURE_DEPENDS
 if(Python3_FOUND OR Python3_EXECUTABLE)
     add_custom_command(
         OUTPUT ${EMBEDDED_CPP} ${EMBEDDED_HPP}
-        COMMAND cd ${CMAKE_SOURCE_DIR}/web && npm install && npm run build
+        COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}/web npm install
+        COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}/web npm run build
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/embed_web.py
             ${CMAKE_SOURCE_DIR}/web/dist ${EMBEDDED_HPP}
         DEPENDS
