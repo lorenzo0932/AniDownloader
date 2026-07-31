@@ -205,7 +205,7 @@ add_custom_command(TARGET AniDownloader POST_BUILD
         "${CMAKE_SOURCE_DIR}/src-tauri/binaries"
     COMMAND ${CMAKE_COMMAND} -E copy
         "$<TARGET_FILE:AniDownloader>"
-        "${CMAKE_SOURCE_DIR}/src-tauri/binaries/AniDownloader-${TAURI_TARGET}$<$<PLATFORM_ID:Windows>:.exe>"
+        "${CMAKE_SOURCE_DIR}/src-tauri/binaries/anidownloaderd-${TAURI_TARGET}$<$<PLATFORM_ID:Windows>:.exe>"
     COMMENT "Copying sidecar to src-tauri/binaries/"
 )
 
@@ -220,6 +220,6 @@ add_custom_command(TARGET AniDownloader POST_BUILD
         "${CMAKE_SOURCE_DIR}/src-tauri/target/${CARGO_PROFILE}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:AniDownloader>"
-        "${CMAKE_SOURCE_DIR}/src-tauri/target/${CARGO_PROFILE}/AniDownloader-${TAURI_TARGET}$<$<PLATFORM_ID:Windows>:.exe>"
+        "${CMAKE_SOURCE_DIR}/src-tauri/target/${CARGO_PROFILE}/anidownloaderd-${TAURI_TARGET}$<$<PLATFORM_ID:Windows>:.exe>"
     COMMENT "Copying sidecar to src-tauri/target/${CARGO_PROFILE}/"
 )

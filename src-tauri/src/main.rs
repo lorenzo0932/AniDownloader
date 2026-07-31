@@ -108,7 +108,7 @@ fn main() {
                 println!("Sidecar già in ascolto sulla 8989, skip lancio");
                 app.manage(SidecarChild(Mutex::new(None)));
             } else {
-                match app.shell().sidecar("AniDownloader") {
+                match app.shell().sidecar("anidownloaderd") {
                     Ok(cmd) => match cmd.args(["--web"]).spawn() {
                         Ok((_rx, child)) => {
                             println!("Sidecar C++ avviato con successo");

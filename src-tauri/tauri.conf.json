@@ -19,7 +19,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/AniDownloader"],
+    "externalBin": ["binaries/anidownloaderd"],
     "targets": ["appimage", "nsis", "dmg"]
   }
 }
