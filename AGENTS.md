@@ -99,6 +99,7 @@ tar xzf anidownloaderd-*.tar.gz
 ## Cosa fare / non fare
 
 - **`#pragma once`** in tutti gli header.
+- **Licenza**: progetto MIT (`LICENSE`, copyright Lorenzo Ammatuna); `licenses/` contiene i testi integrali delle licenze terze parti (aggiornarla quando cambia una dipendenza) e `THIRD_PARTY_NOTICES.md` la tabella riassuntiva.
 - **Non committare `series_data.json`** (dati utente, in `.gitignore`).
 - **Non committare `web/dist/`** (generato da `npm run build`).
 - **Non committare `src-tauri/target/`** (Rust build output, in `.gitignore`).

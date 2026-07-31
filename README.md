@@ -284,3 +284,17 @@ revisionata e approvata manualmente.
 - [ ] Supporto più servizi di streaming
 
 ---
+
+## Licenza
+
+AniDownloader è rilasciato sotto licenza **MIT** — vedi il file
+[`LICENSE`](LICENSE). Puoi usare, modificare e ridistribuire il codice
+liberamente, anche in progetti commerciali, purché vengano mantenute le
+note di copyright e permesso.
+
+L'applicazione integra componenti di terze parti (cpp-httplib, cpr,
+nlohmann-json, Tauri, Svelte, Vite, ...): le loro licenze e attribuzioni
+sono elencate in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), con
+i testi integrali nella cartella [`licenses/`](licenses/). I tool runtime
+(aria2, FFmpeg) non sono distribuiti con l'app: vengono installati
+dall'utente e mantengono le proprie licenze.
