@@ -186,13 +186,13 @@ if(WIN32)
         set(TAURI_TARGET "i686-pc-windows-msvc")
     endif()
 elseif(APPLE)
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
         set(TAURI_TARGET "aarch64-apple-darwin")
     else()
         set(TAURI_TARGET "x86_64-apple-darwin")
     endif()
 else()
-    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
         set(TAURI_TARGET "aarch64-unknown-linux-gnu")
     else()
         set(TAURI_TARGET "x86_64-unknown-linux-gnu")
@@ -220,6 +220,6 @@ add_custom_command(TARGET AniDownloader POST_BUILD
         "${CMAKE_SOURCE_DIR}/src-tauri/target/${CARGO_PROFILE}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:AniDownloader>"
-        "${CMAKE_SOURCE_DIR}/src-tauri/target/${CARGO_PROFILE}/AniDownloader$<$<PLATFORM_ID:Windows>:.exe>"
+        "${CMAKE_SOURCE_DIR}/src-tauri/target/${CARGO_PROFILE}/AniDownloader-${TAURI_TARGET}$<$<PLATFORM_ID:Windows>:.exe>"
     COMMENT "Copying sidecar to src-tauri/target/${CARGO_PROFILE}/"
 )
