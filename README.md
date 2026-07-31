@@ -54,38 +54,38 @@ AniDownloader nasce per risolvere questi problemi:
 
 ## Installazione
 
-### Linux (consigliato)
+> Tutti i pacchetti pronti all'uso sono pubblicati su
+> **[GitHub Releases](https://github.com/lorenzo0932/AniDownloader/releases/latest)** —
+> nessuna compilazione richiesta.
+
+### Utenti
+
+**Linux (x86_64)** — installazione guidata con un comando:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lorenzo0932/AniDownloader/main/install.sh | bash
 ```
 
-Oppure scarica e lancia:
-
-```bash
-chmod +x install.sh
-./install.sh
-```
-
 Il menu ti guida nella scelta:
 
-1. **Solo Desktop** (AppImage + launcher)
+1. **Solo Desktop** (AppImage + launcher nel menu applicazioni)
 2. **Solo Headless** (daemon systemd per server/NAS)
 3. **Entrambi** (consigliato)
 
-### Windows
+In alternativa scarica l'AppImage `AniDownloader-<versione>-linux-x86_64.AppImage`
+dalle Releases, rendila eseguibile (`chmod +x`) e aprila con doppio click.
 
-```powershell
-.\install.ps1
-```
+**Windows** — scarica `AniDownloader_<versione>_x64-setup.exe` dalle Releases ed
+eseguilo con doppio click (installer NSIS, senza privilegi di amministratore).
 
-### macOS
+**macOS (Apple Silicon)** — scarica `AniDownloader_<versione>_aarch64.dmg` dalle
+Releases, aprilo e trascina l'app nella cartella Applicazioni.
 
-Tramite Tauri build:
-
-```bash
-npx @tauri-apps/cli build
-```
+> ⚠️ **Architetture supportate**: i pacchetti precompilati sono solo **x86_64**
+> su Linux e **arm64** su macOS. Su dispositivi **ARM Linux** (Raspberry Pi, NAS)
+> non esiste download: puoi compilare da sorgente solo il daemon headless con
+> `./install.sh --local` (opzione 2). Il Desktop (Tauri/AppImage) su Linux ARM
+> e i **Mac Intel** non sono supportati.
 
 ### Disinstallazione
 
@@ -98,6 +98,23 @@ npx @tauri-apps/cli build
 ```
 
 Gli script chiedono se mantenere la configurazione prima di rimuovere i file.
+
+### Sviluppatori
+
+Build da sorgente:
+
+```bash
+# Linux — build locale forzata (utile anche su ARM per il solo headless)
+./install.sh --local
+
+# Windows
+.\install.ps1
+
+# macOS
+npx @tauri-apps/cli build
+```
+
+Documentazione completa: [docs/BUILD.md](docs/BUILD.md).
 
 ---
 

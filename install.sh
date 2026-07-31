@@ -182,6 +182,16 @@ case "$ARCH" in
              ARCH="x86_64"  ;;
 esac
 
+if [ "$ARCH" != "x86_64" ]; then
+    echo ""
+    echo "⚠️  Attenzione: architettura $ARCH"
+    echo "    Gli eseguibili precompilati (AppImage, headless) sono pubblicati"
+    echo "    solo per x86_64. Su $ARCH funziona solo la build locale del"
+    echo "    daemon headless:  ./install.sh --local  (poi scelta 2 — Headless)"
+    echo "    Il Desktop (Tauri/AppImage) non è supportato su $ARCH."
+    echo ""
+fi
+
 if $BUILD_LOCAL; then
     echo "═══ Build locale ═══"
 
@@ -247,8 +257,13 @@ else
         echo "Scarico AppImage..."
         DESKTOP_ASSET="${APP_NAME}-${VERSION}-linux-${ARCH}.AppImage"
         DESKTOP_DEST="$INSTALL_DIR/$APP_NAME.AppImage"
-        download_asset "$VERSION" "$DESKTOP_ASSET" "$DESKTOP_DEST"
-        chmod +x "$DESKTOP_DEST"
+        if download_asset "$VERSION" "$DESKTOP_ASSET" "$DESKTOP_DEST"; then
+            chmod +x "$DESKTOP_DEST"
+        else
+            echo "  AppImage non pubblicata per $ARCH. Salto il Desktop."
+            echo "  Usa './install.sh --local' per la build da sorgente."
+            INSTALL_DESKTOP=false
+        fi
     fi
 
     if $INSTALL_HEADLESS; then

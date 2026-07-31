@@ -179,7 +179,7 @@ jobs:
 
       - name: Package headless
         run: |
-          dir="anidownloaderd-${{ github.ref_name }}-mac-x86_64"
+          dir="anidownloaderd-${{ github.ref_name }}-mac-aarch64"
           mkdir -p "$dir/web"
           cp build/AniDownloader "$dir/anidownloaderd"
           cp -r web/dist/* "$dir/web/"
@@ -190,4 +190,4 @@ jobs:
         with:
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
-            anidownloaderd-*-mac-x86_64.tar.gz
+            anidownloaderd-*-mac-aarch64.tar.gz
