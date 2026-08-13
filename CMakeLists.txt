@@ -107,7 +107,6 @@ set(HEADERS
     include/core/FileUtils.hpp
     include/core/LogUtils.hpp
     include/core/SeriesUtils.hpp
-    include/web/CryptoUtils.hpp
     include/web/WebServer.hpp
     ${EMBEDDED_HPP}
 )
@@ -156,7 +155,6 @@ set(SOURCES
     src/core/FileUtils.cpp
     src/core/LogUtils.cpp
     src/core/SeriesUtils.cpp
-    src/web/CryptoUtils.cpp
     src/web/WebServer.cpp
     ${EMBEDDED_CPP})
 
@@ -171,7 +169,6 @@ target_link_libraries(AniDownloader
     cpr::cpr
     httplib::httplib
     Threads::Threads
-    OpenSSL::Crypto
 )
 
 target_compile_definitions(AniDownloader PRIVATE
@@ -185,6 +182,8 @@ add_executable(test_core
     src/core/UpdateChecker.cpp
     src/core/Logger.cpp
     src/core/Series.cpp
+    src/core/SeriesRepository.cpp
+    src/scrapers/ScraperUtils.cpp
 )
 target_include_directories(test_core PRIVATE include)
 target_link_libraries(test_core PRIVATE
