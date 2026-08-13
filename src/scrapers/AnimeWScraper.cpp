@@ -8,10 +8,15 @@
 #include <chrono>
 #include <regex>
 #include <atomic>
+#include <unordered_set>
 
 using json = nlohmann::json;
 
 namespace Core {
+
+// Dominio canonico di AnimeWorld (verificato: .so risponde 301, .ac è il dominio attivo).
+// Unico punto di definizione: url e Referer devono restare allineati.
+static const std::string kAnimeWorldBaseUrl = "https://www.animeworld.ac";
 
 static json webdriverCommand(const std::string& endpoint, const std::string& method, const json& payload = {}) {
     std::string url = "http://localhost:9515" + endpoint;
@@ -104,7 +109,7 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
             continue;
         }
         switchToWindow(sessionId, wh);
-        std::string fullUrl = (c.episodeUrl.find("http") == 0) ? c.episodeUrl : "https://www.animeworld.ac" + c.episodeUrl;
+        std::string fullUrl = (c.episodeUrl.find("http") == 0) ? c.episodeUrl : kAnimeWorldBaseUrl + c.episodeUrl;
         webdriverCommand("/session/" + sessionId + "/url", "POST", {{"url", fullUrl}});
         tabs.push_back({wh, fullUrl, c.episodeNumber, {}, SniffState::NAVIGATING,
                         std::chrono::steady_clock::now(), {}});
@@ -116,6 +121,9 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
 
             // MAPPA GLOBALE: frameId -> Lista di URL video trovati
             std::map<std::string, std::vector<std::string>> capturedUrlsByFrame;
+            // ChromeDriver può ri-deliverare le stesse entry di log a ogni poll:
+            // dedup per non accumulare lo stesso URL più volte (causa di assegnazioni stale).
+            std::unordered_set<std::string> seenLogMessages;
 
             while (!stopSignal.load()) {
                 bool allDone = true;
@@ -126,6 +134,7 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
                     for (auto& entry : logRes["value"]) {
                         if (!entry.contains("message")) continue;
                         std::string msgStr = entry["message"].get<std::string>();
+                        if (!seenLogMessages.insert(msgStr).second) continue; // già processato
                         std::string url = extractUrlFromLog(msgStr);
 
                         if (!url.empty()) {
@@ -165,8 +174,11 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
 
                     // Controlla se il log globale ha catturato un URL per uno degli iframe di QUESTO tab
                     for (const auto& fid : tab.frameIds) {
-                        if (capturedUrlsByFrame.count(fid) && !capturedUrlsByFrame[fid].empty()) {
-                            tab.videoUrl = capturedUrlsByFrame[fid].front();
+                        auto it = capturedUrlsByFrame.find(fid);
+                        if (it != capturedUrlsByFrame.end() && !it->second.empty()) {
+                            tab.videoUrl = it->second.front();
+                            it->second.erase(it->second.begin()); // consuma l'URL: nessun altro tab potrà reclamarlo
+                            if (it->second.empty()) capturedUrlsByFrame.erase(it);
                             tab.state = SniffState::DONE;
                             break;
                         }
@@ -252,6 +264,11 @@ static std::vector<DownloadTask> sniffBatch(const std::string& sessionId,
                     task.episodeNumber = tab.episodeNumber;
                     task.fileName = ScraperUtils::generateFilename(tab.videoUrl, tab.episodeNumber);
                     results.push_back(task);
+                } else {
+                    // Tab fallito: loggato per la diagnosi (utile per mappare Ep -> URL quando qualcosa va storto)
+                    Core::Logger::warn(seriesName + ": sniff fallito -> [episodeNumber=" + std::to_string(tab.episodeNumber) +
+                                       "] pageUrl=" + tab.episodeUrl +
+                                       " (state=" + std::to_string(static_cast<int>(tab.state)) + ")");
                 }
             }
         } catch (const std::exception& e) {
@@ -296,7 +313,7 @@ std::vector<EpisodeCandidate> AnimeWScraper::getCandidates(const Series& series)
 
     cpr::Header staticHeaders = {
         {"User-Agent", ScraperUtils::platformUserAgent()},
-        {"Referer", "https://www.animeworld.so/"}
+        {"Referer", kAnimeWorldBaseUrl + "/"}
     };
 
     std::string html = "";
