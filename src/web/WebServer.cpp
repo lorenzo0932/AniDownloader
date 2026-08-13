@@ -41,6 +41,9 @@
 
 namespace Web {
 
+// Cap per la coda SSE per client: un client lento non deve far crescere la memoria all'infinito.
+constexpr size_t kMaxSseQueueSize = 500;
+
 WebServer::WebServer(Config::AppConfigManager& configManager, int port)
     : m_configManager(configManager)
     , m_port(port)
@@ -51,6 +54,9 @@ WebServer::WebServer(Config::AppConfigManager& configManager, int port)
             return p.empty() ? Config::PathHelper::getSeriesJsonPath() : std::filesystem::path(p);
         }())
 {
+    // Ogni client SSE occupa un thread del pool per l'intera connessione:
+    // un pool più grande evita che poche tab esauriscano le API.
+    m_svr.new_task_queue = [] { return new httplib::ThreadPool(32); };
 }
 
 WebServer::~WebServer() {
@@ -118,6 +124,7 @@ void WebServer::unregisterSseClient(uint64_t id) {
 void WebServer::broadcastSseEvent(const std::string& eventJson) {
     std::lock_guard<std::mutex> lock(m_sseMutex);
     for (auto& [id, queue] : m_sseQueues) {
+        if (queue.size() >= kMaxSseQueueSize) queue.pop();
         queue.push(eventJson);
     }
 }
@@ -324,6 +331,22 @@ void WebServer::setupRoutes() {
             cmd += " default location \"" + currentPath + "\"";
         cmd += ")' 2>/dev/null";
         FILE* fp = popen(cmd.c_str(), "r");
+        if (!fp) {
+            sendJson(res, errorJson("No dialog tool available"), 501);
+            return;
+        }
+        char buf[4096] = {};
+        if (fgets(buf, sizeof(buf), fp)) {
+            path = buf;
+            path.erase(std::find_if(path.rbegin(), path.rend(),
+                [](int c) { return c != '\n' && c != '\r'; }).base(), path.end());
+        }
+        int status = pclose(fp);
+        if (path.empty() || status != 0) {
+            sendJson(res, errorJson("No directory selected"), 400);
+            return;
+        }
+        sendJson(res, successJson({{"path", path}}));
 #else
         std::string cmd;
         if (system("which zenity >/dev/null 2>&1") == 0) {
@@ -462,7 +485,9 @@ void WebServer::setupRoutes() {
 
     // ---- DOWNLOAD ----
     m_svr.Post("/api/download/start", [this](const httplib::Request& req, httplib::Response& res) {
-        if (m_downloadRunning.load()) {
+        // Claim atomico: evita la race check-then-act (due POST ravvicinate avviavano
+        // due download in parallelo, con il secondo bloccato sul join del primo).
+        if (m_downloadRunning.exchange(true)) {
             sendJson(res, errorJson("Download already in progress"), 409);
             return;
         }
@@ -474,12 +499,14 @@ void WebServer::setupRoutes() {
             }
             auto& seriesList = m_seriesRepository.loadSeriesData();
             if (seriesList.empty()) {
+                m_downloadRunning.store(false);
                 sendJson(res, errorJson("No series configured"), 400);
                 return;
             }
             sendJson(res, successJson({{"message", "Download started"}}));
             runDownloads(seriesList, burst);
         } catch (const std::exception& e) {
+            m_downloadRunning.store(false);
             sendJson(res, errorJson("Failed to start download: " + std::string(e.what())), 500);
         }
     });
@@ -587,44 +614,6 @@ void WebServer::setupRoutes() {
     serveEmbeddedFrontend();
 }
 
-std::string WebServer::findFrontendDir() {
-    auto exeDir = []() -> std::filesystem::path {
-#ifdef _WIN32
-        wchar_t buf[MAX_PATH];
-        DWORD len = GetModuleFileNameW(NULL, buf, MAX_PATH);
-        if (len > 0 && len < MAX_PATH)
-            return std::filesystem::path(buf).parent_path();
-#elif defined(__APPLE__)
-        char buf[4096];
-        uint32_t len = sizeof(buf);
-        if (_NSGetExecutablePath(buf, &len) == 0) {
-            return std::filesystem::path(buf).parent_path();
-        }
-#else
-        char buf[4096];
-        ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-        if (len > 0) {
-            buf[len] = '\0';
-            return std::filesystem::path(buf).parent_path();
-        }
-#endif
-        return std::filesystem::current_path();
-    }();
-
-    std::vector<std::filesystem::path> candidates = {
-        exeDir / "frontend",
-        exeDir / "web",
-        exeDir.parent_path() / "web" / "dist",
-        std::filesystem::current_path() / "web" / "dist",
-    };
-
-    for (const auto& dir : candidates) {
-        if (std::filesystem::exists(dir / "index.html"))
-            return dir.string();
-    }
-    return {};
-}
-
 void WebServer::serveEmbeddedFrontend() {
     const auto& files = getEmbeddedFiles();
 
@@ -670,23 +659,6 @@ void WebServer::serveEmbeddedFrontend() {
 
     Core::Logger::info("Frontend: embedded (" + std::to_string(files.size()) + " files, " +
                        std::to_string(files.find("/index.html")->second.size) + " bytes)");
-}
-
-std::string WebServer::mimeType(const std::string& path) {
-    auto dot = path.rfind('.');
-    if (dot == std::string::npos) return "application/octet-stream";
-    auto ext = path.substr(dot);
-    if (ext == ".html") return "text/html";
-    if (ext == ".js")   return "application/javascript";
-    if (ext == ".css")  return "text/css";
-    if (ext == ".svg")  return "image/svg+xml";
-    if (ext == ".png")  return "image/png";
-    if (ext == ".ico")  return "image/x-icon";
-    if (ext == ".json") return "application/json";
-    if (ext == ".woff2") return "font/woff2";
-    if (ext == ".woff")  return "font/woff";
-    if (ext == ".ttf")   return "font/ttf";
-    return "application/octet-stream";
 }
 
 bool WebServer::start() {
