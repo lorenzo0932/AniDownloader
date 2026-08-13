@@ -32,30 +32,46 @@ std::vector<TaskReport> g_reports;
 std::string g_overallStatus;
 auto g_startTime = std::chrono::steady_clock::now();
 std::atomic<bool> *g_stopPtr = nullptr;
+static std::atomic<bool> g_cleanupRequested{false};
+static std::atomic<bool> *g_webRunningPtr = nullptr;
 
+// Esegue la kill-tree dei processi figli (aria2, chromedriver). Solo in contesto thread normale.
+static void killProcessTree() {
+#ifndef _WIN32
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd),
+             "pids=$(pgrep -P %d 2>/dev/null); "
+             "for pid in $pids; do pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; done; "
+             "pkill -x chromedriver 2>/dev/null",
+             static_cast<int>(getpid()));
+    std::system(cmd);
+#else
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd),
+             "taskkill /F /FI \"PPID eq %lu\" /T >nul 2>&1",
+             static_cast<unsigned long>(GetCurrentProcessId()));
+    std::system(cmd);
+#endif
+}
+
+// Handler di segnale async-signal-safe: imposta SOLO flag atomici.
+// La pulizia (kill-tree, notifyStop) avviene nel watchdog thread, in contesto normale.
 static void cliSignalHandler(int) {
-    if (g_stopPtr) *g_stopPtr = true;
-    #ifndef _WIN32
-        pid_t child = fork();
-        if (child == 0) {
-            pid_t ppid = getppid();
-            char buf[64];
-            snprintf(buf, sizeof(buf), "%d", ppid);
-            execl("/bin/sh", "sh", "-c",
-                ("pids=$(pgrep -P " + std::string(buf) + " 2>/dev/null); "
-                 "for pid in $pids; do pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; done; "
-                 "pkill -x chromedriver 2>/dev/null").c_str(),
-                nullptr);
-            _exit(127);
+    if (g_stopPtr) g_stopPtr->store(true, std::memory_order_relaxed);
+    if (g_webRunningPtr) g_webRunningPtr->store(false, std::memory_order_relaxed);
+    g_cleanupRequested.store(true, std::memory_order_relaxed);
+}
+
+// Watchdog: quando arriva un segnale esegue la pulizia in contesto thread normale,
+// evitando std::system e lock di mutex dentro il signal handler (UB/deadlock).
+static void startCleanupWatchdog() {
+    std::thread([]() {
+        while (!g_cleanupRequested.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        if (child > 0) waitpid(child, nullptr, WNOHANG);
-    #else
-        DWORD myPid = GetCurrentProcessId();
-        std::string killCmd = "taskkill /F /FI \"PPID eq " + std::to_string(myPid) +
-            "\" /T >nul 2>&1";
-        std::system(killCmd.c_str());
-    #endif
-    MediaProcessor::notifyStop();
+        killProcessTree();
+        MediaProcessor::notifyStop();
+    }).detach();
 }
 
 /**
@@ -106,7 +122,13 @@ int main(int argc, char* argv[]) {
         if (arg == "--web") webMode = true;
         if (arg == "--silent") silentMode = true;
         if (arg == "--port" && i + 1 < argc) {
-            webPort = std::stoi(argv[++i]);
+            try {
+                webPort = std::stoi(argv[i + 1]);
+            } catch (const std::exception&) {
+                std::cerr << "Porta non valida: " << argv[i + 1] << "\n";
+                return 1;
+            }
+            ++i;
         }
     }
 
@@ -125,20 +147,20 @@ int main(int argc, char* argv[]) {
             }
         });
 
+        g_webRunningPtr = &running;
 #ifndef _WIN32
         struct sigaction sa{};
-        sa.sa_handler = [](int) {
-            exit(0);
-        };
+        sa.sa_handler = cliSignalHandler;
         sigemptyset(&sa.sa_mask);
         sigaction(SIGINT, &sa, nullptr);
         sigaction(SIGTERM, &sa, nullptr);
 #else
         SetConsoleCtrlHandler([](DWORD) -> BOOL {
-            exit(0);
+            cliSignalHandler(0);
             return TRUE;
         }, TRUE);
 #endif
+        startCleanupWatchdog();
 
         int finalPort = server->activePort();
         if (!silentMode) {
@@ -197,6 +219,8 @@ int main(int argc, char* argv[]) {
             return TRUE;
         }, TRUE);
     #endif
+
+    startCleanupWatchdog();
 
     engine.run(seriesList, burstMode, stop,
         [&](const std::string& n, int ep, const std::string& m) {
