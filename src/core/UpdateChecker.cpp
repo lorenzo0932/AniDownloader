@@ -11,7 +11,7 @@ void UpdateChecker::checkForUpdates(const std::string& currentVersion, Callback 
     std::thread([currentVersion, callback]() {
         try {
             cpr::Response r = cpr::Get(
-                cpr::Url{"https://api.github.com/repos/lorenzoAni/AniDownloader/releases/latest"},
+                cpr::Url{"https://api.github.com/repos/lorenzo0932/AniDownloader/releases/latest"},
                 cpr::Header{{"Accept", "application/vnd.github.v3+json"}},
                 cpr::Timeout{10000}
             );
