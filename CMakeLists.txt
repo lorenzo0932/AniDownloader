@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.17)
-project(AniDownloaderCpp VERSION 2.0.0 LANGUAGES CXX)
+project(AniDownloaderCpp VERSION 2.0.1 LANGUAGES CXX)
 
 # --- STANDARD C++ ---
 set(CMAKE_CXX_STANDARD 17)
@@ -177,6 +177,22 @@ target_link_libraries(AniDownloader
 target_compile_definitions(AniDownloader PRIVATE
     ANIDOWNLOADER_VERSION="${PROJECT_VERSION}"
 )
+
+# ─── TEST ───
+enable_testing()
+add_executable(test_core
+    tests/test_core.cpp
+    src/core/UpdateChecker.cpp
+    src/core/Logger.cpp
+    src/core/Series.cpp
+)
+target_include_directories(test_core PRIVATE include)
+target_link_libraries(test_core PRIVATE
+    nlohmann_json::nlohmann_json
+    cpr::cpr
+    Threads::Threads
+)
+add_test(NAME test_core COMMAND test_core)
 
 # ─── TARGET TRIPLE PER SIDECAR TAURI ───
 if(WIN32)
