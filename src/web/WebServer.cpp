@@ -754,21 +754,7 @@ void WebServer::runDownloads(const std::vector<Core::Series>& seriesList, bool b
             char buf[24] = {};
             std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
 
-            auto series = m_seriesRepository.loadSeriesData();
-            bool updated = false;
-            for (auto& s : series) {
-                auto it = maxEpisodes.find(s.name);
-                if (it != maxEpisodes.end()) {
-                    s.lastDownloadedAt = buf;
-                    if (it->second > s.lastDownloadedEpisode) {
-                        s.lastDownloadedEpisode = it->second;
-                    }
-                    updated = true;
-                }
-            }
-            if (updated) {
-                m_seriesRepository.saveSeriesData(series);
-            }
+            m_seriesRepository.applyDownloadedEpisodes(maxEpisodes, buf);
         }
 
         m_downloadRunning.store(false);

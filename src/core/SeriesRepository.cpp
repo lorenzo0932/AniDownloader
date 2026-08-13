@@ -60,4 +60,29 @@ namespace Core {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_cache.reset();
     }
+
+    bool SeriesRepository::applyDownloadedEpisodes(const std::map<std::string, int>& maxEpisodes,
+                                                   const std::string& timestamp) {
+        if (maxEpisodes.empty()) return false;
+
+        // loadSeriesData gestisce il lock: unico punto di accesso alla cache.
+        // Copia necessaria: la cache è esposta come const&.
+        auto series = loadSeriesData();
+
+        bool updated = false;
+        for (auto& s : series) {
+            auto it = maxEpisodes.find(s.name);
+            if (it == maxEpisodes.end()) continue;
+            s.lastDownloadedAt = timestamp;
+            if (it->second > s.lastDownloadedEpisode) {
+                s.lastDownloadedEpisode = it->second;
+            }
+            updated = true;
+        }
+
+        if (updated) {
+            saveSeriesData(series);
+        }
+        return updated;
+    }
 }

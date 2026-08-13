@@ -252,19 +252,11 @@ int main(int argc, char* argv[]) {
 
     // Salvataggio unico post-esecuzione: lastDownloadedEpisode per serie
     {
-        Core::Logger::info("[DEBUG] Post-run save: processing " + std::to_string(g_reports.size()) + " reports");
         std::map<std::string, int> maxEpisodes;
         for (const auto& r : g_reports) {
             if (r.success && r.episodeNumber > 0) {
                 maxEpisodes[r.name] = (std::max)(maxEpisodes[r.name], r.episodeNumber);
-                Core::Logger::info("[DEBUG] Report: " + r.name + " ep=" + std::to_string(r.episodeNumber) + " success=true");
-            } else {
-                Core::Logger::info("[DEBUG] Report: " + r.name + " ep=" + std::to_string(r.episodeNumber) + " success=" + (r.success ? "true" : "false"));
             }
-        }
-
-        for (const auto& [name, ep] : maxEpisodes) {
-            Core::Logger::info("[DEBUG] maxEpisodes: " + name + " -> " + std::to_string(ep));
         }
 
         if (!maxEpisodes.empty()) {
@@ -274,32 +266,7 @@ int main(int argc, char* argv[]) {
             char ts[24] = {};
             std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &tm);
 
-            SeriesRepository saveRepo(configManager.get<std::string>("json_file_path", ""));
-            auto currentList = saveRepo.loadSeriesData();
-            Core::Logger::info("[DEBUG] loaded " + std::to_string(currentList.size()) + " series from JSON");
-            bool updated = false;
-
-            for (auto& s : currentList) {
-                auto it = maxEpisodes.find(s.name);
-                if (it != maxEpisodes.end()) {
-                    Core::Logger::info("[DEBUG] updating " + s.name + ": lastDownloadedEpisode " +
-                        std::to_string(s.lastDownloadedEpisode) + " -> " + std::to_string(it->second) +
-                        " (maxEpisodes=" + std::to_string(it->second) + ")");
-                    s.lastDownloadedAt = ts;
-                    if (it->second > s.lastDownloadedEpisode) {
-                        s.lastDownloadedEpisode = it->second;
-                    }
-                    updated = true;
-                }
-            }
-            if (updated) {
-                Core::Logger::info("[DEBUG] calling saveSeriesData");
-                saveRepo.saveSeriesData(currentList);
-            } else {
-                Core::Logger::info("[DEBUG] saveSeriesData NOT called (no series matched)");
-            }
-        } else {
-            Core::Logger::info("[DEBUG] maxEpisodes empty, skipping save");
+            repo.applyDownloadedEpisodes(maxEpisodes, ts);
         }
     }
 
