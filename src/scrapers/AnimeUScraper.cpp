@@ -9,6 +9,20 @@
 
 namespace Core {
 
+// Risolve un URL relativo (href) contro l'URL della pagina da cui è stato estratto.
+static std::string resolveUrl(const std::string& base, const std::string& rel) {
+    if (rel.find("http") == 0) return rel;
+    auto schemeEnd = base.find("://");
+    if (schemeEnd == std::string::npos) return rel;
+    auto hostStart = schemeEnd + 3;
+    auto hostEnd = base.find('/', hostStart);
+    std::string origin = (hostEnd == std::string::npos) ? base : base.substr(0, hostEnd);
+    if (!rel.empty() && rel[0] == '/') return origin + rel;
+    auto lastSlash = base.rfind('/');
+    if (lastSlash == std::string::npos || lastSlash < hostStart) return origin + "/" + rel;
+    return base.substr(0, lastSlash + 1) + rel;
+}
+
 std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, std::atomic<bool>&,
     ScraperProgressCb progressCb)
 {
@@ -59,7 +73,7 @@ std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, st
                 checked++;
                 if (progressCb) progressCb("Analisi: verifica episodio " + std::to_string(checked) + "/" + std::to_string(totalToCheck) + "...");
                 cpr::Response epPage = ScraperUtils::httpGetWithRetry(
-                    cpr::Url{ep.u},
+                    cpr::Url{resolveUrl(series.seriesPageUrl, ep.u)},
                     {{"User-Agent", ScraperUtils::platformUserAgent()}},
                     3, 2000
                 );
