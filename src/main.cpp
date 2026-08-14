@@ -35,14 +35,13 @@ std::atomic<bool> *g_stopPtr = nullptr;
 static std::atomic<bool> g_cleanupRequested{false};
 static std::atomic<bool> *g_webRunningPtr = nullptr;
 
-// Esegue la kill-tree dei processi figli (aria2, chromedriver). Solo in contesto thread normale.
+// Esegue la kill-tree dei processi figli (aria2). Solo in contesto thread normale.
 static void killProcessTree() {
 #ifndef _WIN32
     char cmd[256];
     snprintf(cmd, sizeof(cmd),
              "pids=$(pgrep -P %d 2>/dev/null); "
-             "for pid in $pids; do pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; done; "
-             "pkill -x chromedriver 2>/dev/null",
+             "for pid in $pids; do pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; done",
              static_cast<int>(getpid()));
     std::system(cmd);
 #else

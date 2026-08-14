@@ -627,10 +627,6 @@ void WebServer::setupDownloadRoutes() {
             std::system(killCmd.c_str());
 #endif
 
-#ifndef _WIN32
-            std::system("pkill -x chromedriver 2>/dev/null");
-#endif
-
             Core::Logger::info("Download stop requested");
             sendJson(res, successJson({{"message", "Stop signal sent"}}));
         } else {

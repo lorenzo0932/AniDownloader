@@ -49,8 +49,6 @@ SLOW_PORT=""
 SLOW_PID=""
 WEB_PID=""
 SSE_PID=""
-CHROMEDRIVER_WAS_RUNNING=no
-pgrep -x chromedriver >/dev/null 2>&1 && CHROMEDRIVER_WAS_RUNNING=yes
 
 # Stato della config reale: i test non devono mai toccarla (sandbox XDG).
 REAL_CFG="$HOME/.config/AniDownloader"
@@ -72,11 +70,6 @@ cleanup() {
     fi
     [ -n "$SSE_PID" ] && kill "$SSE_PID" 2>/dev/null || true
     [ -n "$SLOW_PID" ] && kill "$SLOW_PID" 2>/dev/null || true
-    # Chromedriver viene lanciato dal motore di download: lo rimuoviamo solo
-    # se non era già attivo prima dello smoke (niente effetti collaterali).
-    if [ "$CHROMEDRIVER_WAS_RUNNING" = no ]; then
-        pkill -x chromedriver 2>/dev/null || true
-    fi
 }
 trap cleanup EXIT
 
@@ -217,6 +210,91 @@ if [ "$SHA_BEFORE" = "$(file_sha "$CLI_SBX/AniDownloader/series_data.json")" ]; 
 else
     fail "sha256 JSON cambiato dopo il run"
 fi
+
+echo "[2b/3] CLI: flusso statico AnimeW (pagina + API episodio + download)"
+
+# Fixture offline del flusso statico (feature 6): pagina serie con la lista
+# episodi, endpoint /api/episode/info che restituisce il grabber, e i video.
+STATIC_SBX="$RPT/static"
+mkdir -p "$STATIC_SBX/AniDownloader" "$STATIC_SBX/cache" "$STATIC_SBX/media/Serie"
+printf '{"convert_to_h265":false}' > "$STATIC_SBX/AniDownloader/config.json"
+dd if=/dev/urandom of="$RPT/video1.mp4" bs=1M count=1 status=none
+dd if=/dev/urandom of="$RPT/video2.mp4" bs=1M count=1 status=none
+
+cat > "$STATIC_SBX/fixture.py" <<'PY'
+import http.server, os, sys
+MEDIA, PORTFILE = sys.argv[1], sys.argv[2]
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/serie.html":
+            body = ('<html><body><a data-episode-num="1" href="/play/test/EID1">Ep1</a>'
+                    '<a data-episode-num="2" href="/play/test/EID2">Ep2</a></body></html>').encode()
+        elif self.path.startswith("/api/episode/info?"):
+            eid = self.path.split("id=", 1)[1].split("&", 1)[0]
+            base = f"http://127.0.0.1:{self.server.server_address[1]}"
+            if eid == "EID1":
+                body = f'{{"grabber":"{base}/video1.mp4","name":"EID1"}}'.encode()
+            elif eid == "EID2":
+                body = f'{{"grabber":"{base}/video2.mp4","name":"EID2"}}'.encode()
+            else:
+                body = b'{"error":true}'
+        elif self.path.startswith("/video"):
+            p = os.path.join(MEDIA, os.path.basename(self.path))
+            if not os.path.exists(p):
+                self.send_response(404); self.end_headers(); return
+            with open(p, "rb") as f:
+                body = f.read()
+        else:
+            self.send_response(404); self.end_headers(); return
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp4" if self.path.startswith("/video") else "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *a): pass
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+with open(PORTFILE, "w") as f:
+    f.write(str(srv.server_address[1]))
+srv.serve_forever()
+PY
+python3 "$STATIC_SBX/fixture.py" "$RPT" "$STATIC_SBX/port" > /dev/null 2>&1 &
+FIX_PID=$!
+for i in $(seq 1 50); do
+    [ -s "$STATIC_SBX/port" ] && break
+    sleep 0.1
+done
+FIX_PORT=$(cat "$STATIC_SBX/port" 2>/dev/null || echo "")
+if [ -n "$FIX_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$FIX_PORT/serie.html"; then
+    printf '[{"name":"Serie","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/serie.html"}]' \
+        "$STATIC_SBX/media/Serie" "$FIX_PORT" > "$STATIC_SBX/AniDownloader/series_data.json"
+    SHA_BEFORE=$(file_sha "$STATIC_SBX/AniDownloader/series_data.json")
+
+    if XDG_CONFIG_HOME="$STATIC_SBX" XDG_CACHE_HOME="$STATIC_SBX/cache" \
+        ANIDOWNLOADER_API_BASE="http://127.0.0.1:$FIX_PORT" \
+        "$BIN" >"$RPT/static_run.log" 2>&1; then
+        pass "flusso statico: run completata (exit 0)"
+    else
+        fail "flusso statico: exit $? (vedi $RPT/static_run.log)"
+    fi
+    if [ "$(find "$STATIC_SBX/media/Serie" -name '*_Ep_0*.mp4' | wc -l)" -eq 2 ]; then
+        pass "flusso statico: 2 episodi scaricati via API grabber"
+    else
+        fail "flusso statico: attesi 2 episodi scaricati: $(ls "$STATIC_SBX/media/Serie" 2>/dev/null)"
+    fi
+    if jq -e '.[0].last_downloaded_episode == 2' "$STATIC_SBX/AniDownloader/series_data.json" >/dev/null 2>&1; then
+        pass "flusso statico: last_downloaded_episode aggiornato a 2"
+    else
+        fail "flusso statico: last_downloaded_episode non aggiornato"
+    fi
+    if ! grep -q 'ChromeDriver\|chromedriver' "$RPT/static_run.log"; then
+        pass "flusso statico: nessun riferimento a ChromeDriver nel run"
+    else
+        fail "flusso statico: ChromeDriver ancora referenziato nel run"
+    fi
+else
+    fail "fixture server non avviato: flusso statico non testato"
+fi
+kill "$FIX_PID" 2>/dev/null || true
 
 echo "[3/3] CLI: SIGINT durante il planning → exit pulito, nessun residuo"
 

@@ -30,15 +30,6 @@ void ExecutionEngine::run(const std::vector<Series>& seriesList,
 {
     onStatus("Analisi parallelizzata in corso...");
 
-    std::string driverPath = m_config.get<std::string>("chromedriver_path", "chromedriver");
-    #ifndef _WIN32
-        std::system(("pgrep -x " + driverPath + " > /dev/null || " + driverPath + " --port=9515 > /dev/null 2>&1 &").c_str());
-        std::this_thread::sleep_for(std::chrono::milliseconds(400));
-    #else
-        std::system(("tasklist /FI \"IMAGENAME eq " + driverPath + ".exe\" 2>NUL | find /I /N \"" + driverPath + ".exe\" >NUL || start /B " + driverPath + " --port=9515 >NUL 2>&1").c_str());
-        std::this_thread::sleep_for(std::chrono::milliseconds(400));
-    #endif
-
     auto result = std::make_shared<PlanningResult>();
     auto pending = std::make_shared<std::atomic<int>>(0);
 
