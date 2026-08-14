@@ -23,7 +23,7 @@ namespace Core {
     }
 
     std::vector<DownloadTask> PlanningService::planSingleSeries(const Series& series,
-        BaseScraper::ScraperProgressCb progressCb)
+        std::function<void(const std::string&)> progressCb)
     {
         if (series.service.empty()) {
             DownloadTask err;

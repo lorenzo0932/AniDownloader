@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/Series.hpp"
-#include "scrapers/BaseScraper.hpp"
+#include "core/DownloadTask.hpp"
 #include "config/AppConfigManager.hpp"
 #include <string>
 #include <functional>

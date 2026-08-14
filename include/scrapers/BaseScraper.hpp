@@ -1,20 +1,13 @@
 #pragma once
 
 #include "core/Series.hpp"
+#include "core/DownloadTask.hpp"
 #include <string>
 #include <vector>
 #include <atomic>
 #include <functional>
 
 namespace Core {
-
-    struct DownloadTask {
-        bool shouldProcess = false;
-        std::string videoUrl;
-        int episodeNumber = -1;
-        std::string fileName;
-        std::string errorMessage;
-    };
 
     class BaseScraper {
     public:
