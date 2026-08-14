@@ -7,9 +7,11 @@
 
 namespace Core {
 
-    std::vector<std::string> getRecentLines(const std::string& logPath, int n) {
+    std::vector<std::string> getRecentLines(std::string_view logPath, int n) {
+        // ifstream costruito da std::filesystem::path, a sua volta costruito
+        // dalla view: nessuna copia intermedia e nessun cambio di lifetime.
         std::vector<std::string> allLines;
-        std::ifstream f(logPath);
+        std::ifstream f{std::filesystem::path(logPath)};
         if (!f)
             return {};
         std::string line;

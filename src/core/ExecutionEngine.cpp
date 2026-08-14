@@ -171,8 +171,12 @@ namespace Core {
                         }
                     }
 
-                    TaskReport report{item.first.name,  res.success,        res.episodeNumber,
-                                      res.downloadTime, res.conversionTime, res.errorMessage};
+                    TaskReport report{.name = item.first.name,
+                                      .success = res.success,
+                                      .episodeNumber = res.episodeNumber,
+                                      .dlTime = res.downloadTime,
+                                      .convTime = res.conversionTime,
+                                      .error = res.errorMessage};
                     if (res.success) {
                         Core::Logger::result(report.name, report.dlTime, report.convTime);
                     }

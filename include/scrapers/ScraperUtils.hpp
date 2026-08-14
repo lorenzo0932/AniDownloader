@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <map>
 #include <string>
+#include <string_view>
 
 namespace Core {
 
@@ -14,7 +15,7 @@ namespace Core {
 
     class ScraperUtils {
       public:
-        static std::string expandTilde(const std::string& path);
+        static std::string expandTilde(std::string_view path);
         static EpisodeInfo getHighestEpisodeFile(const std::string& seriesPath);
         static int getNextEpisodeNum(const std::string& seriesPath);
         static std::string generateFilename(const std::string& downloadUrl, int episodeNumber);

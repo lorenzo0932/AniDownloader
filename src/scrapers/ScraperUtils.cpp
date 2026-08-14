@@ -12,15 +12,16 @@ namespace fs = std::filesystem;
 
 namespace Core {
 
-    std::string ScraperUtils::expandTilde(const std::string& path) {
+    std::string ScraperUtils::expandTilde(std::string_view path) {
         if (path.empty() || path[0] != '~')
-            return path;
+            return std::string(path);
 #ifdef _WIN32
         const char* home = std::getenv("USERPROFILE");
 #else
         const char* home = std::getenv("HOME");
 #endif
-        return home ? std::string(home) + path.substr(1) : path;
+        // La view non possiede il dato: costruiamo la copia prima di muoverla.
+        return home ? std::string(home) + std::string(path.substr(1)) : std::string(path);
     }
 
     // Helper statico per proteggere i percorsi per la shell
@@ -80,7 +81,7 @@ namespace Core {
     EpisodeInfo ScraperUtils::getHighestEpisodeFile(const std::string& seriesPath) {
         std::string fullPath = expandTilde(seriesPath);
         if (!fs::exists(fullPath))
-            return {0, ""};
+            return {.number = 0, .path = ""};
 
         int maxEp = 0;
         fs::path maxEpPath;
@@ -104,7 +105,7 @@ namespace Core {
             Core::Logger::warn("getHighestEpisodeFile: scan fallito per " + seriesPath + ": " +
                                std::string(e.what()));
         }
-        return {maxEp, maxEpPath.string()};
+        return {.number = maxEp, .path = maxEpPath.string()};
     }
 
     int ScraperUtils::getNextEpisodeNum(const std::string& seriesPath) {
