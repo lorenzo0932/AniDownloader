@@ -29,10 +29,15 @@ namespace Core {
         auto result = std::make_shared<PlanningResult>();
         auto pending = std::make_shared<std::atomic<int>>(0);
 
-        // jthread: join RAII al termine naturale della fase di analisi
-        // (pending == 0 ⇒ worker già terminati). Sullo stop-path i worker in
-        // volo vengono detachati per preservare la latenza di stop storica.
-        std::vector<std::jthread> analysisThreads;
+        // jthread (C++20): join RAII al termine naturale della fase di analisi.
+        // Su libc++ Apple (Xcode <= 16) std::jthread non è esposto: si ripiega
+        // su std::thread con join/detach espliciti (stessa semantica).
+#ifdef __cpp_lib_jthread
+        using AnalysisThread = std::jthread;
+#else
+        using AnalysisThread = std::thread;
+#endif
+        std::vector<AnalysisThread> analysisThreads;
         analysisThreads.reserve(seriesList.size());
 
         for (const auto& s : seriesList) {
@@ -110,6 +115,11 @@ namespace Core {
             onStatus("Processo interrotto.");
             return;
         }
+
+        // Percorso normale: pending == 0 ⇒ worker già terminati. Join esplicito
+        // (obbligatorio per std::thread prima del distruttore, no-op per jthread).
+        for (auto& t : analysisThreads)
+            t.join();
         if (onAnalysisDone)
             onAnalysisDone();
 
@@ -130,7 +140,7 @@ namespace Core {
         int downloadWorkers = (std::min)(static_cast<int>(toProcess.size()),
                                          (std::max)(strategy.maxConcurrentTasks * 2, 4));
         for (int i = 0; i < downloadWorkers; ++i) {
-            workers.push_back(std::async(std::launch::async, [&, i]() {
+            workers.push_back(std::async(std::launch::async, [&]() {
                 while (true) {
                     size_t idx = nextIndex.fetch_add(1);
                     if (idx >= toProcess.size() || stopSignal)
