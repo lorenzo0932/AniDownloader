@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { api, posterUrl } from '../api.js';
+  import { api, BASE, posterUrl } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
   import ConfirmModal from './ConfirmModal.svelte';
   import DirectoryBrowser from './DirectoryBrowser.svelte';
@@ -301,6 +301,7 @@
 
 {#if showForm}
   <AddSeriesForm
+    show={showForm}
     {form}
     {editing}
     {series}
