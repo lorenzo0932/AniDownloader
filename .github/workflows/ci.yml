@@ -28,17 +28,11 @@ jobs:
           sudo apt-get update -qq &&
           sudo apt-get install -y -qq
           cmake ninja-build pkg-config
-          libcurl4-openssl-dev libssl-dev
+          libcurl4-openssl-dev aria2 ffmpeg
 
       - name: Install system deps (macOS)
         if: runner.os == 'macOS'
         run: brew install cmake ninja pkg-config
-
-      - name: Install OpenSSL (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          & "C:\vcpkg\vcpkg.exe" install openssl:x64-windows
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -50,6 +44,10 @@ jobs:
 
       - name: Build C++
         run: cmake --build build
+
+      - name: Test C++ (Linux)
+        if: runner.os == 'Linux'
+        run: ctest --test-dir build --output-on-failure
 
       - name: Build frontend
         run: |

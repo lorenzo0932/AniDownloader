@@ -88,9 +88,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(httplib)
 
-# OpenSSL (per AES-256-GCM e PBKDF2)
-find_package(OpenSSL REQUIRED COMPONENTS Crypto)
-
 # Threads
 find_package(Threads REQUIRED)
 
@@ -192,6 +189,33 @@ target_link_libraries(test_core PRIVATE
     Threads::Threads
 )
 add_test(NAME test_core COMMAND test_core)
+
+# ─── TEST MEDIA (pipeline offline: download aria2 + conversione H265) ───
+# Serve un server HTTP locale (httplib): aria2 non supporta file:// in ogni build.
+add_executable(test_media
+    tests/test_media.cpp
+    src/core/MediaProcessor.cpp
+    src/core/MediaProbe.cpp
+    src/core/ProcessUtils.cpp
+    src/scrapers/ScraperUtils.cpp
+    src/core/Logger.cpp
+    src/config/AppConfigManager.cpp
+    src/config/PathHelper.cpp
+    src/core/Series.cpp
+)
+target_include_directories(test_media PRIVATE include)
+target_link_libraries(test_media PRIVATE
+    nlohmann_json::nlohmann_json
+    cpr::cpr
+    httplib::httplib
+    Threads::Threads
+)
+add_test(NAME test_media COMMAND test_media)
+
+# ─── SMOKE E2E (solo Linux: script POSIX con curl/jq/python3) ───
+if(UNIX AND NOT APPLE)
+    add_test(NAME smoke_e2e COMMAND bash ${CMAKE_SOURCE_DIR}/tests/e2e/smoke.sh)
+endif()
 
 # ─── TARGET TRIPLE PER SIDECAR TAURI ───
 if(WIN32)
