@@ -679,12 +679,20 @@ void WebServer::serveEmbeddedFrontend() {
     // Register explicit GET routes for each embedded file (no regex, avoids std::regex thread-safety issues)
     for (const auto& [path, file] : files) {
         if (path == "/index.html") continue;
+        // Gli asset sotto /assets/ hanno nomi hashati da Vite (nuova build =
+        // nuovi nomi): cache lunga immutable. index.html e il resto restano
+        // no-cache così la SPA rilegge sempre l'HTML e poi i nuovi asset.
+        bool immutable = path.rfind("/assets/", 0) == 0;
         m_svr.Get(std::string(path),
-            [ptr = file.data, sz = file.size, mt = std::string(file.mime_type)]
+            [ptr = file.data, sz = file.size, mt = std::string(file.mime_type), immutable]
             (const httplib::Request&, httplib::Response& res) {
                 res.set_content(std::string(reinterpret_cast<const char*>(ptr), sz), mt);
-                res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
-                res.set_header("Pragma", "no-cache");
+                if (immutable) {
+                    res.set_header("Cache-Control", "public, max-age=31536000, immutable");
+                } else {
+                    res.set_header("Cache-Control", "no-cache, no-store, must-revalidate");
+                    res.set_header("Pragma", "no-cache");
+                }
             });
     }
 

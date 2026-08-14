@@ -277,6 +277,25 @@ else
     fail "GET /api/nope non 404"
 fi
 
+echo "[4b/14] cache header asset (feature 3)"
+ASSET_JS=$(curl -s -m 10 "$BASE/" | grep -o 'assets/[a-zA-Z0-9_.-]*\.js' | head -1 || true)
+if [ -n "$ASSET_JS" ]; then
+    ASSET_HDR=$(curl -s -I -m 10 "$BASE/$ASSET_JS" | grep -i '^cache-control:' | tr -d '\r' || true)
+    if echo "$ASSET_HDR" | grep -qi 'max-age=31536000'; then
+        pass "asset hashato ($ASSET_JS) → cache immutable"
+    else
+        fail "asset hashato senza cache lunga: $ASSET_HDR"
+    fi
+else
+    fail "nessun asset JS hashato trovato nella SPA"
+fi
+ROOT_HDR=$(curl -s -I -m 10 "$BASE/" | grep -i '^cache-control:' | tr -d '\r' || true)
+if echo "$ROOT_HDR" | grep -qi 'no-cache'; then
+    pass "index.html → no-cache"
+else
+    fail "index.html senza no-cache: $ROOT_HDR"
+fi
+
 echo "[5/14] /api/status"
 curl -s -m 10 "$BASE/api/status" > "$RPT/status.json"
 if jq -e '.version == "2.0.1"' "$RPT/status.json" >/dev/null; then
