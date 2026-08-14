@@ -1,8 +1,8 @@
 #include "core/Logger.hpp"
 #include <chrono>
+#include <format>
 #include <fstream>
 #include <iomanip>
-#include <sstream>
 
 namespace Core {
 
@@ -30,11 +30,11 @@ namespace Core {
     void Logger::error(const std::string& msg) { write("ERROR", msg); }
 
     void Logger::result(const std::string& seriesName, double dlTime, double convTime) {
-        std::ostringstream oss;
-        oss << std::left << std::setw(45) << seriesName << " | DL: " << std::fixed
-            << std::setprecision(2) << std::setw(8) << dlTime << "s"
-            << " | Conv: " << std::setw(8) << convTime << "s";
-        write("RESULT", oss.str());
+        // Replica 1:1 l'output storico: nome left-aligned 45, tempi left-aligned
+        // larghezza 8 con 2 decimali (lo stato std::left era persistente).
+        std::string msg =
+            std::format("{:<45} | DL: {:<8.2f}s | Conv: {:<8.2f}s", seriesName, dlTime, convTime);
+        write("RESULT", msg);
     }
 
     void Logger::write(const std::string& level, const std::string& msg) {

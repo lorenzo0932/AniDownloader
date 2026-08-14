@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <future>
 #include <random>
@@ -78,8 +79,9 @@ namespace Core {
         // fallisci subito invece di 3 retry di aria2 con URL vuoto.
         if (needsDownload && task.videoUrl.empty()) {
             res.errorMessage = "File sorgente mancante per la conversione locale";
-            Logger::error(series.name + ": file sorgente mancante per la conversione locale (Ep. " +
-                          std::to_string(task.episodeNumber) + ")");
+            Logger::error(std::format(
+                "{}: file sorgente mancante per la conversione locale (Ep. {})", series.name,
+                task.episodeNumber));
             return res;
         }
 
@@ -112,10 +114,9 @@ namespace Core {
                 if (status == 0 || m_stopSignal || attempt == 3)
                     break;
 
-                Logger::warn(series.name + ": Download fallito, tentativo " +
-                             std::to_string(attempt) + "/3, retry tra 3s...");
-                m_progressCallback(series.name,
-                                   "Retry download (" + std::to_string(attempt) + "/3)...");
+                Logger::warn(std::format("{}: Download fallito, tentativo {}/3, retry tra 3s...",
+                                         series.name, attempt));
+                m_progressCallback(series.name, std::format("Retry download ({}/3)...", attempt));
                 std::error_code ec;
                 fs::remove(fullFile, ec);
                 fs::remove(aria2File, ec);
@@ -208,9 +209,10 @@ namespace Core {
                 std::string nicePrefix = "start \"\" /b /low ";
 #endif
 
-                std::string baseArgs = "-c:v libx265 -crf 23 -preset veryfast -threads " +
-                                       std::to_string(strategy.threadsPerFFmpeg) +
-                                       " -x265-params \"hist-scenecut=1\" -c:a copy";
+                std::string baseArgs =
+                    std::format("-c:v libx265 -crf 23 -preset veryfast -threads {} "
+                                "-x265-params \"hist-scenecut=1\" -c:a copy",
+                                strategy.threadsPerFFmpeg);
 
                 fs::path finalMergedInWork = workDir / "merged.mp4";
 
@@ -233,12 +235,10 @@ namespace Core {
                         }
                         m_progressCallback(
                             seriesName,
-                            "Conv " +
-                                std::to_string(
-                                    (std::min)(100,
-                                               (int)((ProcessUtils::parseProgressUs(progP) * 100) /
-                                                     (duration * 1000000)))) +
-                                "%");
+                            std::format(
+                                "Conv {}%",
+                                (std::min)(100, (int)((ProcessUtils::parseProgressUs(progP) * 100) /
+                                                      (duration * 1000000)))));
                     }
                     if (f.get() != 0 || m_stopSignal) {
                         fs::remove_all(workDir);
@@ -298,10 +298,9 @@ namespace Core {
                         }
                         m_progressCallback(
                             seriesName,
-                            "Conv " +
-                                std::to_string(
-                                    (std::min)(100, (int)((cur * 100) / (duration * 1000000)))) +
-                                "%");
+                            std::format("Conv {}%",
+                                        (std::min)(100,
+                                                   (int)((cur * 100) / (duration * 1000000)))));
                         if (allDone)
                             break;
                         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -349,8 +348,8 @@ namespace Core {
                     throw std::runtime_error("Verifica file unito fallita");
 
             } catch (const std::exception& e) {
-                Logger::error(seriesName + ": Tentativo " + std::to_string(attempt) +
-                              " fallito: " + std::string(e.what()));
+                Logger::error(std::format("{}: Tentativo {} fallito: {}", seriesName, attempt,
+                                          e.what()));
                 fs::remove_all(workDir);
                 if (attempt == MAX_RETRIES)
                     break;

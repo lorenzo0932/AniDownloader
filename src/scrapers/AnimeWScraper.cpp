@@ -3,6 +3,7 @@
 #include "scrapers/ScraperUtils.hpp"
 #include <cpr/cpr.h>
 #include <cstdlib>
+#include <format>
 #include <nlohmann/json.hpp>
 #include <regex>
 
@@ -56,8 +57,8 @@ namespace Core {
                                ": errore nel fetch della pagina: " + std::string(e.what()));
         }
 
-        Core::Logger::info(series.name + ": nextNeeded=" + std::to_string(nextNeeded) +
-                           ", html_len=" + std::to_string(html.size()));
+        Core::Logger::info(std::format("{}: nextNeeded={}, html_len={}", series.name, nextNeeded,
+                                       html.size()));
         if (html.empty()) {
             Core::Logger::warn(series.name + ": HTML statico non scaricabile per getCandidates");
             return results;
@@ -80,8 +81,8 @@ namespace Core {
             }
         }
 
-        Core::Logger::info(series.name + ": regex found " + std::to_string(found.size()) +
-                           " episode tags");
+        Core::Logger::info(std::format("{}: regex found {} episode tags", series.name,
+                                       found.size()));
         if (found.empty()) {
             // Sample diagnostico: il primo tag <a> con data-episode-num o, in
             // assenza, il primo <a> con href; fallback primi 300 char dell'HTML.
@@ -104,8 +105,9 @@ namespace Core {
                 if (static_cast<unsigned char>(c) >= 0x20 && c != 0x7F)
                     clean += c;
 
-            Core::Logger::warn(series.name + ": nessun episodio nell'HTML statico (" +
-                               std::to_string(html.size()) + " byte) — sample: " + clean);
+            Core::Logger::warn(std::format("{}: nessun episodio nell'HTML statico ({} byte) — "
+                                           "sample: {}",
+                                           series.name, html.size(), clean));
             return results;
         }
         std::sort(found.begin(), found.end(),
@@ -113,18 +115,19 @@ namespace Core {
 
         for (const auto& ep : found) {
             int local = series.continueSeries ? (ep.n + series.passedEpisodes) : ep.n;
-            Core::Logger::info(series.name + ": candidate[local=" + std::to_string(local) +
-                               "] pageUrl=" + ep.url +
-                               " (da data-episode-num=" + std::to_string(ep.n) + " e href)");
+            Core::Logger::info(std::format(
+                "{}: candidate[local={}] pageUrl={} (da data-episode-num={} e href)", series.name,
+                local, ep.url, ep.n));
             if (local >= nextNeeded) {
                 results.push_back({local, ep.url});
             } else {
-                Core::Logger::info(series.name + ": filtered out Ep." + std::to_string(local) +
-                                   " < nextNeeded=" + std::to_string(nextNeeded));
+                Core::Logger::info(std::format("{}: filtered out Ep.{} < nextNeeded={}",
+                                               series.name, local, nextNeeded));
             }
         }
 
-        Core::Logger::info(series.name + ": final candidates=" + std::to_string(results.size()));
+        Core::Logger::info(
+            std::format("{}: final candidates={}", series.name, results.size()));
         return results;
     }
 
@@ -134,16 +137,15 @@ namespace Core {
         std::vector<DownloadTask> results;
 
         auto candidates = getCandidates(series);
-        Core::Logger::info(series.name + ": getCandidates returned " +
-                           std::to_string(candidates.size()) + " candidates");
+        Core::Logger::info(std::format("{}: getCandidates returned {} candidates", series.name,
+                                       candidates.size()));
         if (candidates.empty()) {
             Core::Logger::warn(series.name + ": getCandidates empty, skipping");
             return results;
         }
 
         if (progressCb)
-            progressCb("Analisi: " + std::to_string(candidates.size()) +
-                       " episodi da verificare...");
+            progressCb(std::format("Analisi: {} episodi da verificare...", candidates.size()));
 
         cpr::Header apiHeaders = {{"User-Agent", ScraperUtils::platformUserAgent()},
                                   {"Referer", playerApiBase() + "/"}};
@@ -156,8 +158,8 @@ namespace Core {
                 break;
             checked++;
             if (progressCb)
-                progressCb("Analisi: verifica episodio " + std::to_string(checked) + "/" +
-                           std::to_string(candidates.size()) + "...");
+                progressCb(std::format("Analisi: verifica episodio {}/{}...", checked,
+                                       candidates.size()));
 
             std::string episodeId = extractEpisodeId(candidate.episodeUrl);
             std::string apiUrl = episodeInfoUrl() + "?id=" + episodeId + "&alt=1";
@@ -173,22 +175,23 @@ namespace Core {
                     }
                 } else {
                     Core::Logger::warn(
-                        series.name + ": Ep." + std::to_string(candidate.episodeNumber) +
-                        " - API episodio fallita (status " + std::to_string(r.status_code) + ")");
+                        std::format("{}: Ep.{} - API episodio fallita (status {})", series.name,
+                                    candidate.episodeNumber, r.status_code));
                 }
             } catch (const std::exception& e) {
-                Core::Logger::warn(series.name + ": Ep." + std::to_string(candidate.episodeNumber) +
-                                   " - errore API episodio: " + std::string(e.what()));
+                Core::Logger::warn(std::format("{}: Ep.{} - errore API episodio: {}", series.name,
+                                               candidate.episodeNumber, e.what()));
             }
 
             if (grabber.empty()) {
-                Core::Logger::warn(series.name + ": Ep." + std::to_string(candidate.episodeNumber) +
-                                   " - nessun URL video restituito dall'API");
+                Core::Logger::warn(std::format("{}: Ep.{} - nessun URL video restituito dall'API",
+                                               series.name, candidate.episodeNumber));
                 continue;
             }
 
-            Core::Logger::info(series.name + ": verifica episodio completata -> [episodeNumber=" +
-                               std::to_string(candidate.episodeNumber) + "] videoUrl=" + grabber);
+            Core::Logger::info(
+                std::format("{}: verifica episodio completata -> [episodeNumber={}] videoUrl={}",
+                            series.name, candidate.episodeNumber, grabber));
 
             DownloadTask task;
             task.shouldProcess = true;
@@ -198,8 +201,8 @@ namespace Core {
             results.push_back(task);
         }
 
-        Core::Logger::info(series.name + ": planSeriesTask complete, returning " +
-                           std::to_string(results.size()) + " tasks");
+        Core::Logger::info(std::format("{}: planSeriesTask complete, returning {} tasks",
+                                       series.name, results.size()));
         return results;
     }
 

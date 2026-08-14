@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -109,7 +110,7 @@ namespace Core {
             return a.first.isHighPriority > b.first.isHighPriority;
         });
 
-        onStatus("Inizio elaborazione di " + std::to_string(toProcess.size()) + " serie...");
+        onStatus(std::format("Inizio elaborazione di {} serie...", toProcess.size()));
         auto strategy = m_config.getExecutionStrategy(toProcess.size(), burstMode);
 
         std::atomic<size_t> nextIndex(0);

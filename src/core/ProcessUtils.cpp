@@ -4,11 +4,9 @@
 #include <windows.h>
 #endif
 #include <cstdio>
+#include <format>
 #include <fstream>
-#include <iomanip>
-#include <locale>
 #include <memory>
-#include <sstream>
 #ifndef _WIN32
 #include <signal.h>
 #include <sys/poll.h>
@@ -163,10 +161,9 @@ namespace Core {
         }
 
         std::string formatFloat(double value, int precision) {
-            std::ostringstream oss;
-            oss.imbue(std::locale::classic());
-            oss << std::fixed << std::setprecision(precision) << value;
-            return oss.str();
+            // Locale C implicito in std::format: nessun separatore migliaia,
+            // stesso arrotondamento (half-to-even) dello storico.
+            return std::format("{:.{}f}", value, precision);
         }
 
     } // namespace ProcessUtils

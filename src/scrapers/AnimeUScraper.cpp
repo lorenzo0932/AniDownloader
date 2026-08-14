@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cpr/cpr.h>
+#include <format>
 #include <regex>
 #include <thread>
 
@@ -45,8 +46,8 @@ namespace Core {
                 cpr::Url{series.seriesPageUrl}, {{"User-Agent", ScraperUtils::platformUserAgent()}},
                 3, 2000);
             if (seriesPageResp.status_code != 200) {
-                Logger::warn(series.name + ": fetch pagina serie fallito (status " +
-                             std::to_string(seriesPageResp.status_code) + ")");
+                Logger::warn(std::format("{}: fetch pagina serie fallito (status {})", series.name,
+                                         seriesPageResp.status_code));
                 return results;
             }
             if (seriesPageResp.text.empty()) {
@@ -72,9 +73,9 @@ namespace Core {
             }
 
             if (eps.empty()) {
-                Logger::warn(series.name + ": HTML scaricato (" +
-                             std::to_string(seriesPageResp.text.size()) +
-                             " byte) ma 0 episodi: markup cambiato?");
+                Logger::warn(std::format("{}: HTML scaricato ({} byte) ma 0 episodi: markup "
+                                         "cambiato?",
+                                         series.name, seriesPageResp.text.size()));
                 return results;
             }
             std::sort(eps.begin(), eps.end(), [](const Ep& a, const Ep& b) { return a.n < b.n; });
@@ -86,7 +87,7 @@ namespace Core {
                     totalToCheck++;
             }
             if (progressCb)
-                progressCb("Analisi: " + std::to_string(totalToCheck) + " episodi da verificare");
+                progressCb(std::format("Analisi: {} episodi da verificare", totalToCheck));
 
             size_t checked = 0;
             for (const auto& ep : eps) {
@@ -94,23 +95,23 @@ namespace Core {
                 if (local >= nextNeeded) {
                     checked++;
                     if (progressCb)
-                        progressCb("Analisi: verifica episodio " + std::to_string(checked) + "/" +
-                                   std::to_string(totalToCheck) + "...");
+                        progressCb(std::format("Analisi: verifica episodio {}/{}...", checked,
+                                               totalToCheck));
                     cpr::Response epPage = ScraperUtils::httpGetWithRetry(
                         cpr::Url{resolveUrl(series.seriesPageUrl, ep.u)},
                         {{"User-Agent", ScraperUtils::platformUserAgent()}}, 3, 2000);
                     if (epPage.status_code != 200) {
-                        Logger::warn(series.name + ": Ep " + std::to_string(ep.n) +
-                                     " - fetch pagina episodio fallito (status " +
-                                     std::to_string(epPage.status_code) + ")");
+                        Logger::warn(std::format("{}: Ep {} - fetch pagina episodio fallito "
+                                                 "(status {})",
+                                                 series.name, ep.n, epPage.status_code));
                         continue;
                     }
 
                     std::regex iframeRegex(R"raw(<iframe[^>]*id="embed"[^>]*src="([^"]+)")raw");
                     std::smatch iframeMatch;
                     if (!std::regex_search(epPage.text, iframeMatch, iframeRegex)) {
-                        Logger::warn(series.name + ": Ep " + std::to_string(ep.n) +
-                                     " - iframe non trovato");
+                        Logger::warn(std::format("{}: Ep {} - iframe non trovato", series.name,
+                                                 ep.n));
                         continue;
                     }
 
@@ -120,17 +121,16 @@ namespace Core {
                         cpr::Url{iframeUrl}, {{"User-Agent", ScraperUtils::platformUserAgent()}}, 3,
                         2000);
                     if (iframePage.status_code != 200) {
-                        Logger::warn(series.name + ": Ep " + std::to_string(ep.n) +
-                                     " - fetch iframe fallito (status " +
-                                     std::to_string(iframePage.status_code) + ")");
+                        Logger::warn(std::format("{}: Ep {} - fetch iframe fallito (status {})",
+                                                 series.name, ep.n, iframePage.status_code));
                         continue;
                     }
 
                     std::regex dlRegex(R"raw(window\.downloadUrl\s*=\s*"([^"]+)")raw");
                     std::smatch dlMatch;
                     if (!std::regex_search(iframePage.text, dlMatch, dlRegex)) {
-                        Logger::warn(series.name + ": Ep " + std::to_string(ep.n) +
-                                     " - download URL non trovato");
+                        Logger::warn(std::format("{}: Ep {} - download URL non trovato",
+                                                 series.name, ep.n));
                         continue;
                     }
 
@@ -138,7 +138,7 @@ namespace Core {
                     task.videoUrl = dlMatch[1].str();
                     task.episodeNumber = local;
                     task.shouldProcess = true;
-                    task.fileName = series.name + "_Ep_" + std::to_string(local) + ".mp4";
+                    task.fileName = std::format("{}_Ep_{}.mp4", series.name, local);
                     results.push_back(task);
                 }
             }

@@ -1,6 +1,7 @@
 #include "core/UpdateChecker.hpp"
 #include "core/Logger.hpp"
 #include <cpr/cpr.h>
+#include <format>
 #include <nlohmann/json.hpp>
 #include <regex>
 #include <thread>
@@ -16,8 +17,8 @@ namespace Core {
                     cpr::Header{{"Accept", "application/vnd.github.v3+json"}}, cpr::Timeout{10000});
 
                 if (r.status_code != 200) {
-                    Logger::warn("Controllo aggiornamenti fallito (HTTP " +
-                                 std::to_string(r.status_code) + ")");
+                    Logger::warn(std::format("Controllo aggiornamenti fallito (HTTP {})",
+                                             r.status_code));
                     return;
                 }
 

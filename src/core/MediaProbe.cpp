@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <format>
 
 namespace fs = std::filesystem;
 
@@ -138,13 +139,12 @@ namespace Core {
             int status = ProcessUtils::runCommand(verifyCmd, stopSignal, nullptr);
 
             if (status != 0) {
-                Logger::error(filePath +
-                              ": Verifica fallita: rilevata corruzione del container o pacchetti "
-                              "invalidi (exit status " +
-                              std::to_string(status) + ")");
+                Logger::error(std::format(
+                    "{}: Verifica fallita: rilevata corruzione del container o pacchetti "
+                    "invalidi (exit status {})",
+                    filePath, status));
                 return false;
             }
-
             return true;
         }
 

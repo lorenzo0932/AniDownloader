@@ -4,7 +4,7 @@
 #include <cpr/cpr.h>
 #include <cstdlib>
 #include <filesystem>
-#include <iomanip>
+#include <format>
 #include <regex>
 #include <thread>
 
@@ -144,9 +144,7 @@ namespace Core {
         else
             root = fs::path(urlFile).stem().string();
 
-        std::ostringstream ss;
-        ss << std::setw(2) << std::setfill('0') << epNum;
-        std::string epStr = ss.str();
+        std::string epStr = std::format("{:02}", epNum);
 
         static const std::regex suffixRegex(R"raw((_Ep_.*))raw", std::regex_constants::icase);
         if (std::regex_search(urlFile, m, suffixRegex)) {
@@ -171,16 +169,16 @@ namespace Core {
                     return r;
                 }
                 lastResponse = r;
-                Core::Logger::warn("HTTP GET fallito (status " + std::to_string(r.status_code) +
-                                   "), tentativo " + std::to_string(attempt) + "/" +
-                                   std::to_string(maxRetries));
+                Core::Logger::warn(
+                    std::format("HTTP GET fallito (status {}), tentativo {}/{}", r.status_code,
+                                attempt, maxRetries));
             } catch (const std::exception& e) {
                 lastResponse = cpr::Response{};
                 lastResponse.status_code = 0;
                 if (attempt == maxRetries)
                     return lastResponse;
-                Core::Logger::warn("HTTP GET eccezione: " + std::string(e.what()) + ", tentativo " +
-                                   std::to_string(attempt) + "/" + std::to_string(maxRetries));
+                Core::Logger::warn(std::format("HTTP GET eccezione: {}, tentativo {}/{}", e.what(),
+                                                attempt, maxRetries));
             }
             int delay = retryDelayMs * (1 << (attempt - 1)); // exponential backoff
             std::this_thread::sleep_for(std::chrono::milliseconds(delay));

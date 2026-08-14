@@ -13,6 +13,7 @@
 #include <chrono>
 #include <ctime>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <regex>
@@ -651,8 +652,8 @@ namespace Web {
                 }
 #else
             DWORD myPid = GetCurrentProcessId();
-            std::string killCmd = "taskkill /F /FI \"PPID eq " + std::to_string(myPid) +
-                "\" /T >nul 2>&1";
+            std::string killCmd =
+                std::format("taskkill /F /FI \"PPID eq {}\" /T >nul 2>&1", myPid);
             std::system(killCmd.c_str());
 #endif
 
@@ -767,8 +768,9 @@ namespace Web {
             }
         });
 
-        Core::Logger::info("Frontend: embedded (" + std::to_string(files.size()) + " files, " +
-                           std::to_string(files.find("/index.html")->second.size) + " bytes)");
+        Core::Logger::info(
+            std::format("Frontend: embedded ({} files, {} bytes)", files.size(),
+                        files.find("/index.html")->second.size));
     }
 
     bool WebServer::start() {
@@ -784,17 +786,17 @@ namespace Web {
             }
             actualPort = m_port + i + 1;
             if (i == maxAttempts - 1) {
-                Core::Logger::error("No available port after " + std::to_string(maxAttempts) +
-                                    " attempts");
+                Core::Logger::error(std::format("No available port after {} attempts",
+                                                maxAttempts));
                 return false;
             }
         }
 
         auto lanIp = getLanIp();
-        Core::Logger::info("Web server listening on port " + std::to_string(m_port));
-        Core::Logger::info("Local:  http://localhost:" + std::to_string(m_port));
+        Core::Logger::info(std::format("Web server listening on port {}", m_port));
+        Core::Logger::info(std::format("Local:  http://localhost:{}", m_port));
         if (lanIp != "0.0.0.0" && lanIp != "127.0.0.1") {
-            Core::Logger::info("LAN:    http://" + lanIp + ":" + std::to_string(m_port));
+            Core::Logger::info(std::format("LAN:    http://{}:{}", lanIp, m_port));
         }
 
         m_svr.listen_after_bind();

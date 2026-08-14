@@ -7,6 +7,7 @@
 #include "scrapers/ScraperUtils.hpp"
 #include <algorithm>
 #include <filesystem>
+#include <format>
 
 namespace fs = std::filesystem;
 
@@ -76,9 +77,9 @@ namespace Core {
                             conv.videoUrl = "";
 
                             Core::Logger::info(
-                                "Serie " + series.name +
-                                " in pari. Pianifico conversione locale H265 per Ep. " +
-                                std::to_string(ep.number));
+                                std::format("Serie {} in pari. Pianifico conversione locale H265 "
+                                            "per Ep. {}",
+                                            series.name, ep.number));
                             tasks.push_back(conv);
                         }
                     }
