@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <chrono>
 #include <ctime>
+#include <thread>
 #include <filesystem>
 #include <stdexcept>
 #include <nlohmann/json.hpp>
@@ -81,8 +82,11 @@ WebServer::WebServer(Config::AppConfigManager& configManager, int port)
         }())
 {
     // Ogni client SSE occupa un thread del pool per l'intera connessione:
-    // un pool più grande evita che poche tab esauriscano le API.
-    m_svr.new_task_queue = [] { return new httplib::ThreadPool(32); };
+    // pool dinamico proporzionale alla macchina (coerente con lo stile del
+    // resto del codice, es. getExecutionStrategy), minimo garantito 16.
+    // Il default httplib è max(8, hw-1): qui hw*2 dà headroom per gli SSE.
+    auto hw = std::thread::hardware_concurrency();
+    m_svr.new_task_queue = [hw] { return new httplib::ThreadPool((std::max)(16u, hw * 2)); };
 }
 
 WebServer::~WebServer() {
