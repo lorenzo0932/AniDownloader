@@ -29,12 +29,19 @@ namespace Core {
         auto result = std::make_shared<PlanningResult>();
         auto pending = std::make_shared<std::atomic<int>>(0);
 
+        // jthread: join RAII al termine naturale della fase di analisi
+        // (pending == 0 ⇒ worker già terminati). Sullo stop-path i worker in
+        // volo vengono detachati per preservare la latenza di stop storica.
+        std::vector<std::jthread> analysisThreads;
+        analysisThreads.reserve(seriesList.size());
+
         for (const auto& s : seriesList) {
             if (stopSignal)
                 break;
             (*pending)++;
 
-            std::thread([&stopSignal, result, pending, s, &onProgress, &onTaskSkipped]() {
+            analysisThreads.emplace_back([&stopSignal, result, pending, s, &onProgress,
+                                          &onTaskSkipped]() {
                 if (stopSignal) {
                     (*pending)--;
                     return;
@@ -75,7 +82,7 @@ namespace Core {
                 }
 
                 (*pending)--;
-            }).detach();
+            });
         }
 
         while (*pending > 0 && !stopSignal) {
@@ -95,6 +102,11 @@ namespace Core {
         }
 
         if (stopSignal) {
+            // Latenza di stop storica: non attendiamo i worker in volo (I/O di
+            // rete in corso = decine di secondi), li detachiamo e si fermano
+            // da soli al prossimo check di stopSignal.
+            for (auto& t : analysisThreads)
+                t.detach();
             onStatus("Processo interrotto.");
             return;
         }
