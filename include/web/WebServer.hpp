@@ -50,6 +50,11 @@ private:
     std::atomic<uint64_t> m_sseCounter{0};
 
     void setupRoutes();
+    void setupInfoRoutes();
+    void setupSeriesRoutes();
+    void setupBrowseRoutes();
+    void setupConfigRoutes();
+    void setupDownloadRoutes();
 
     nlohmann::json loadConfigJson();
     void saveConfigJson(const nlohmann::json& data);

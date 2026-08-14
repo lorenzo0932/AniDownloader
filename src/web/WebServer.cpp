@@ -220,6 +220,20 @@ void WebServer::setupRoutes() {
         res.status = 204;
     });
 
+    // Stesso ordine di registrazione del routing monolitico, raggruppato per
+    // dominio (routes distinte: l'ordine tra gruppi non altera il matching).
+    setupInfoRoutes();
+    setupSeriesRoutes();
+    setupBrowseRoutes();
+    setupConfigRoutes();
+    setupDownloadRoutes();
+
+    // ---- EMBEDDED FRONTEND ----
+    serveEmbeddedFrontend();
+}
+
+// ---- INFO ----
+void WebServer::setupInfoRoutes() {
     // ---- STATUS ----
     m_svr.Get("/api/status", [this](const httplib::Request&, httplib::Response& res) {
         sendJson(res, {
@@ -230,6 +244,30 @@ void WebServer::setupRoutes() {
         });
     });
 
+    // ---- LOG ----
+    m_svr.Get("/api/log", [this](const httplib::Request& req, httplib::Response& res) {
+    int lines = 100;
+    try {
+        if (req.has_param("lines"))
+            lines = std::stoi(req.get_param_value("lines"));
+    } catch (const std::exception&) {
+        Core::Logger::warn("/api/log: parametro 'lines' non valido, uso default 100");
+    }
+    lines = std::clamp(lines, 10, 5000);
+
+        // Il log è scritto su log_file_path della config: leggere lo stesso file,
+        // non il default di PathHelper (divergevano se il path è personalizzato).
+        auto logPath = m_configManager.get<std::string>("log_file_path",
+                            Config::PathHelper::getLogFilePath().string());
+        auto allLines = Core::getRecentLines(logPath, lines);
+        nlohmann::json out = nlohmann::json::array();
+        for (auto& l : allLines) out.push_back(l);
+        sendJson(res, successJson({{"lines", out}}));
+    });
+}
+
+// ---- SERIES ----
+void WebServer::setupSeriesRoutes() {
     // ---- SERIES ----
     m_svr.Get("/api/series", [this](const httplib::Request& req, httplib::Response& res) {
         try {
@@ -328,6 +366,44 @@ void WebServer::setupRoutes() {
         }
     });
 
+    // ---- POSTER (legacy, index-based) ----
+    m_svr.Get(R"(/api/series/(\d+)/poster)", [this](const httplib::Request& req, httplib::Response& res) {
+        try {
+            auto idx = std::stoi(req.matches[1]);
+            auto vec = m_seriesRepository.loadSeriesData();
+            if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
+                sendJson(res, errorJson("Index out of range"), 404);
+                return;
+            }
+            if (vec[idx].path.empty()) throw std::runtime_error("no path");
+
+            auto posterPath = Core::findPosterPath(vec[idx].path);
+            if (!posterPath.empty()) {
+                std::ifstream f(posterPath, std::ios::binary | std::ios::ate);
+                auto size = f.tellg();
+                f.seekg(0);
+                std::string content(size, '\0');
+                f.read(content.data(), size);
+                res.set_header("Access-Control-Allow-Origin", corsOrigin());
+                res.set_content(content, "image/jpeg");
+            } else {
+                std::string svg = R"(<svg xmlns="http://www.w3.org/2000/svg" width="220" height="320">)"
+                    R"(<rect width="220" height="320" fill="#2a2a2a" rx="8"/>)"
+                    R"(<text x="110" y="160" fill="#666" font-family="sans-serif" font-size="14")"
+                    R"( text-anchor="middle" dominant-baseline="middle">Locandina</text>)"
+                    R"(<text x="110" y="180" fill="#666" font-family="sans-serif" font-size="12")"
+                    R"( text-anchor="middle" dominant-baseline="middle">non trovata</text></svg>)";
+                res.set_header("Access-Control-Allow-Origin", corsOrigin());
+                res.set_content(svg, "image/svg+xml");
+            }
+        } catch (...) {
+            sendJson(res, errorJson("Poster not available"), 404);
+        }
+    });
+}
+
+// ---- BROWSE ----
+void WebServer::setupBrowseRoutes() {
     // ---- BROWSE ----
     m_svr.Get("/api/browse", [this](const httplib::Request& req, httplib::Response& res) {
         try {
@@ -467,41 +543,10 @@ void WebServer::setupRoutes() {
         }
     });
 
-    // ---- POSTER (legacy, index-based) ----
-    m_svr.Get(R"(/api/series/(\d+)/poster)", [this](const httplib::Request& req, httplib::Response& res) {
-        try {
-            auto idx = std::stoi(req.matches[1]);
-            auto vec = m_seriesRepository.loadSeriesData();
-            if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
-                sendJson(res, errorJson("Index out of range"), 404);
-                return;
-            }
-            if (vec[idx].path.empty()) throw std::runtime_error("no path");
+}
 
-            auto posterPath = Core::findPosterPath(vec[idx].path);
-            if (!posterPath.empty()) {
-                std::ifstream f(posterPath, std::ios::binary | std::ios::ate);
-                auto size = f.tellg();
-                f.seekg(0);
-                std::string content(size, '\0');
-                f.read(content.data(), size);
-                res.set_header("Access-Control-Allow-Origin", corsOrigin());
-                res.set_content(content, "image/jpeg");
-            } else {
-                std::string svg = R"(<svg xmlns="http://www.w3.org/2000/svg" width="220" height="320">)"
-                    R"(<rect width="220" height="320" fill="#2a2a2a" rx="8"/>)"
-                    R"(<text x="110" y="160" fill="#666" font-family="sans-serif" font-size="14")"
-                    R"( text-anchor="middle" dominant-baseline="middle">Locandina</text>)"
-                    R"(<text x="110" y="180" fill="#666" font-family="sans-serif" font-size="12")"
-                    R"( text-anchor="middle" dominant-baseline="middle">non trovata</text></svg>)";
-                res.set_header("Access-Control-Allow-Origin", corsOrigin());
-                res.set_content(svg, "image/svg+xml");
-            }
-        } catch (...) {
-            sendJson(res, errorJson("Poster not available"), 404);
-        }
-    });
-
+// ---- CONFIG ----
+void WebServer::setupConfigRoutes() {
     // ---- CONFIG ----
     m_svr.Get("/api/config", [this](const httplib::Request&, httplib::Response& res) {
         try {
@@ -523,7 +568,10 @@ void WebServer::setupRoutes() {
             sendJson(res, errorJson("Invalid config data"), 400);
         }
     });
+}
 
+// ---- DOWNLOAD ----
+void WebServer::setupDownloadRoutes() {
     // ---- DOWNLOAD ----
     m_svr.Post("/api/download/start", [this](const httplib::Request& req, httplib::Response& res) {
         // Claim atomico: evita la race check-then-act (due POST ravvicinate avviavano
@@ -634,30 +682,6 @@ void WebServer::setupRoutes() {
             }
         );
     });
-
-    // ---- LOG ----
-    m_svr.Get("/api/log", [this](const httplib::Request& req, httplib::Response& res) {
-    int lines = 100;
-    try {
-        if (req.has_param("lines"))
-            lines = std::stoi(req.get_param_value("lines"));
-    } catch (const std::exception&) {
-        Core::Logger::warn("/api/log: parametro 'lines' non valido, uso default 100");
-    }
-    lines = std::clamp(lines, 10, 5000);
-
-        // Il log è scritto su log_file_path della config: leggere lo stesso file,
-        // non il default di PathHelper (divergevano se il path è personalizzato).
-        auto logPath = m_configManager.get<std::string>("log_file_path",
-                            Config::PathHelper::getLogFilePath().string());
-        auto allLines = Core::getRecentLines(logPath, lines);
-        nlohmann::json out = nlohmann::json::array();
-        for (auto& l : allLines) out.push_back(l);
-        sendJson(res, successJson({{"lines", out}}));
-    });
-
-    // ---- EMBEDDED FRONTEND ----
-    serveEmbeddedFrontend();
 }
 
 void WebServer::serveEmbeddedFrontend() {
