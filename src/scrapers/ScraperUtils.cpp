@@ -170,16 +170,15 @@ namespace Core {
                     return r;
                 }
                 lastResponse = r;
-                Core::Logger::warn(
-                    std::format("HTTP GET fallito (status {}), tentativo {}/{}", r.status_code,
-                                attempt, maxRetries));
+                Core::Logger::warn(std::format("HTTP GET fallito (status {}), tentativo {}/{}",
+                                               r.status_code, attempt, maxRetries));
             } catch (const std::exception& e) {
                 lastResponse = cpr::Response{};
                 lastResponse.status_code = 0;
                 if (attempt == maxRetries)
                     return lastResponse;
                 Core::Logger::warn(std::format("HTTP GET eccezione: {}, tentativo {}/{}", e.what(),
-                                                attempt, maxRetries));
+                                               attempt, maxRetries));
             }
             int delay = retryDelayMs * (1 << (attempt - 1)); // exponential backoff
             std::this_thread::sleep_for(std::chrono::milliseconds(delay));

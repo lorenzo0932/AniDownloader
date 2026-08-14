@@ -40,49 +40,49 @@ namespace Core {
                 break;
             (*pending)++;
 
-            analysisThreads.emplace_back([&stopSignal, result, pending, s, &onProgress,
-                                          &onTaskSkipped]() {
-                if (stopSignal) {
-                    (*pending)--;
-                    return;
-                }
+            analysisThreads.emplace_back(
+                [&stopSignal, result, pending, s, &onProgress, &onTaskSkipped]() {
+                    if (stopSignal) {
+                        (*pending)--;
+                        return;
+                    }
 
-                Series seriesCopy = s;
-                seriesCopy.path = ScraperUtils::expandTilde(s.path);
-                auto tasks = PlanningService::planSingleSeries(
-                    seriesCopy, [&onProgress, name = s.name](const std::string& stage) {
-                        if (onProgress)
-                            onProgress(name, 0, stage);
-                    });
+                    Series seriesCopy = s;
+                    seriesCopy.path = ScraperUtils::expandTilde(s.path);
+                    auto tasks = PlanningService::planSingleSeries(
+                        seriesCopy, [&onProgress, name = s.name](const std::string& stage) {
+                            if (onProgress)
+                                onProgress(name, 0, stage);
+                        });
 
-                if (stopSignal) {
-                    (*pending)--;
-                    return;
-                }
+                    if (stopSignal) {
+                        (*pending)--;
+                        return;
+                    }
 
-                bool hasWork = false;
-                bool anyError = false;
+                    bool hasWork = false;
+                    bool anyError = false;
 
-                {
-                    std::lock_guard<std::mutex> lock(result->mutex);
-                    for (const auto& t : tasks) {
-                        if (t.shouldProcess) {
-                            result->tasks.push_back({seriesCopy, t});
-                            hasWork = true;
-                        } else if (!t.errorMessage.empty()) {
-                            result->errors.push_back(s.name + ": " + t.errorMessage);
-                            anyError = true;
+                    {
+                        std::lock_guard<std::mutex> lock(result->mutex);
+                        for (const auto& t : tasks) {
+                            if (t.shouldProcess) {
+                                result->tasks.push_back({seriesCopy, t});
+                                hasWork = true;
+                            } else if (!t.errorMessage.empty()) {
+                                result->errors.push_back(s.name + ": " + t.errorMessage);
+                                anyError = true;
+                            }
                         }
                     }
-                }
 
-                if (!hasWork && !anyError) {
-                    if (onTaskSkipped)
-                        onTaskSkipped(s.name, "Già aggiornata");
-                }
+                    if (!hasWork && !anyError) {
+                        if (onTaskSkipped)
+                            onTaskSkipped(s.name, "Già aggiornata");
+                    }
 
-                (*pending)--;
-            });
+                    (*pending)--;
+                });
         }
 
         while (*pending > 0 && !stopSignal) {

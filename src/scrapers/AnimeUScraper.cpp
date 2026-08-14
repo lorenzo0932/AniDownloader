@@ -110,8 +110,8 @@ namespace Core {
                     std::regex iframeRegex(R"raw(<iframe[^>]*id="embed"[^>]*src="([^"]+)")raw");
                     std::smatch iframeMatch;
                     if (!std::regex_search(epPage.text, iframeMatch, iframeRegex)) {
-                        Logger::warn(std::format("{}: Ep {} - iframe non trovato", series.name,
-                                                 ep.n));
+                        Logger::warn(
+                            std::format("{}: Ep {} - iframe non trovato", series.name, ep.n));
                         continue;
                     }
 
@@ -129,8 +129,8 @@ namespace Core {
                     std::regex dlRegex(R"raw(window\.downloadUrl\s*=\s*"([^"]+)")raw");
                     std::smatch dlMatch;
                     if (!std::regex_search(iframePage.text, dlMatch, dlRegex)) {
-                        Logger::warn(std::format("{}: Ep {} - download URL non trovato",
-                                                 series.name, ep.n));
+                        Logger::warn(
+                            std::format("{}: Ep {} - download URL non trovato", series.name, ep.n));
                         continue;
                     }
 

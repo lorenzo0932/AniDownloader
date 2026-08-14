@@ -17,8 +17,8 @@ namespace Core {
                     cpr::Header{{"Accept", "application/vnd.github.v3+json"}}, cpr::Timeout{10000});
 
                 if (r.status_code != 200) {
-                    Logger::warn(std::format("Controllo aggiornamenti fallito (HTTP {})",
-                                             r.status_code));
+                    Logger::warn(
+                        std::format("Controllo aggiornamenti fallito (HTTP {})", r.status_code));
                     return;
                 }
 

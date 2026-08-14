@@ -79,9 +79,9 @@ namespace Core {
         // fallisci subito invece di 3 retry di aria2 con URL vuoto.
         if (needsDownload && task.videoUrl.empty()) {
             res.errorMessage = "File sorgente mancante per la conversione locale";
-            Logger::error(std::format(
-                "{}: file sorgente mancante per la conversione locale (Ep. {})", series.name,
-                task.episodeNumber));
+            Logger::error(
+                std::format("{}: file sorgente mancante per la conversione locale (Ep. {})",
+                            series.name, task.episodeNumber));
             return res;
         }
 
@@ -298,9 +298,8 @@ namespace Core {
                         }
                         m_progressCallback(
                             seriesName,
-                            std::format("Conv {}%",
-                                        (std::min)(100,
-                                                   (int)((cur * 100) / (duration * 1000000)))));
+                            std::format("Conv {}%", (std::min)(100, (int)((cur * 100) /
+                                                                          (duration * 1000000)))));
                         if (allDone)
                             break;
                         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -348,8 +347,8 @@ namespace Core {
                     throw std::runtime_error("Verifica file unito fallita");
 
             } catch (const std::exception& e) {
-                Logger::error(std::format("{}: Tentativo {} fallito: {}", seriesName, attempt,
-                                          e.what()));
+                Logger::error(
+                    std::format("{}: Tentativo {} fallito: {}", seriesName, attempt, e.what()));
                 fs::remove_all(workDir);
                 if (attempt == MAX_RETRIES)
                     break;

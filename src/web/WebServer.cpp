@@ -768,9 +768,8 @@ namespace Web {
             }
         });
 
-        Core::Logger::info(
-            std::format("Frontend: embedded ({} files, {} bytes)", files.size(),
-                        files.find("/index.html")->second.size));
+        Core::Logger::info(std::format("Frontend: embedded ({} files, {} bytes)", files.size(),
+                                       files.find("/index.html")->second.size));
     }
 
     bool WebServer::start() {
@@ -786,8 +785,8 @@ namespace Web {
             }
             actualPort = m_port + i + 1;
             if (i == maxAttempts - 1) {
-                Core::Logger::error(std::format("No available port after {} attempts",
-                                                maxAttempts));
+                Core::Logger::error(
+                    std::format("No available port after {} attempts", maxAttempts));
                 return false;
             }
         }
