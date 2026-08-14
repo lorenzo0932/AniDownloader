@@ -1,9 +1,37 @@
 #include "core/SeriesRepository.hpp"
 #include "core/Logger.hpp"
 #include <fstream>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 
 namespace Core {
+
+namespace {
+
+// Scrittura JSON atomica (tmp nella stessa dir + rename; fallback copy su
+// Windows dove rename fallisce con target esistente). Su eccezione rimuove il
+// tmp: il chiamante decide se loggare.
+void writeJsonAtomic(const std::filesystem::path& target, const nlohmann::json& data, int indent) {
+    if (target.has_parent_path()) {
+        std::filesystem::create_directories(target.parent_path());
+    }
+    auto tmpPath = target;
+    tmpPath += ".tmp";
+    {
+        std::ofstream f(tmpPath, std::ios::binary | std::ios::trunc);
+        if (!f.is_open()) throw std::runtime_error("Impossibile aprire " + tmpPath.string());
+        f << data.dump(indent);
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmpPath, target, ec);
+    if (ec) {
+        std::filesystem::copy_file(tmpPath, target, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) throw std::runtime_error("copy fallito: " + ec.message());
+        std::filesystem::remove(tmpPath, ec);
+    }
+}
+
+}
 
     SeriesRepository::SeriesRepository(const std::filesystem::path& jsonFilePath)
         : m_jsonFilePath(jsonFilePath) {}
@@ -43,14 +71,10 @@ namespace Core {
 
         try {
             nlohmann::json jsonArray = seriesData;
-            if (m_jsonFilePath.has_parent_path()) {
-                std::filesystem::create_directories(m_jsonFilePath.parent_path());
-            }
-            std::ofstream outFile(m_jsonFilePath);
-            if (outFile.is_open()) {
-                outFile << jsonArray.dump(4);
-                m_cache = seriesData; // Aggiorna la cache solo dopo il successo
-            }
+            // Scrittura atomica (tmp + rename): evita series_data.json corrotto
+            // su crash a metà scrittura.
+            writeJsonAtomic(m_jsonFilePath, jsonArray, 4);
+            m_cache = seriesData; // Aggiorna la cache solo dopo il successo
         } catch (const std::exception& e) {
             Logger::error("Errore salvataggio dati: " + std::string(e.what()));
         }

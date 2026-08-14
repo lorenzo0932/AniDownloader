@@ -16,6 +16,7 @@
 #include <chrono>
 #include <ctime>
 #include <filesystem>
+#include <stdexcept>
 #include <nlohmann/json.hpp>
 
 #ifdef _WIN32
@@ -43,6 +44,31 @@ namespace Web {
 
 // Cap per la coda SSE per client: un client lento non deve far crescere la memoria all'infinito.
 constexpr size_t kMaxSseQueueSize = 500;
+
+namespace {
+
+// Scrittura JSON atomica (tmp nella stessa dir + rename; fallback copy su
+// Windows dove rename fallisce con target esistente). Su eccezione rimuove il
+// tmp: il chiamante decide se loggare.
+void writeJsonAtomic(const std::filesystem::path& target, const nlohmann::json& data, int indent) {
+    std::filesystem::create_directories(target.parent_path());
+    auto tmpPath = target;
+    tmpPath += ".tmp";
+    {
+        std::ofstream f(tmpPath, std::ios::binary | std::ios::trunc);
+        if (!f.is_open()) throw std::runtime_error("Impossibile aprire " + tmpPath.string());
+        f << data.dump(indent);
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmpPath, target, ec);
+    if (ec) {
+        std::filesystem::copy_file(tmpPath, target, std::filesystem::copy_options::overwrite_existing, ec);
+        if (ec) throw std::runtime_error("copy fallito: " + ec.message());
+        std::filesystem::remove(tmpPath, ec);
+    }
+}
+
+}
 
 WebServer::WebServer(Config::AppConfigManager& configManager, int port)
     : m_configManager(configManager)
@@ -106,9 +132,12 @@ nlohmann::json WebServer::loadConfigJson() {
 }
 
 void WebServer::saveConfigJson(const nlohmann::json& data) {
-    std::filesystem::create_directories(m_configJsonPath.parent_path());
-    std::ofstream f(m_configJsonPath);
-    f << data.dump(2);
+    try {
+        // Scrittura atomica (tmp + rename): evita config corrotto su crash.
+        writeJsonAtomic(m_configJsonPath, data, 2);
+    } catch (const std::exception& e) {
+        Core::Logger::error("Impossibile salvare config web: " + std::string(e.what()));
+    }
 }
 
 // --- SSE ---

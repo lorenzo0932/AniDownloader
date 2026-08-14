@@ -2,12 +2,40 @@
 #include "config/PathHelper.hpp"
 #include "core/Logger.hpp"
 #include <fstream>
+#include <stdexcept>
 #include <thread>
 #include <algorithm>
 #include <cmath>
 
 namespace Config {
 namespace fs = std::filesystem;
+
+namespace {
+
+// Scrittura JSON atomica condivisa dai writer di config.
+// 1. Serializza e scrive su <target>.tmp nella stessa directory (stesso fs).
+// 2. rename(tmp, target): atomico su POSIX.
+// 3. Se rename fallisce (Windows con target esistente): copy_file + rimozione tmp.
+// 4. Su eccezione: rimozione del tmp (il chiamante logga).
+void writeJsonAtomic(const std::filesystem::path& target, const nlohmann::json& data, int indent) {
+    fs::create_directories(target.parent_path());
+    auto tmpPath = target;
+    tmpPath += ".tmp";
+    {
+        std::ofstream f(tmpPath, std::ios::binary | std::ios::trunc);
+        if (!f.is_open()) throw std::runtime_error("Impossibile aprire " + tmpPath.string());
+        f << data.dump(indent);
+    }
+    std::error_code ec;
+    fs::rename(tmpPath, target, ec);
+    if (ec) {
+        fs::copy_file(tmpPath, target, fs::copy_options::overwrite_existing, ec);
+        if (ec) throw std::runtime_error("copy fallito: " + ec.message());
+        fs::remove(tmpPath, ec);
+    }
+}
+
+}
 
 AppConfigManager::AppConfigManager(fs::path configPath) 
     : m_configPath(configPath) {
@@ -56,9 +84,9 @@ void AppConfigManager::loadConfig() {
 
 void AppConfigManager::saveConfig(const nlohmann::json& configData) {
     try {
-        fs::create_directories(m_configPath.parent_path());
-        std::ofstream f(m_configPath);
-        f << configData.dump(4);
+        // Scrittura atomica: tmp nella stessa directory + rename (atomico su
+        // POSIX). Evita file config.json corrotto su crash a metà scrittura.
+        writeJsonAtomic(m_configPath, configData, 4);
     } catch (const std::exception& e) {
         Core::Logger::error("Impossibile salvare config: " + std::string(e.what()));
     }
