@@ -2,9 +2,21 @@ name: CI
 
 on:
   push:
-    branches: [main, dev, feat/*]
+    branches: [main, dev]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'licenses/**'
+      - 'THIRD_PARTY_NOTICES.md'
   pull_request:
     branches: [main, dev]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
