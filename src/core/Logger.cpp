@@ -65,8 +65,7 @@ namespace Core {
             if (s_logStream.is_open()) {
                 auto tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                 s_logStream << "[" << std::put_time(std::localtime(&tt), "%Y-%m-%d %H:%M:%S")
-                            << "] "
-                            << "[" << std::setw(6) << std::left << level << "] " << msg
+                            << "] " << "[" << std::setw(6) << std::left << level << "] " << msg
                             << std::endl;
             }
         } catch (...) {
