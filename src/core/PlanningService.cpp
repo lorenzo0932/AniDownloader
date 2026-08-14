@@ -60,24 +60,24 @@ namespace Core {
                 bool requireH265 = config.get<bool>("convert_to_h265", true);
 
                 if (requireH265) {
-                    bool healthy = false;
-                    std::string codec;
+                    // Unica fonte di verità per la salute del file (stessa di
+                    // MediaProcessor::processTask): la decodifica completa. Un
+                    // file corrotto non deve generare un task di conversione
+                    // bogus che poi fallisce con "File sorgente mancante".
+                    std::atomic<bool> dummyStop{false};
+                    if (MediaProbe::isMediaFileHealthy(ep.path, dummyStop)) {
+                        std::string codec = MediaProbe::getVideoCodec(ep.path, dummyStop);
 
-                    if (fs::exists(ep.path) && fs::file_size(ep.path) >= 1048576) {
-                        std::atomic<bool> dummyStop{false};
-                        codec = MediaProbe::getVideoCodec(ep.path, dummyStop);
-                        healthy = !codec.empty();
-                    }
+                        if (codec != "hevc" && codec != "h265") {
+                            DownloadTask conv;
+                            conv.shouldProcess = true;
+                            conv.episodeNumber = ep.number;
+                            conv.fileName = fs::path(ep.path).filename().string();
+                            conv.videoUrl = "";
 
-                    if (healthy && codec != "hevc" && codec != "h265") {
-                        DownloadTask conv;
-                        conv.shouldProcess = true;
-                        conv.episodeNumber = ep.number;
-                        conv.fileName = fs::path(ep.path).filename().string();
-                        conv.videoUrl = "";
-
-                        Core::Logger::info("Serie " + series.name + " in pari. Pianifico conversione locale H265 per Ep. " + std::to_string(ep.number));
-                        tasks.push_back(conv);
+                            Core::Logger::info("Serie " + series.name + " in pari. Pianifico conversione locale H265 per Ep. " + std::to_string(ep.number));
+                            tasks.push_back(conv);
+                        }
                     }
                 }
             }

@@ -71,11 +71,15 @@ std::string getVideoCodec(const std::string& filePath, std::atomic<bool>& stopSi
             return it->second.codec;
         }
     }
-
     std::string cmd = "ffprobe -v error -select_streams v:0 -show_entries stream=codec_name "
-                      "-of default=noprint_wrappers=1:nokey=1 " + ScraperUtils::Q(filePath);
+                      "-of default=noprint_wrappers=1:nokey=1 "
+                      + ScraperUtils::Q(filePath);
     std::string output;
-    ProcessUtils::runCommand(cmd, stopSignal, [&](const std::string& line) { output += line; });
+    // NB: runCommand fonde stderr in stdout; senza il controllo dell'exit
+    // status il testo d'errore di ffprobe (es. "moov atom not found") veniva
+    // restituito come codec, facendo passare file corrotti come "sani".
+    int status = ProcessUtils::runCommand(cmd, stopSignal, [&](const std::string& line) { output += line; });
+    if (status != 0) output.clear();
 
     output.erase(std::remove(output.begin(), output.end(), '\n'), output.end());
     output.erase(std::remove(output.begin(), output.end(), '\r'), output.end());
