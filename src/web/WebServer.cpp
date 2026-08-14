@@ -68,7 +68,13 @@ std::string WebServer::corsOrigin() { return "*"; }
 void WebServer::sendJson(httplib::Response& res, const nlohmann::json& data, int status) {
     res.status = status;
     res.set_header("Access-Control-Allow-Origin", corsOrigin());
-    res.set_content(data.dump(), "application/json");
+    // Il campo "code" del body deve combaciare con lo status HTTP reale:
+    // molti caller passavano lo status solo a sendJson (errorJson restava a 400).
+    auto body = data;
+    if (body.contains("code") && body["code"] != status) {
+        body["code"] = status;
+    }
+    res.set_content(body.dump(), "application/json");
 }
 
 nlohmann::json WebServer::errorJson(const std::string& message, int code) {
@@ -603,8 +609,11 @@ void WebServer::setupRoutes() {
         } catch (...) {}
         lines = std::clamp(lines, 10, 5000);
 
-        auto logPath = Config::PathHelper::getLogFilePath();
-        auto allLines = Core::getRecentLines(logPath.string(), lines);
+        // Il log è scritto su log_file_path della config: leggere lo stesso file,
+        // non il default di PathHelper (divergevano se il path è personalizzato).
+        auto logPath = m_configManager.get<std::string>("log_file_path",
+                            Config::PathHelper::getLogFilePath().string());
+        auto allLines = Core::getRecentLines(logPath, lines);
         nlohmann::json out = nlohmann::json::array();
         for (auto& l : allLines) out.push_back(l);
         sendJson(res, successJson({{"lines", out}}));
