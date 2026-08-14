@@ -348,7 +348,21 @@ std::vector<EpisodeCandidate> AnimeWScraper::getCandidates(const Series& series)
 
     Core::Logger::info(series.name + ": regex found " + std::to_string(found.size()) + " episode tags");
     if (found.empty()) {
-        Core::Logger::warn(series.name + ": nessun episodio nell'HTML statico");
+        // Sample diagnostico: il primo tag <a> con data-episode-num o, in
+        // assenza, il primo <a> con href; fallback primi 300 char dell'HTML.
+        std::string sample;
+        std::smatch sm;
+        static const std::regex sampleEpRegex(R"raw(<a[^>]*data-episode-num[^>]*>)raw", std::regex_constants::icase);
+        static const std::regex sampleHrefRegex(R"raw(<a[^>]*href[^>]*>)raw", std::regex_constants::icase);
+        if (std::regex_search(html, sm, sampleEpRegex)) sample = sm.str(0);
+        else if (std::regex_search(html, sm, sampleHrefRegex)) sample = sm.str(0);
+        else sample = html.substr(0, 300);
+        if (sample.size() > 300) sample = sample.substr(0, 300);
+        std::string clean;
+        for (char c : sample) if (static_cast<unsigned char>(c) >= 0x20 && c != 0x7F) clean += c;
+
+        Core::Logger::warn(series.name + ": nessun episodio nell'HTML statico (" +
+                           std::to_string(html.size()) + " byte) — sample: " + clean);
         return results;
     }
     std::sort(found.begin(), found.end(), [](const EpData& a, const EpData& b) { return a.n < b.n; });

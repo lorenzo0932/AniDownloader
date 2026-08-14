@@ -41,7 +41,15 @@ std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, st
             {{"User-Agent", ScraperUtils::platformUserAgent()}},
             3, 2000
         );
-        if (seriesPageResp.status_code != 200) return results;
+        if (seriesPageResp.status_code != 200) {
+            Logger::warn(series.name + ": fetch pagina serie fallito (status " +
+                         std::to_string(seriesPageResp.status_code) + ")");
+            return results;
+        }
+        if (seriesPageResp.text.empty()) {
+            Logger::warn(series.name + ": HTML pagina serie vuoto");
+            return results;
+        }
 
         std::regex epRegex(R"raw(class="episode-item"[^>]*href="([^"]+)"[^>]*>.*?(\d+))raw");
 
@@ -56,7 +64,11 @@ std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, st
             eps.push_back({std::stoi(match[2].str()), match[1].str()});
         }
 
-        if (eps.empty()) return results;
+        if (eps.empty()) {
+            Logger::warn(series.name + ": HTML scaricato (" + std::to_string(seriesPageResp.text.size()) +
+                         " byte) ma 0 episodi: markup cambiato?");
+            return results;
+        }
         std::sort(eps.begin(), eps.end(), [](const Ep& a, const Ep& b) { return a.n < b.n; });
 
         size_t totalToCheck = 0;
@@ -77,7 +89,12 @@ std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, st
                     {{"User-Agent", ScraperUtils::platformUserAgent()}},
                     3, 2000
                 );
-                if (epPage.status_code != 200) continue;
+                if (epPage.status_code != 200) {
+                    Logger::warn(series.name + ": Ep " + std::to_string(ep.n) +
+                                 " - fetch pagina episodio fallito (status " +
+                                 std::to_string(epPage.status_code) + ")");
+                    continue;
+                }
 
                 std::regex iframeRegex(R"raw(<iframe[^>]*id="embed"[^>]*src="([^"]+)")raw");
                 std::smatch iframeMatch;
@@ -93,7 +110,12 @@ std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series, st
                     {{"User-Agent", ScraperUtils::platformUserAgent()}},
                     3, 2000
                 );
-                if (iframePage.status_code != 200) continue;
+                if (iframePage.status_code != 200) {
+                    Logger::warn(series.name + ": Ep " + std::to_string(ep.n) +
+                                 " - fetch iframe fallito (status " +
+                                 std::to_string(iframePage.status_code) + ")");
+                    continue;
+                }
 
                 std::regex dlRegex(R"raw(window\.downloadUrl\s*=\s*"([^"]+)")raw");
                 std::smatch dlMatch;
