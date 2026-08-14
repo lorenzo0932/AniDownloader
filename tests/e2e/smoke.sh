@@ -49,6 +49,7 @@ SLOW_PORT=""
 SLOW_PID=""
 WEB_PID=""
 SSE_PID=""
+SCN_PID=""
 
 # Stato della config reale: i test non devono mai toccarla (sandbox XDG).
 REAL_CFG="$HOME/.config/AniDownloader"
@@ -70,6 +71,7 @@ cleanup() {
     fi
     [ -n "$SSE_PID" ] && kill "$SSE_PID" 2>/dev/null || true
     [ -n "$SLOW_PID" ] && kill "$SLOW_PID" 2>/dev/null || true
+    [ -n "$SCN_PID" ] && kill "$SCN_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -300,6 +302,197 @@ else
     fail "fixture server non avviato: flusso statico non testato"
 fi
 kill "$FIX_PID" 2>/dev/null || true
+
+echo "[2c/3] CLI: scenari limite (feature 7)"
+
+# Matrice di scenari limite: serie sintetiche che esercitano i casi più
+# bug-prone (file corrotto, conversione h264 attiva/disattiva, offset passati,
+# lastDownloaded con media vuota, priorità). Ogni scenario: JSON fresco +
+# run + assert su file/log/JSON. Un fixture serve le pagine /s1..s5.html
+# (0..4 episodi) e i video v*.mp4 (random, 1MB).
+SCEN_SBX="$RPT/scen"
+mkdir -p "$SCEN_SBX/AniDownloader" "$SCEN_SBX/cache" "$SCEN_SBX/cache/AniDownloader"
+for s in 1 2 3 4 5 6 7; do mkdir -p "$SCEN_SBX/media/Serie$s"; done
+SCEN_LOG="$SCEN_SBX/cache/AniDownloader/serie_critical_errors.log"
+for v in v31 v32 v41 v42 v43 v44 v51; do
+    dd if=/dev/urandom of="$RPT/$v.mp4" bs=1M count=1 status=none 2>/dev/null || true
+done
+
+cat > "$SCEN_SBX/fixture_scen.py" <<'PY'
+import http.server, os, sys
+MEDIA, PORTFILE = sys.argv[1], sys.argv[2]
+PAGES = {
+    "/s1.html": [],
+    "/s2.html": [],
+    "/s3.html": [("EID31", 1), ("EID32", 2)],
+    "/s4.html": [("EID41", 1), ("EID42", 2), ("EID43", 3), ("EID44", 4)],
+    "/s5.html": [("EID51", 1)],
+}
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path in PAGES:
+            body = ("<html><body>" + "".join(
+                f'<a data-episode-num="{n}" href="/play/test/{eid}">Ep{n}</a>'
+                for eid, n in PAGES[self.path]) + "</body></html>").encode()
+        elif self.path.startswith("/api/episode/info?"):
+            eid = self.path.split("id=", 1)[1].split("&", 1)[0]
+            base = f"http://127.0.0.1:{self.server.server_address[1]}"
+            num = eid[3:] if eid.startswith("EID") and eid[3:].isdigit() else ""
+            body = f'{{"grabber":"{base}/v{num}.mp4","name":"{eid}"}}'.encode() if num else b'{"error":true}'
+        elif self.path.startswith("/v") and self.path.endswith(".mp4"):
+            p = os.path.join(MEDIA, os.path.basename(self.path))
+            if not os.path.exists(p):
+                self.send_response(404); self.end_headers(); return
+            with open(p, "rb") as f:
+                body = f.read()
+        else:
+            self.send_response(404); self.end_headers(); return
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp4" if self.path.startswith("/v") else "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *a): pass
+srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+with open(PORTFILE, "w") as f:
+    f.write(str(srv.server_address[1]))
+srv.serve_forever()
+PY
+python3 "$SCEN_SBX/fixture_scen.py" "$RPT" "$SCEN_SBX/scen_port" > /dev/null 2>&1 &
+SCN_PID=$!
+for i in $(seq 1 50); do
+    [ -s "$SCEN_SBX/scen_port" ] && break
+    sleep 0.1
+done
+SCN_PORT=$(cat "$SCEN_SBX/scen_port" 2>/dev/null || echo "")
+
+scen_run() { # $1 = etichetta scenario (log su $RPT/scen_$1.log)
+    : > "$SCEN_LOG"
+    XDG_CONFIG_HOME="$SCEN_SBX" XDG_CACHE_HOME="$SCEN_SBX/cache" \
+        ANIDOWNLOADER_API_BASE="http://127.0.0.1:$SCN_PORT" \
+        "$BIN" >"$RPT/scen_$1.log" 2>&1
+}
+
+# Video h264 validi (>1MB, faststart: ffprobe legge l'header). Stesso pattern
+# di test_media: fallisce (return 1) senza ffmpeg/libx264.
+make_h264_media() { # $1 dir, $2 prefisso
+    local dir="$1" prefix="$2"
+    local f="$dir/${prefix}_Ep_01.mp4"
+    ffmpeg -y -v error -f lavfi -i color=c=red:s=64x64:d=0.3 \
+        -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$f" 2>"$RPT/ffmpeg_h264.err" || return 1
+    truncate -s 1100000 "$f" 2>/dev/null || return 1
+}
+get_codec() { ffprobe -v error -select_streams v:0 -show_entries stream=codec_name \
+    -of default=noprint_wrappers=1:nokey=1 "$1" 2>/dev/null || true; }
+
+if [ -n "$SCN_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$SCN_PORT/s1.html"; then
+    pass "fixture scenari limite su porta $SCN_PORT"
+
+    # --- S1: file corrotto "in pari" → nessun task bogus di conversione ---
+    dd if=/dev/urandom of="$SCEN_SBX/media/Serie1/Serie1_Ep_01.mp4" bs=1M count=1 status=none 2>/dev/null || true
+    printf '{"convert_to_h265":true}' > "$SCEN_SBX/AniDownloader/config.json"
+    printf '[{"name":"Serie1","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s1.html"}]' \
+        "$SCEN_SBX/media/Serie1" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+    SHA_S1=$(file_sha "$SCEN_SBX/AniDownloader/series_data.json")
+    scen_run s1
+    if ! grep -q 'Pianifico conversione locale H265' "$SCEN_LOG"; then
+        pass "S1: file corrotto → nessuna conversione pianificata"
+    else
+        fail "S1: conversione pianificata su file corrotto (vedi $SCEN_LOG)"
+    fi
+    if ! grep -q '❌' "$RPT/scen_s1.log"; then
+        pass "S1: nessun errore nel resoconto"
+    else
+        fail "S1: errori nel resoconto (vedi $RPT/scen_s1.log)"
+    fi
+    if [ "$SHA_S1" = "$(file_sha "$SCEN_SBX/AniDownloader/series_data.json")" ]; then
+        pass "S1: JSON invariato"
+    else
+        fail "S1: JSON modificato dopo il run"
+    fi
+
+    # --- S2a/S2b: conversione h264 attiva/disattiva (triangolo codec) ---
+    if command -v ffmpeg >/dev/null 2>&1 \
+        && make_h264_media "$SCEN_SBX/media/Serie2" Serie2 \
+        && make_h264_media "$SCEN_SBX/media/Serie3" Serie3; then
+        printf '{"convert_to_h265":true}' > "$SCEN_SBX/AniDownloader/config.json"
+        printf '[{"name":"Serie2","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s2.html"}]' \
+            "$SCEN_SBX/media/Serie2" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+        scen_run s2a
+        if grep -q 'Pianifico conversione locale H265' "$SCEN_LOG"; then
+            pass "S2a: conversione pianificata (h264 → hevc)"
+        else
+            fail "S2a: conversione non pianificata (vedi $SCEN_LOG)"
+        fi
+        if [ "$(get_codec "$SCEN_SBX/media/Serie2/Serie2_Ep_01.mp4")" = "hevc" ]; then
+            pass "S2a: file finale in hevc"
+        else
+            fail "S2a: codec finale atteso hevc, ottenuto '$(get_codec "$SCEN_SBX/media/Serie2/Serie2_Ep_01.mp4")'"
+        fi
+
+        printf '{"convert_to_h265":false}' > "$SCEN_SBX/AniDownloader/config.json"
+        printf '[{"name":"Serie3","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s2.html"}]' \
+            "$SCEN_SBX/media/Serie3" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+        scen_run s2b
+        if ! grep -q 'Pianifico conversione locale H265' "$SCEN_LOG"; then
+            pass "S2b: nessuna conversione pianificata (convert_to_h265=false)"
+        else
+            fail "S2b: conversione pianificata con conversione disattivata"
+        fi
+        if [ "$(get_codec "$SCEN_SBX/media/Serie3/Serie3_Ep_01.mp4")" = "h264" ]; then
+            pass "S2b: file rimasto h264"
+        else
+            fail "S2b: codec atteso h264, ottenuto '$(get_codec "$SCEN_SBX/media/Serie3/Serie3_Ep_01.mp4")'"
+        fi
+    else
+        pass "S2a/S2b: saltati (ffmpeg/libx264 non disponibili — triangolo codec coperto da test_media)"
+    fi
+
+    # --- S3: continue + passed_episodes=2 → offset numerazione (Ep_03, Ep_04) ---
+    printf '{"convert_to_h265":false}' > "$SCEN_SBX/AniDownloader/config.json"
+    printf '[{"name":"Serie4","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s3.html","continue":true,"passed_episodes":2}]' \
+        "$SCEN_SBX/media/Serie4" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+    scen_run s3
+    if [ "$(find "$SCEN_SBX/media/Serie4" -name '*_Ep_03.mp4' | wc -l)" -eq 1 ] \
+        && [ "$(find "$SCEN_SBX/media/Serie4" -name '*_Ep_04.mp4' | wc -l)" -eq 1 ] \
+        && [ "$(find "$SCEN_SBX/media/Serie4" -name '*_Ep_01.mp4' -o -name '*_Ep_02.mp4' | wc -l)" -eq 0 ]; then
+        pass "S3: offset passed_episodes rispettato (Ep_03, Ep_04 scaricati)"
+    else
+        fail "S3: file attesi Ep_03/Ep_04: $(ls "$SCEN_SBX/media/Serie4" 2>/dev/null | tr '\n' ' ')"
+    fi
+
+    # --- S4: lastDownloaded>0 + media vuota → quirk nextNeeded=1 bloccato (4 file) ---
+    printf '[{"name":"Serie5","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s4.html","last_downloaded_episode":3}]' \
+        "$SCEN_SBX/media/Serie5" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+    scen_run s4
+    if [ "$(find "$SCEN_SBX/media/Serie5" -name '*_Ep_0*.mp4' | wc -l)" -eq 4 ]; then
+        pass "S4: quirk bloccato: 4 episodi riscaricati (nextNeeded=1 con media vuota)"
+    else
+        fail "S4: attesi 4 file: $(ls "$SCEN_SBX/media/Serie5" 2>/dev/null | tr '\n' ' ')"
+    fi
+
+    # --- S5: priorità alta → entrambe le serie completate ---
+    printf '[{"name":"Serie6","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s5.html","is_high_priority":true},{"name":"Serie7","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s5.html","is_high_priority":false}]' \
+        "$SCEN_SBX/media/Serie6" "$SCN_PORT" "$SCEN_SBX/media/Serie7" "$SCN_PORT" \
+        > "$SCEN_SBX/AniDownloader/series_data.json"
+    scen_run s5
+    if [ "$(find "$SCEN_SBX/media/Serie6" -name '*_Ep_0*.mp4' | wc -l)" -eq 1 ] \
+        && [ "$(find "$SCEN_SBX/media/Serie7" -name '*_Ep_0*.mp4' | wc -l)" -eq 1 ]; then
+        pass "S5: entrambe le serie (priorità alta e bassa) completate"
+    else
+        fail "S5: file attesi 1+1: $(ls "$SCEN_SBX/media/Serie6" "$SCEN_SBX/media/Serie7" 2>/dev/null | tr '\n' ' ')"
+    fi
+    if jq -e '.[0].last_downloaded_episode == 1 and .[1].last_downloaded_episode == 1' \
+        "$SCEN_SBX/AniDownloader/series_data.json" >/dev/null 2>&1; then
+        pass "S5: last_downloaded_episode=1 per entrambe"
+    else
+        fail "S5: JSON non aggiornato: $(cat "$SCEN_SBX/AniDownloader/series_data.json")"
+    fi
+else
+    fail "fixture scenari limite non avviato: scenari non testati"
+fi
+kill "$SCN_PID" 2>/dev/null || true
+SCN_PID=""
 
 echo "[3/3] CLI: SIGINT durante il planning → exit pulito, nessun residuo"
 
@@ -621,6 +814,37 @@ if [ "$(wc -l < "$RPT/sse.log")" -ge 4 ]; then
     pass "SSE: flusso attivo durante start+stop"
 else
     fail "SSE: flusso troppo corto (vedi $RPT/sse.log)"
+fi
+
+echo "[14b/14] check web minori (feature 7)"
+
+# 1) /api/log: lines=3 → clamp al minimo 10 (std::clamp 10..5000)
+curl -s -m 10 "$BASE/api/log?lines=3" > "$RPT/log3.json"
+curl -s -m 10 "$BASE/api/log?lines=5000" > "$RPT/logmax.json"
+LOG3=$(jq '.lines | length' "$RPT/log3.json" 2>/dev/null || echo 0)
+LOGMAX=$(jq '.lines | length' "$RPT/logmax.json" 2>/dev/null || echo 0)
+if [ "$LOG3" -eq 10 ] && [ "$LOGMAX" -ge 10 ]; then
+    pass "log: lines=3 → clamp a 10 righe"
+else
+    fail "log: clamp inatteso (lines=3 → $LOG3, file ha $LOGMAX righe)"
+fi
+
+# 2) sort=local_episode_count&dir=desc (cache invalidata dal cambio mtime della dir)
+cp "$WEB_SBX/media/SerieA/SerieA_Ep_01.mp4" "$WEB_SBX/media/SerieA/SerieA_Ep_02.mp4"
+curl -s -m 10 "$BASE/api/series?sort=local_episode_count&dir=desc" > "$RPT/sort_count.json"
+rm -f "$WEB_SBX/media/SerieA/SerieA_Ep_02.mp4"
+if jq -e '[.series[0].name, .series[0].local_episode_count, .series[1].name, .series[1].local_episode_count] == ["SerieA", 2, "SerieB", 1]' \
+    "$RPT/sort_count.json" >/dev/null; then
+    pass "sort=local_episode_count&dir=desc coerente"
+else
+    fail "ordinamento per conteggio errato: $(cat "$RPT/sort_count.json")"
+fi
+
+# 3) POST con campo obbligatorio mancante → 400 (j.at su series_page_url)
+if [ "$(http_code -X POST "$BASE/api/series" -d "{\"name\":\"SerieZ\",\"service\":\"animeW_scraper\",\"path\":\"$WEB_SBX/media/SerieZ\"}")" = 400 ]; then
+    pass "POST senza series_page_url → 400"
+else
+    fail "POST senza series_page_url non 400"
 fi
 
 # ─────────────────────────── VERIFICHE FINALI ───────────────────────────
