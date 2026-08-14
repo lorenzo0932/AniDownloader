@@ -34,6 +34,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install ccache (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y -qq ccache
+
+      - name: Install ccache (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ccache
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ matrix.os }}-${{ hashFiles('CMakeLists.txt', 'src/**', 'include/**') }}
+
       - name: Install system deps (Linux)
         if: runner.os == 'Linux'
         run: >
@@ -52,7 +66,7 @@ jobs:
           node-version: 20
 
       - name: Configure C++
-        run: cmake -B build ${{ matrix.cmake_args || '-DCMAKE_BUILD_TYPE=Debug' }}
+        run: cmake -B build -DCMAKE_CXX_COMPILER_LAUNCHER=ccache ${{ matrix.cmake_args || '-DCMAKE_BUILD_TYPE=Debug' }}
 
       - name: Build C++
         run: cmake --build build
@@ -66,3 +80,83 @@ jobs:
           cd web
           npm ci
           npm run build
+
+  # ─── Formattazione: nessun file fuori stile ───
+  format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get install -y -qq clang-format
+
+      - name: Check formatting
+        run: >
+          clang-format --dry-run --Werror
+          $(git ls-files 'include/**/*.hpp' 'src/**/*.cpp' 'tests/*.cpp' | grep -v embedded_web_data.cpp)
+
+  # ─── Sanitizer (ASan+UBSan): build + test completi su Linux ───
+  sanitize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: >
+          sudo apt-get update -qq &&
+          sudo apt-get install -y -qq
+          cmake ninja-build pkg-config
+          libcurl4-openssl-dev aria2 ffmpeg
+
+      - name: Configure (sanitizers)
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build
+        run: cmake --build build -j 2
+
+      - name: Test
+        env:
+          ANIDOWNLOADER_BIN: ${{ github.workspace }}/build/AniDownloader
+        run: >
+          ASAN_OPTIONS=detect_leaks=0
+          ctest --test-dir build --output-on-failure
+
+  # ─── clang-tidy: report-only (artifact) ───
+  tidy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-tidy + deps
+        run: >
+          sudo apt-get update -qq &&
+          sudo apt-get install -y -qq
+          clang-tidy cmake ninja-build pkg-config
+          libcurl4-openssl-dev
+
+      - name: Generate compile commands
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run clang-tidy
+        run: |
+          mkdir -p tidy-report
+          set +e
+          clang-tidy -p build \
+            $(git ls-files 'src/**/*.cpp' | grep -v embedded_web_data.cpp) \
+            > tidy-report/clang-tidy.txt 2>&1
+          TIDY_EXIT=$?
+          echo "clang-tidy exit: $TIDY_EXIT (report-only, non blocca)"
+          exit 0
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-tidy-report
+          path: tidy-report/clang-tidy.txt
+          if-no-files-found: warn
