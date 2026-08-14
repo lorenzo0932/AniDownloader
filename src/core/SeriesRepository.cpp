@@ -1,37 +1,41 @@
 #include "core/SeriesRepository.hpp"
 #include "core/Logger.hpp"
 #include <fstream>
-#include <stdexcept>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 
 namespace Core {
 
-namespace {
+    namespace {
 
-// Scrittura JSON atomica (tmp nella stessa dir + rename; fallback copy su
-// Windows dove rename fallisce con target esistente). Su eccezione rimuove il
-// tmp: il chiamante decide se loggare.
-void writeJsonAtomic(const std::filesystem::path& target, const nlohmann::json& data, int indent) {
-    if (target.has_parent_path()) {
-        std::filesystem::create_directories(target.parent_path());
-    }
-    auto tmpPath = target;
-    tmpPath += ".tmp";
-    {
-        std::ofstream f(tmpPath, std::ios::binary | std::ios::trunc);
-        if (!f.is_open()) throw std::runtime_error("Impossibile aprire " + tmpPath.string());
-        f << data.dump(indent);
-    }
-    std::error_code ec;
-    std::filesystem::rename(tmpPath, target, ec);
-    if (ec) {
-        std::filesystem::copy_file(tmpPath, target, std::filesystem::copy_options::overwrite_existing, ec);
-        if (ec) throw std::runtime_error("copy fallito: " + ec.message());
-        std::filesystem::remove(tmpPath, ec);
-    }
-}
+        // Scrittura JSON atomica (tmp nella stessa dir + rename; fallback copy su
+        // Windows dove rename fallisce con target esistente). Su eccezione rimuove il
+        // tmp: il chiamante decide se loggare.
+        void writeJsonAtomic(const std::filesystem::path& target, const nlohmann::json& data,
+                             int indent) {
+            if (target.has_parent_path()) {
+                std::filesystem::create_directories(target.parent_path());
+            }
+            auto tmpPath = target;
+            tmpPath += ".tmp";
+            {
+                std::ofstream f(tmpPath, std::ios::binary | std::ios::trunc);
+                if (!f.is_open())
+                    throw std::runtime_error("Impossibile aprire " + tmpPath.string());
+                f << data.dump(indent);
+            }
+            std::error_code ec;
+            std::filesystem::rename(tmpPath, target, ec);
+            if (ec) {
+                std::filesystem::copy_file(tmpPath, target,
+                                           std::filesystem::copy_options::overwrite_existing, ec);
+                if (ec)
+                    throw std::runtime_error("copy fallito: " + ec.message());
+                std::filesystem::remove(tmpPath, ec);
+            }
+        }
 
-}
+    } // namespace
 
     SeriesRepository::SeriesRepository(const std::filesystem::path& jsonFilePath)
         : m_jsonFilePath(jsonFilePath) {}
@@ -87,7 +91,8 @@ void writeJsonAtomic(const std::filesystem::path& target, const nlohmann::json& 
 
     bool SeriesRepository::applyDownloadedEpisodes(const std::map<std::string, int>& maxEpisodes,
                                                    const std::string& timestamp) {
-        if (maxEpisodes.empty()) return false;
+        if (maxEpisodes.empty())
+            return false;
 
         // loadSeriesData gestisce il lock: unico punto di accesso alla cache.
         // Copia necessaria: la cache è esposta come const&.
@@ -96,7 +101,8 @@ void writeJsonAtomic(const std::filesystem::path& target, const nlohmann::json& 
         bool updated = false;
         for (auto& s : series) {
             auto it = maxEpisodes.find(s.name);
-            if (it == maxEpisodes.end()) continue;
+            if (it == maxEpisodes.end())
+                continue;
             // Semantica: episodio e timestamp si aggiornano SOLO con avanzamento
             // reale. Conversioni locali di manutenzione o episodi non più alti
             // non devono "sporcare" il timestamp né scrivere il file.
@@ -112,4 +118,4 @@ void writeJsonAtomic(const std::filesystem::path& target, const nlohmann::json& 
         }
         return updated;
     }
-}
+} // namespace Core

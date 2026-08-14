@@ -1,14 +1,14 @@
 #pragma once
-#include <vector>
-#include <filesystem>
-#include <optional>
-#include <mutex>
-#include <map>
 #include "Series.hpp"
+#include <filesystem>
+#include <map>
+#include <mutex>
+#include <optional>
+#include <vector>
 
 namespace Core {
     class SeriesRepository {
-    public:
+      public:
         explicit SeriesRepository(const std::filesystem::path& jsonFilePath);
         const std::vector<Series>& loadSeriesData(bool forceReload = false);
         void saveSeriesData(const std::vector<Series>& seriesData);
@@ -20,9 +20,9 @@ namespace Core {
         bool applyDownloadedEpisodes(const std::map<std::string, int>& maxEpisodes,
                                      const std::string& timestamp);
 
-    private:
+      private:
         std::filesystem::path m_jsonFilePath;
         std::optional<std::vector<Series>> m_cache; // Re-inserito optional
-        mutable std::mutex m_mutex; 
+        mutable std::mutex m_mutex;
     };
-}
+} // namespace Core

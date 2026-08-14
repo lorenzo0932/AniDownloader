@@ -1,12 +1,12 @@
 #pragma once
 
+#include "config/AppConfigManager.hpp"
+#include "core/MediaProcessor.hpp"
+#include "core/Series.hpp"
+#include <atomic>
+#include <functional>
 #include <string>
 #include <vector>
-#include <functional>
-#include <atomic>
-#include "core/Series.hpp"
-#include "core/MediaProcessor.hpp"
-#include "config/AppConfigManager.hpp"
 
 namespace Core {
 
@@ -20,25 +20,24 @@ namespace Core {
     };
 
     class ExecutionEngine {
-    public:
-        using ProgressCb   = std::function<void(const std::string& name, int episode, const std::string& msg)>;
-        using StatusCb     = std::function<void(const std::string& overallStatus)>;
-        using FinishedCb   = std::function<void(const TaskReport& report)>;
-        using SkippedCb    = std::function<void(const std::string& name, const std::string& reason)>; // NUOVO
-        using AnalysisCb   = std::function<void()>;
+      public:
+        using ProgressCb =
+            std::function<void(const std::string& name, int episode, const std::string& msg)>;
+        using StatusCb = std::function<void(const std::string& overallStatus)>;
+        using FinishedCb = std::function<void(const TaskReport& report)>;
+        using SkippedCb =
+            std::function<void(const std::string& name, const std::string& reason)>; // NUOVO
+        using AnalysisCb = std::function<void()>;
 
         explicit ExecutionEngine(Config::AppConfigManager& config);
 
-        void run(const std::vector<Series>& seriesList, 
-                 bool burstMode, 
-                 std::atomic<bool>& stopSignal,
-                 ProgressCb onProgress,
-                 StatusCb onStatus,
+        void run(const std::vector<Series>& seriesList, bool burstMode,
+                 std::atomic<bool>& stopSignal, ProgressCb onProgress, StatusCb onStatus,
                  FinishedCb onTaskFinished,
-                 SkippedCb onTaskSkipped,     // AGGIUNTO
+                 SkippedCb onTaskSkipped, // AGGIUNTO
                  AnalysisCb onAnalysisDone);
 
-    private:
+      private:
         Config::AppConfigManager& m_config;
     };
-}
+} // namespace Core

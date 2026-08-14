@@ -1,9 +1,9 @@
 #pragma once
-#include <string>
-#include <mutex>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
+#include <string>
 
 namespace Core {
 
@@ -15,14 +15,14 @@ namespace Core {
      * il file; la rotazione (>5MB) è verificata con throttle di 1s.
      */
     class Logger {
-    public:
+      public:
         static void init(const std::string& logFilePath);
         static void info(const std::string& msg);
         static void warn(const std::string& msg);
         static void error(const std::string& msg);
         static void result(const std::string& seriesName, double dlTime, double convTime);
 
-    private:
+      private:
         static void write(const std::string& level, const std::string& msg);
         static std::filesystem::path s_logPath;
         static std::mutex s_mutex;

@@ -1,9 +1,9 @@
 #pragma once
-#include <string>
 #include <nlohmann/json.hpp>
+#include <string>
 
 namespace Core {
 
-void sortSeries(nlohmann::json& data, const std::string& field, bool desc);
+    void sortSeries(nlohmann::json& data, const std::string& field, bool desc);
 
 }

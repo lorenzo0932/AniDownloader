@@ -13,4 +13,4 @@ namespace Core {
         std::string errorMessage;
     };
 
-}
+} // namespace Core

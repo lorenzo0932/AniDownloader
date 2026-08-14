@@ -5,6 +5,6 @@
 
 namespace Core {
 
-std::vector<std::string> getRecentLines(const std::string& logPath, int n);
+    std::vector<std::string> getRecentLines(const std::string& logPath, int n);
 
 } // namespace Core

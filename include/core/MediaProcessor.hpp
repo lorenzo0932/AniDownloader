@@ -1,13 +1,13 @@
 #pragma once
 
-#include "core/Series.hpp"
-#include "core/DownloadTask.hpp"
 #include "config/AppConfigManager.hpp"
-#include <string>
-#include <functional>
+#include "core/DownloadTask.hpp"
+#include "core/Series.hpp"
 #include <atomic>
-#include <mutex>
 #include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <string>
 
 namespace Core {
 
@@ -22,16 +22,15 @@ namespace Core {
     using ProgressCallback = std::function<void(const std::string&, const std::string&)>;
 
     class MediaProcessor {
-    public:
+      public:
         MediaProcessor(ProgressCallback callback, std::atomic<bool>& stopSignal);
 
-        ProcessResult processTask(const DownloadTask& task,
-                                  const Series& series,
+        ProcessResult processTask(const DownloadTask& task, const Series& series,
                                   const Config::ExecutionStrategy& strategy);
 
         static void notifyStop();
 
-    private:
+      private:
         ProgressCallback m_progressCallback;
         std::atomic<bool>& m_stopSignal;
 
@@ -40,7 +39,7 @@ namespace Core {
         static std::atomic<int> s_activeConversions;
 
         bool convertAndVerify(const std::string& inputPath, const std::string& seriesName,
-                             const Config::ExecutionStrategy& strategy, double& outTime);
+                              const Config::ExecutionStrategy& strategy, double& outTime);
     };
 
-}
+} // namespace Core

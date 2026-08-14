@@ -1,9 +1,9 @@
 #pragma once
-#include <string>
-#include <filesystem>
-#include <cstdio>
-#include <map>
 #include <cpr/cpr.h>
+#include <cstdio>
+#include <filesystem>
+#include <map>
+#include <string>
 
 namespace Core {
 
@@ -13,7 +13,7 @@ namespace Core {
     };
 
     class ScraperUtils {
-    public:
+      public:
         static std::string expandTilde(const std::string& path);
         static EpisodeInfo getHighestEpisodeFile(const std::string& seriesPath);
         static int getNextEpisodeNum(const std::string& seriesPath);
@@ -30,19 +30,19 @@ namespace Core {
 
         // Redirezioni per output silenziato, cross-platform
         static inline std::string DEVNULL() {
-        #ifdef _WIN32
+#ifdef _WIN32
             return " >NUL 2>NUL";
-        #else
+#else
             return " > /dev/null 2>&1";
-        #endif
+#endif
         }
 
         static inline std::string REDIR_STDERR() {
-        #ifdef _WIN32
+#ifdef _WIN32
             return " 2>NUL";
-        #else
+#else
             return " 2>/dev/null";
-        #endif
+#endif
         }
 
         // User-Agent che rileva la piattaforma (Windows/Linux)
@@ -55,7 +55,8 @@ namespace Core {
         static std::map<int, std::string> scanEpisodesMap(const std::string& seriesPath);
 
         // Verifica se epNum esiste nella mappa ed è valido (ffprobe). Torna path o ""
-        static std::string validEpisodePath(const std::map<int, std::string>& episodesMap, int epNum);
+        static std::string validEpisodePath(const std::map<int, std::string>& episodesMap,
+                                            int epNum);
 
         // Logica centrale: calcola il prossimo episodio da scaricare
         // Se lastDownloadedEpisode <= 0 → fallback a getHighestEpisodeFile()
@@ -66,8 +67,9 @@ namespace Core {
 
         // Wrapper HTTP con retry automatico per errori transiente
         // maxRetries: numero massimo di tentativi (default 3)
-        // retryDelayMs: delay iniziale tra i tentativi (default 2000ms), raddoppia ad ogni tentativo
+        // retryDelayMs: delay iniziale tra i tentativi (default 2000ms), raddoppia ad ogni
+        // tentativo
         static cpr::Response httpGetWithRetry(const cpr::Url& url, const cpr::Header& headers = {},
                                               int maxRetries = 3, int retryDelayMs = 2000);
     };
-}
+} // namespace Core

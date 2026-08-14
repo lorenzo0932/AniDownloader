@@ -1,30 +1,30 @@
 #include "core/PlanningService.hpp"
-#include "scrapers/AnimeWScraper.hpp"
-#include "scrapers/AnimeUScraper.hpp"
 #include "config/AppConfigManager.hpp"
-#include "scrapers/ScraperUtils.hpp"
-#include "core/MediaProbe.hpp"
 #include "core/Logger.hpp"
-#include <filesystem>
+#include "core/MediaProbe.hpp"
+#include "scrapers/AnimeUScraper.hpp"
+#include "scrapers/AnimeWScraper.hpp"
+#include "scrapers/ScraperUtils.hpp"
 #include <algorithm>
+#include <filesystem>
 
 namespace fs = std::filesystem;
 
 namespace Core {
 
-    std::unique_ptr<BaseScraper> PlanningService::getScraperInstance(const std::string& serviceName) {
+    std::unique_ptr<BaseScraper>
+    PlanningService::getScraperInstance(const std::string& serviceName) {
         if (serviceName == "animeW_scraper") {
             return std::make_unique<AnimeWScraper>();
-        } 
-        else if (serviceName == "animeU_scraper") {
+        } else if (serviceName == "animeU_scraper") {
             return std::make_unique<AnimeUScraper>();
         }
-        return nullptr; 
+        return nullptr;
     }
 
-    std::vector<DownloadTask> PlanningService::planSingleSeries(const Series& series,
-        std::function<void(const std::string&)> progressCb)
-    {
+    std::vector<DownloadTask>
+    PlanningService::planSingleSeries(const Series& series,
+                                      std::function<void(const std::string&)> progressCb) {
         if (series.service.empty()) {
             DownloadTask err;
             err.shouldProcess = false;
@@ -75,7 +75,10 @@ namespace Core {
                             conv.fileName = fs::path(ep.path).filename().string();
                             conv.videoUrl = "";
 
-                            Core::Logger::info("Serie " + series.name + " in pari. Pianifico conversione locale H265 per Ep. " + std::to_string(ep.number));
+                            Core::Logger::info(
+                                "Serie " + series.name +
+                                " in pari. Pianifico conversione locale H265 per Ep. " +
+                                std::to_string(ep.number));
                             tasks.push_back(conv);
                         }
                     }
@@ -86,4 +89,4 @@ namespace Core {
         return tasks;
     }
 
-}
+} // namespace Core

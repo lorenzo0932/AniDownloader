@@ -6,7 +6,7 @@ namespace Config {
     namespace fs = std::filesystem;
 
     class PathHelper {
-    public:
+      public:
         static const std::string APP_NAME;
 
         static fs::path getConfigDir();
@@ -17,4 +17,4 @@ namespace Config {
         static fs::path getAppConfigPath();
         static fs::path getLogFilePath();
     };
-}
+} // namespace Config

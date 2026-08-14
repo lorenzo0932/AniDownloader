@@ -10,7 +10,7 @@ namespace Core {
         j.at("service").get_to(s.service);
         j.at("path").get_to(s.path);
         j.at("series_page_url").get_to(s.seriesPageUrl);
-        
+
         // Campi opzionali
         s.episodeListSelector = j.value("episode_list_selector", "");
         s.downloadLinkSelector = j.value("download_link_selector", "");
@@ -35,19 +35,17 @@ namespace Core {
     }
 
     void to_json(nlohmann::json& j, const Series& s) {
-        j = nlohmann::json{
-            {"name", s.name},
-            {"service", s.service},
-            {"path", s.path},
-            {"continue", s.continueSeries},
-            {"is_high_priority", s.isHighPriority},
-            {"passed_episodes", s.passedEpisodes},
-            {"series_page_url", s.seriesPageUrl},
-            {"episode_list_selector", s.episodeListSelector},
-            {"download_link_selector", s.downloadLinkSelector},
-            {"last_downloaded_at", s.lastDownloadedAt},
-            {"last_downloaded_episode", s.lastDownloadedEpisode}
-        };
+        j = nlohmann::json{{"name", s.name},
+                           {"service", s.service},
+                           {"path", s.path},
+                           {"continue", s.continueSeries},
+                           {"is_high_priority", s.isHighPriority},
+                           {"passed_episodes", s.passedEpisodes},
+                           {"series_page_url", s.seriesPageUrl},
+                           {"episode_list_selector", s.episodeListSelector},
+                           {"download_link_selector", s.downloadLinkSelector},
+                           {"last_downloaded_at", s.lastDownloadedAt},
+                           {"last_downloaded_episode", s.lastDownloadedEpisode}};
 
         if (!s.alternateSources.empty()) {
             nlohmann::json arr = nlohmann::json::array();
@@ -57,4 +55,4 @@ namespace Core {
             j["alternate_sources"] = arr;
         }
     }
-}
+} // namespace Core

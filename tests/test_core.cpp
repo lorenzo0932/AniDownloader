@@ -1,8 +1,8 @@
 // Unit test per le funzioni pure del core (nessuna dipendenza da processi esterni).
 // Eseguire con: ctest --test-dir build  (oppure ./build/test_core)
-#include "core/UpdateChecker.hpp"
 #include "core/Series.hpp"
 #include "core/SeriesRepository.hpp"
+#include "core/UpdateChecker.hpp"
 #include "scrapers/ScraperUtils.hpp"
 
 #include <nlohmann/json.hpp>
@@ -14,12 +14,12 @@
 
 static int g_failures = 0;
 
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            ++g_failures;                                               \
-            std::cerr << "FAIL: " << #cond << " (riga " << __LINE__ << ")\n"; \
-        }                                                               \
+#define CHECK(cond)                                                                                \
+    do {                                                                                           \
+        if (!(cond)) {                                                                             \
+            ++g_failures;                                                                          \
+            std::cerr << "FAIL: " << #cond << " (riga " << __LINE__ << ")\n";                      \
+        }                                                                                          \
     } while (0)
 
 static void testCompareVersions() {
@@ -84,7 +84,8 @@ static void testScraperUtils() {
 #endif
 
     // generateFilename: sostituisce il numero e mantiene il suffisso
-    CHECK(ScraperUtils::generateFilename("https://site/v/file_ep_3_720p.mp4?x=1", 7) == "file_ep_07_720p.mp4");
+    CHECK(ScraperUtils::generateFilename("https://site/v/file_ep_3_720p.mp4?x=1", 7) ==
+          "file_ep_07_720p.mp4");
     CHECK(ScraperUtils::generateFilename("https://site/v/random.mp4", 3) == "random_Ep_03.mp4");
 
     // scanEpisodesMap / getHighestEpisodeFile su dir temporanea (file sparsi > 1MB)
@@ -93,8 +94,8 @@ static void testScraperUtils() {
     std::filesystem::create_directories(dir);
     createSizedFile(dir / "Serie_Ep_05.mp4", 1'100'000);
     createSizedFile(dir / "Serie_Ep_07.mp4", 1'100'000);
-    createSizedFile(dir / "nota.txt", 1'100'000);       // nessun pattern Ep -> ignorato
-    createSizedFile(dir / "piccolo_Ep_09.mp4", 1000);   // < 1MB -> ignorato
+    createSizedFile(dir / "nota.txt", 1'100'000);     // nessun pattern Ep -> ignorato
+    createSizedFile(dir / "piccolo_Ep_09.mp4", 1000); // < 1MB -> ignorato
 
     auto map = ScraperUtils::scanEpisodesMap(dir.string());
     CHECK(map.size() == 2);

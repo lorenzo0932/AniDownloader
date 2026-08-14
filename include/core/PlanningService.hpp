@@ -1,10 +1,10 @@
 #pragma once
 
-#include "core/Series.hpp"
 #include "core/DownloadTask.hpp"
+#include "core/Series.hpp"
+#include <functional>
 #include <memory>
 #include <string>
-#include <functional>
 
 namespace Core {
 
@@ -13,14 +13,15 @@ namespace Core {
     class BaseScraper;
 
     class PlanningService {
-    public:
+      public:
         static std::unique_ptr<BaseScraper> getScraperInstance(const std::string& serviceName);
 
         // La callback di progresso è il tipo di BaseScraper::ScraperProgressCb
         // (= std::function<void(const std::string&)>): qui espanso per non
         // dipendere dal tipo annidato dello scraper (direzione core ← scrapers).
-        static std::vector<DownloadTask> planSingleSeries(const Series& series,
-            std::function<void(const std::string&)> progressCb = nullptr);
+        static std::vector<DownloadTask>
+        planSingleSeries(const Series& series,
+                         std::function<void(const std::string&)> progressCb = nullptr);
     };
 
-}
+} // namespace Core

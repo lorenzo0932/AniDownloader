@@ -8,14 +8,15 @@
 // (skip con messaggio, ctest verde) — es. runner senza tool.
 //
 // Eseguire con: ctest --test-dir build -R test_media  (oppure ./build/test_media)
-#include "core/MediaProcessor.hpp"
+#include "config/AppConfigManager.hpp"
 #include "core/MediaProbe.hpp"
+#include "core/MediaProcessor.hpp"
 #include "core/ProcessUtils.hpp"
 #include "core/Series.hpp"
-#include "config/AppConfigManager.hpp"
-#include "scrapers/ScraperUtils.hpp"
 #include "httplib.h"
+#include "scrapers/ScraperUtils.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
@@ -23,18 +24,17 @@
 #include <iostream>
 #include <string>
 #include <thread>
-#include <algorithm>
 
 namespace fs = std::filesystem;
 
 static int g_failures = 0;
 
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            ++g_failures;                                               \
-            std::cerr << "FAIL: " << #cond << " (riga " << __LINE__ << ")\n"; \
-        }                                                               \
+#define CHECK(cond)                                                                                \
+    do {                                                                                           \
+        if (!(cond)) {                                                                             \
+            ++g_failures;                                                                          \
+            std::cerr << "FAIL: " << #cond << " (riga " << __LINE__ << ")\n";                      \
+        }                                                                                          \
     } while (0)
 
 static bool toolExists(const std::string& name) {
@@ -48,8 +48,8 @@ static bool toolExists(const std::string& name) {
 // Genera un video minuscolo valido (h264, 0.3s, moov all'inizio).
 static bool generateTestVideo(const fs::path& outPath) {
     std::string cmd = "ffmpeg -y -v error -f lavfi -i color=c=red:s=64x64:d=0.3 "
-                      "-c:v libx264 -pix_fmt yuv420p -movflags +faststart "
-                      + Core::ScraperUtils::Q(outPath.string());
+                      "-c:v libx264 -pix_fmt yuv420p -movflags +faststart " +
+                      Core::ScraperUtils::Q(outPath.string());
     std::atomic<bool> stop{false};
     return Core::ProcessUtils::runCommand(cmd, stop, nullptr) == 0 && fs::exists(outPath);
 }
@@ -61,7 +61,8 @@ static void padToSize(const fs::path& p, std::uintmax_t minSize) {
     std::string zeros(65536, '\0');
     while (fs::file_size(p) < minSize) {
         std::uintmax_t need = minSize - fs::file_size(p);
-        std::size_t chunk = static_cast<std::size_t>((std::min)(need, (std::uintmax_t)zeros.size()));
+        std::size_t chunk =
+            static_cast<std::size_t>((std::min)(need, (std::uintmax_t)zeros.size()));
         f.write(zeros.data(), static_cast<std::streamsize>(chunk));
     }
 }
@@ -119,7 +120,8 @@ int main() {
     CHECK(fs::exists(workDir / "Serie_Ep_01.mp4"));
     if (res1.success) {
         std::atomic<bool> stop{false};
-        std::string codec = Core::MediaProbe::getVideoCodec((workDir / "Serie_Ep_01.mp4").string(), stop);
+        std::string codec =
+            Core::MediaProbe::getVideoCodec((workDir / "Serie_Ep_01.mp4").string(), stop);
         CHECK(codec == "hevc" || codec == "h265");
     }
 
@@ -129,7 +131,8 @@ int main() {
     CHECK(fs::exists(workDir / "Serie_Ep_02.mp4"));
     if (res2.success) {
         std::atomic<bool> stop{false};
-        std::string codec = Core::MediaProbe::getVideoCodec((workDir / "Serie_Ep_02.mp4").string(), stop);
+        std::string codec =
+            Core::MediaProbe::getVideoCodec((workDir / "Serie_Ep_02.mp4").string(), stop);
         CHECK(codec == "h264");
     }
 

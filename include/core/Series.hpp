@@ -1,7 +1,7 @@
 #pragma once
+#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
-#include <nlohmann/json.hpp>
 
 namespace Core {
 
@@ -29,4 +29,4 @@ namespace Core {
 
     void from_json(const nlohmann::json& j, Series& s);
     void to_json(nlohmann::json& j, const Series& s);
-}
+} // namespace Core
