@@ -74,6 +74,15 @@ ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series
         }
     }
 
+    // Task di conversione locale (videoUrl vuoto) con file sorgente mancante:
+    // fallisci subito invece di 3 retry di aria2 con URL vuoto.
+    if (needsDownload && task.videoUrl.empty()) {
+        res.errorMessage = "File sorgente mancante per la conversione locale";
+        Logger::error(series.name + ": file sorgente mancante per la conversione locale (Ep. " +
+                      std::to_string(task.episodeNumber) + ")");
+        return res;
+    }
+
     if (needsDownload && needsConversion)
         m_progressCallback(series.name, "MODE:BOTH");
     else if (needsDownload)
