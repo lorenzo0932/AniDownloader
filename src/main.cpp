@@ -76,12 +76,22 @@ static void startCleanupWatchdog() {
 
 /**
  * @brief Aggiorna la dashboard nel terminale.
+ * Throttlato a 200ms: in burst gli onProgress arrivano a raffica dai worker;
+ * il check avviene sotto g_statusMutex (già quello della funzione) così il
+ * timestamp è serializzato tra i thread. force salta il throttle (resoconto
+ * finale).
  */
 static const char* spinnerFrames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 
-void refreshTerminal(bool burst) {
-    static int spinIdx = 0;
+void refreshTerminal(bool burst, bool force = false) {
+    static std::chrono::steady_clock::time_point lastDraw{}; // epoch → primo draw sempre eseguito
     std::lock_guard<std::mutex> lock(g_statusMutex);
+
+    auto now = std::chrono::steady_clock::now();
+    if (!force && now - lastDraw < std::chrono::milliseconds(200)) return;
+    lastDraw = now;
+
+    static int spinIdx = 0;
 
     std::cout << "\033[H";
 
@@ -270,7 +280,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Visualizzazione finale resoconto
+    // Visualizzazione finale resoconto: il refresh forzato garantisce che
+    // l'ultimo stato (es. "Tutto aggiornato.") sia sempre mostrato, anche se
+    // il throttle avrebbe scartato l'ultimo callback.
+    if (burstMode) refreshTerminal(burstMode, true);
+
     std::cout << "\n\n--- RESOCONTO FINALE ---\n";
     for (const auto& r : g_reports) {
         std::string label = (r.episodeNumber > 0) ? r.name + " (Ep " + std::to_string(r.episodeNumber) + ")" : r.name;
