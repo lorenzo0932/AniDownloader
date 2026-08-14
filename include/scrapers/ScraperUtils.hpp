@@ -5,12 +5,20 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Core {
 
     struct EpisodeInfo {
         int number = 0;
         std::string path;
+    };
+
+    // Coppia (numero episodio, URL pagina episodio) estratta dal parsing della
+    // pagina serie. Condivisa dagli scraper (AnimeW e AnimeU).
+    struct EpisodeCandidate {
+        int episodeNumber;
+        std::string episodeUrl;
     };
 
     class ScraperUtils {
@@ -51,6 +59,11 @@ namespace Core {
 
         // Estrae il nome della serie dalla pagina web dato l'URL
         static std::string fetchSeriesNameFromUrl(const std::string& url);
+
+        // Estrae il titolo della serie dall'HTML della pagina (rimuove prefissi
+        // "AnimeWorld - " e suffissi "Episodio N"). Funzione pura, testabile
+        // senza rete.
+        static std::string extractSeriesTitle(const std::string& html);
 
         // Scansione directory: restituisce {epNumber → fullPath} per file >1MB che matchano Ep[N]
         static std::map<int, std::string> scanEpisodesMap(const std::string& seriesPath);

@@ -186,39 +186,41 @@ namespace Core {
         return lastResponse;
     }
 
+    std::string ScraperUtils::extractSeriesTitle(const std::string& html) {
+        static const std::regex titleRegex(R"(<title>(.*?)</title>)", std::regex_constants::icase);
+        std::smatch m;
+        if (!std::regex_search(html, m, titleRegex))
+            return "";
+
+        std::string title = m[1].str();
+
+        static const std::vector<std::string> prefixes = {"AnimeWorld - ", "AnimeUnity - ",
+                                                          "AnimeWorld -"};
+        for (const auto& prefix : prefixes) {
+            if (title.size() >= prefix.size() && title.compare(0, prefix.size(), prefix) == 0) {
+                title = title.substr(prefix.size());
+                break;
+            }
+        }
+
+        static const std::regex suffixRegex(R"(\s+(?:Episodio|Episode)\s+.*)",
+                                            std::regex_constants::icase);
+        title = std::regex_replace(title, suffixRegex, "");
+
+        auto start = title.find_first_not_of(" \t\n\r");
+        auto end = title.find_last_not_of(" \t\n\r");
+        if (start == std::string::npos)
+            return "";
+        return title.substr(start, end - start + 1);
+    }
+
     std::string ScraperUtils::fetchSeriesNameFromUrl(const std::string& url) {
         try {
             cpr::Response r =
                 httpGetWithRetry(cpr::Url{url}, cpr::Header{{"User-Agent", platformUserAgent()}});
             if (r.status_code != 200)
                 return "";
-
-            static const std::regex titleRegex(R"(<title>(.*?)</title>)",
-                                               std::regex_constants::icase);
-            std::smatch m;
-            if (!std::regex_search(r.text, m, titleRegex))
-                return "";
-
-            std::string title = m[1].str();
-
-            static const std::vector<std::string> prefixes = {"AnimeWorld - ", "AnimeUnity - ",
-                                                              "AnimeWorld -"};
-            for (const auto& prefix : prefixes) {
-                if (title.size() >= prefix.size() && title.compare(0, prefix.size(), prefix) == 0) {
-                    title = title.substr(prefix.size());
-                    break;
-                }
-            }
-
-            static const std::regex suffixRegex(R"(\s+(?:Episodio|Episode)\s+.*)",
-                                                std::regex_constants::icase);
-            title = std::regex_replace(title, suffixRegex, "");
-
-            auto start = title.find_first_not_of(" \t\n\r");
-            auto end = title.find_last_not_of(" \t\n\r");
-            if (start == std::string::npos)
-                return "";
-            return title.substr(start, end - start + 1);
+            return extractSeriesTitle(r.text);
         } catch (...) {
             return "";
         }

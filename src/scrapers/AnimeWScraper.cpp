@@ -36,6 +36,76 @@ namespace Core {
         return pageUrl.substr(pos + 1);
     }
 
+    std::vector<EpisodeCandidate> AnimeWScraper::parseSeriesPage(const std::string& html) {
+        std::vector<EpisodeCandidate> results;
+
+        std::regex epTagRegex(R"raw(<a[^>]+data-episode-num=["'](\d+)["'][^>]*>)raw");
+        struct EpData {
+            int n;
+            std::string url;
+        };
+        std::vector<EpData> found;
+
+        auto it = std::sregex_iterator(html.begin(), html.end(), epTagRegex);
+        for (; it != std::sregex_iterator(); ++it) {
+            std::regex hrefRegex(R"raw(href=["']([^"']+)["'])raw");
+            std::smatch m;
+            std::string tag = (*it)[0].str();
+            if (std::regex_search(tag, m, hrefRegex)) {
+                found.push_back({std::stoi((*it)[1].str()), m[1].str()});
+            }
+        }
+
+        Core::Logger::info(std::format("AnimeW: regex found {} episode tags", found.size()));
+        if (found.empty()) {
+            // Sample diagnostico: il primo tag <a> con data-episode-num o, in
+            // assenza, il primo <a> con href; fallback primi 300 char dell'HTML.
+            std::string sample;
+            std::smatch sm;
+            static const std::regex sampleEpRegex(R"raw(<a[^>]*data-episode-num[^>]*>)raw",
+                                                  std::regex_constants::icase);
+            static const std::regex sampleHrefRegex(R"raw(<a[^>]*href[^>]*>)raw",
+                                                    std::regex_constants::icase);
+            if (std::regex_search(html, sm, sampleEpRegex))
+                sample = sm.str(0);
+            else if (std::regex_search(html, sm, sampleHrefRegex))
+                sample = sm.str(0);
+            else
+                sample = html.substr(0, 300);
+            if (sample.size() > 300)
+                sample = sample.substr(0, 300);
+            std::string clean;
+            for (char c : sample)
+                if (static_cast<unsigned char>(c) >= 0x20 && c != 0x7F)
+                    clean += c;
+
+            Core::Logger::warn(std::format("AnimeW: nessun episodio nell'HTML statico ({} byte) — "
+                                           "sample: {}",
+                                           html.size(), clean));
+            return results;
+        }
+        std::sort(found.begin(), found.end(),
+                  [](const EpData& a, const EpData& b) { return a.n < b.n; });
+
+        for (const auto& ep : found)
+            results.push_back({ep.n, ep.url});
+
+        return results;
+    }
+
+    std::string AnimeWScraper::parseEpisodeInfo(const std::string& body) {
+        if (body.empty())
+            return "";
+        try {
+            auto j = json::parse(body);
+            if (!j.contains("error") && j.contains("grabber"))
+                return j["grabber"].get<std::string>();
+        } catch (const std::exception&) {
+            // body non JSON: nessun URL video, gestito dal chiamante
+        }
+        return "";
+    }
+
     std::vector<EpisodeCandidate> AnimeWScraper::getCandidates(const Series& series) {
         std::vector<EpisodeCandidate> results;
 
@@ -64,62 +134,16 @@ namespace Core {
             return results;
         }
 
-        std::regex epTagRegex(R"raw(<a[^>]+data-episode-num=["'](\d+)["'][^>]*>)raw");
-        struct EpData {
-            int n;
-            std::string url;
-        };
-        std::vector<EpData> found;
-
-        auto it = std::sregex_iterator(html.begin(), html.end(), epTagRegex);
-        for (; it != std::sregex_iterator(); ++it) {
-            std::regex hrefRegex(R"raw(href=["']([^"']+)["'])raw");
-            std::smatch m;
-            std::string tag = (*it)[0].str();
-            if (std::regex_search(tag, m, hrefRegex)) {
-                found.push_back({std::stoi((*it)[1].str()), m[1].str()});
-            }
-        }
-
-        Core::Logger::info(
-            std::format("{}: regex found {} episode tags", series.name, found.size()));
-        if (found.empty()) {
-            // Sample diagnostico: il primo tag <a> con data-episode-num o, in
-            // assenza, il primo <a> con href; fallback primi 300 char dell'HTML.
-            std::string sample;
-            std::smatch sm;
-            static const std::regex sampleEpRegex(R"raw(<a[^>]*data-episode-num[^>]*>)raw",
-                                                  std::regex_constants::icase);
-            static const std::regex sampleHrefRegex(R"raw(<a[^>]*href[^>]*>)raw",
-                                                    std::regex_constants::icase);
-            if (std::regex_search(html, sm, sampleEpRegex))
-                sample = sm.str(0);
-            else if (std::regex_search(html, sm, sampleHrefRegex))
-                sample = sm.str(0);
-            else
-                sample = html.substr(0, 300);
-            if (sample.size() > 300)
-                sample = sample.substr(0, 300);
-            std::string clean;
-            for (char c : sample)
-                if (static_cast<unsigned char>(c) >= 0x20 && c != 0x7F)
-                    clean += c;
-
-            Core::Logger::warn(std::format("{}: nessun episodio nell'HTML statico ({} byte) — "
-                                           "sample: {}",
-                                           series.name, html.size(), clean));
-            return results;
-        }
-        std::sort(found.begin(), found.end(),
-                  [](const EpData& a, const EpData& b) { return a.n < b.n; });
+        std::vector<EpisodeCandidate> found = parseSeriesPage(html);
 
         for (const auto& ep : found) {
-            int local = series.continueSeries ? (ep.n + series.passedEpisodes) : ep.n;
+            int local = series.continueSeries ? (ep.episodeNumber + series.passedEpisodes)
+                                              : ep.episodeNumber;
             Core::Logger::info(
                 std::format("{}: candidate[local={}] pageUrl={} (da data-episode-num={} e href)",
-                            series.name, local, ep.url, ep.n));
+                            series.name, local, ep.episodeUrl, ep.episodeNumber));
             if (local >= nextNeeded) {
-                results.push_back({local, ep.url});
+                results.push_back({local, ep.episodeUrl});
             } else {
                 Core::Logger::info(std::format("{}: filtered out Ep.{} < nextNeeded={}",
                                                series.name, local, nextNeeded));
@@ -168,10 +192,7 @@ namespace Core {
                 cpr::Response r =
                     ScraperUtils::httpGetWithRetry(cpr::Url{apiUrl}, apiHeaders, 3, 2000);
                 if (r.status_code == 200 && !r.text.empty()) {
-                    auto j = json::parse(r.text);
-                    if (!j.contains("error") && j.contains("grabber")) {
-                        grabber = j["grabber"].get<std::string>();
-                    }
+                    grabber = parseEpisodeInfo(r.text);
                 } else {
                     Core::Logger::warn(std::format("{}: Ep.{} - API episodio fallita (status {})",
                                                    series.name, candidate.episodeNumber,
