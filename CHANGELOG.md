@@ -24,6 +24,12 @@ e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
 - Formattazione applicata a tutto il codice C++ (`clang-format`, LLVM).
 - `AGENTS.md` e i documenti di piano spostati fuori dal trunk
   (solo locali: `local/reference`).
+- Standard C++ aggiornato a C++20 (feature 9): `std::format` al posto di
+  `ostringstream`/`to_string` nei log e nella formattazione (output
+  byte-identico, pinnato dai test), `std::jthread` per i worker di analisi
+  (join RAII, stop-path con detach a latenza invariata), designated
+  initializers su `EpisodeInfo`/`TaskReport`, `std::string_view` su
+  `getRecentLines`/`expandTilde`.
 
 ## [2.0.1] - 2026
 
