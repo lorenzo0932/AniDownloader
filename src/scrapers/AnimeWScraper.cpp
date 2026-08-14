@@ -322,7 +322,9 @@ std::vector<EpisodeCandidate> AnimeWScraper::getCandidates(const Series& series)
             cpr::Url{series.seriesPageUrl}, staticHeaders, 3, 2000
         );
         if (r.status_code == 200) html = r.text;
-    } catch (...) {}
+    } catch (const std::exception& e) {
+        Core::Logger::warn(series.name + ": errore nel fetch della pagina: " + std::string(e.what()));
+    }
 
     Core::Logger::info(series.name + ": nextNeeded=" + std::to_string(nextNeeded) + ", html_len=" + std::to_string(html.size()));
     if (html.empty()) {

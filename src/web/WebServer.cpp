@@ -316,17 +316,19 @@ void WebServer::setupRoutes() {
 
     // ---- NATIVE DIRECTORY PICKER ----
     m_svr.Post("/api/browse/pick", [this](const httplib::Request& req, httplib::Response& res) {
-        std::string path;
-        std::string currentPath;
-        try {
-            auto body = nlohmann::json::parse(req.body);
-            auto it = body.find("current_path");
-            if (it != body.end() && it->is_string()) {
-                std::string candidate = it->get<std::string>();
-                if (!candidate.empty() && std::filesystem::is_directory(candidate))
-                    currentPath = candidate;
-            }
-        } catch (...) {}
+    std::string path;
+    std::string currentPath;
+    try {
+        auto body = nlohmann::json::parse(req.body);
+        auto it = body.find("current_path");
+        if (it != body.end() && it->is_string()) {
+            std::string candidate = it->get<std::string>();
+            if (!candidate.empty() && std::filesystem::is_directory(candidate))
+                currentPath = candidate;
+        }
+    } catch (const std::exception& e) {
+        Core::Logger::warn("/api/browse/pick: body non valido ignorato: " + std::string(e.what()));
+    }
 #ifdef _WIN32
         // Windows: not implemented via cross-compilation, rely on frontend fallback
         sendJson(res, errorJson("Not available on this platform"), 501);
@@ -602,12 +604,14 @@ void WebServer::setupRoutes() {
 
     // ---- LOG ----
     m_svr.Get("/api/log", [this](const httplib::Request& req, httplib::Response& res) {
-        int lines = 100;
-        try {
-            if (req.has_param("lines"))
-                lines = std::stoi(req.get_param_value("lines"));
-        } catch (...) {}
-        lines = std::clamp(lines, 10, 5000);
+    int lines = 100;
+    try {
+        if (req.has_param("lines"))
+            lines = std::stoi(req.get_param_value("lines"));
+    } catch (const std::exception&) {
+        Core::Logger::warn("/api/log: parametro 'lines' non valido, uso default 100");
+    }
+    lines = std::clamp(lines, 10, 5000);
 
         // Il log è scritto su log_file_path della config: leggere lo stesso file,
         // non il default di PathHelper (divergevano se il path è personalizzato).

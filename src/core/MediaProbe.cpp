@@ -49,7 +49,7 @@ double getVideoDuration(const std::string& filePath, std::atomic<bool>& stopSign
     std::string output;
     ProcessUtils::runCommand(cmd, stopSignal, [&](const std::string& line) { output += line; });
     double duration = 0.0;
-    try { duration = std::stod(output); } catch (...) {}
+    try { duration = std::stod(output); } catch (...) {} // intenzionale: parse numerico, rumore senza valore
 
     {
         std::lock_guard<std::mutex> lock(s_cacheMutex);

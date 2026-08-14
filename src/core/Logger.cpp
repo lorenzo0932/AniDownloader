@@ -16,7 +16,7 @@ void Logger::init(const std::string& logFilePath) {
     s_logPath = logFilePath;
     try {
         std::filesystem::create_directories(s_logPath.parent_path());
-    } catch (...) {}
+    } catch (...) {} // intenzionale: il logger non deve mai lanciare (rete di sicurezza)
 }
 
 void Logger::info(const std::string& msg) { write("INFO", msg); }
@@ -49,7 +49,7 @@ void Logger::write(const std::string& level, const std::string& msg) {
                     << "[" << std::setw(6) << std::left << level << "] "
                     << msg << std::endl;
         }
-    } catch (...) {}
+    } catch (...) {} // intenzionale: il logger non deve mai lanciare (rete di sicurezza)
 }
 
 } // namespace Core

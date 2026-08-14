@@ -138,7 +138,7 @@ double parseProgressUs(const std::filesystem::path& progressFile) {
     std::string line; long long t = 0;
     while (std::getline(f, line))
         if (line.find("out_time_us=") == 0)
-            try { t = std::stoll(line.substr(12)); } catch (...) {}
+            try { t = std::stoll(line.substr(12)); } catch (...) {} // intenzionale: parse numerico, rumore senza valore
     return static_cast<double>(t);
 }
 

@@ -115,7 +115,9 @@ namespace Core {
                     }
                 }
             }
-        } catch (...) {}
+            } catch (const std::exception& e) {
+                Core::Logger::warn("getHighestEpisodeFile: scan fallito per " + seriesPath + ": " + std::string(e.what()));
+            }
         return {maxEp, maxEpPath.string()};
     }
 
@@ -244,7 +246,9 @@ namespace Core {
                     if (num < 2000) map[num] = entry.path().string();
                 }
             }
-        } catch (...) {}
+        } catch (const std::exception& e) {
+            Core::Logger::warn("scanEpisodesMap: scan fallito per " + seriesPath + ": " + std::string(e.what()));
+        }
         return map;
     }
 
