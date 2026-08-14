@@ -140,10 +140,22 @@ static void testSeriesRepository() {
     // serie sconosciuta -> nessuna modifica
     CHECK(!repo.applyDownloadedEpisodes({{"ZZ", 1}}, "x"));
 
-    // episodio piu' basso -> lastDownloadedEpisode mai diminuito
+    // episodio non più alto -> nessuna modifica (né episodio né timestamp)
     bool ok2 = repo.applyDownloadedEpisodes({{"S1", 1}}, "2026-08-14T00:00:01Z");
-    CHECK(ok2);
+    CHECK(!ok2);
     CHECK(repo.loadSeriesData(true)[0].lastDownloadedEpisode == 5);
+    CHECK(repo.loadSeriesData(true)[0].lastDownloadedAt == "2026-08-14T00:00:00Z");
+
+    // stesso episodio -> nessuna scrittura spuria
+    bool ok3 = repo.applyDownloadedEpisodes({{"S1", 5}}, "2026-08-14T00:00:02Z");
+    CHECK(!ok3);
+    CHECK(repo.loadSeriesData(true)[0].lastDownloadedAt == "2026-08-14T00:00:00Z");
+
+    // avanzamento reale -> episodio e timestamp aggiornati insieme
+    bool ok4 = repo.applyDownloadedEpisodes({{"S1", 7}}, "2026-08-14T00:00:03Z");
+    CHECK(ok4);
+    CHECK(repo.loadSeriesData(true)[0].lastDownloadedEpisode == 7);
+    CHECK(repo.loadSeriesData(true)[0].lastDownloadedAt == "2026-08-14T00:00:03Z");
 
     std::filesystem::remove_all(dir);
 }

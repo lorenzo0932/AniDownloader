@@ -73,11 +73,14 @@ namespace Core {
         for (auto& s : series) {
             auto it = maxEpisodes.find(s.name);
             if (it == maxEpisodes.end()) continue;
-            s.lastDownloadedAt = timestamp;
+            // Semantica: episodio e timestamp si aggiornano SOLO con avanzamento
+            // reale. Conversioni locali di manutenzione o episodi non più alti
+            // non devono "sporcare" il timestamp né scrivere il file.
             if (it->second > s.lastDownloadedEpisode) {
                 s.lastDownloadedEpisode = it->second;
+                s.lastDownloadedAt = timestamp;
+                updated = true;
             }
-            updated = true;
         }
 
         if (updated) {
