@@ -215,29 +215,33 @@ echo "[2b/3] CLI: flusso statico AnimeW (pagina + API episodio + download)"
 
 # Fixture offline del flusso statico (feature 6): pagina serie con la lista
 # episodi, endpoint /api/episode/info che restituisce il grabber, e i video.
+# Due serie con episodi e video distinti: verifica anche il planning parallelo.
 STATIC_SBX="$RPT/static"
-mkdir -p "$STATIC_SBX/AniDownloader" "$STATIC_SBX/cache" "$STATIC_SBX/media/Serie"
+mkdir -p "$STATIC_SBX/AniDownloader" "$STATIC_SBX/cache" "$STATIC_SBX/media/Serie" "$STATIC_SBX/media/Serie2"
 printf '{"convert_to_h265":false}' > "$STATIC_SBX/AniDownloader/config.json"
 dd if=/dev/urandom of="$RPT/video1.mp4" bs=1M count=1 status=none
 dd if=/dev/urandom of="$RPT/video2.mp4" bs=1M count=1 status=none
+dd if=/dev/urandom of="$RPT/video3.mp4" bs=1M count=1 status=none
+dd if=/dev/urandom of="$RPT/video4.mp4" bs=1M count=1 status=none
 
 cat > "$STATIC_SBX/fixture.py" <<'PY'
 import http.server, os, sys
 MEDIA, PORTFILE = sys.argv[1], sys.argv[2]
+SERIE = {1: "EID1", 2: "EID2"}
+SERIE2 = {1: "EID3", 2: "EID4"}
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/serie.html":
             body = ('<html><body><a data-episode-num="1" href="/play/test/EID1">Ep1</a>'
                     '<a data-episode-num="2" href="/play/test/EID2">Ep2</a></body></html>').encode()
+        elif self.path == "/serie2.html":
+            body = ('<html><body><a data-episode-num="1" href="/play/test/EID3">Ep1</a>'
+                    '<a data-episode-num="2" href="/play/test/EID4">Ep2</a></body></html>').encode()
         elif self.path.startswith("/api/episode/info?"):
             eid = self.path.split("id=", 1)[1].split("&", 1)[0]
             base = f"http://127.0.0.1:{self.server.server_address[1]}"
-            if eid == "EID1":
-                body = f'{{"grabber":"{base}/video1.mp4","name":"EID1"}}'.encode()
-            elif eid == "EID2":
-                body = f'{{"grabber":"{base}/video2.mp4","name":"EID2"}}'.encode()
-            else:
-                body = b'{"error":true}'
+            num = {"EID1": 1, "EID2": 2, "EID3": 3, "EID4": 4}.get(eid)
+            body = f'{{"grabber":"{base}/video{num}.mp4","name":"{eid}"}}'.encode() if num else b'{"error":true}'
         elif self.path.startswith("/video"):
             p = os.path.join(MEDIA, os.path.basename(self.path))
             if not os.path.exists(p):
@@ -265,8 +269,8 @@ for i in $(seq 1 50); do
 done
 FIX_PORT=$(cat "$STATIC_SBX/port" 2>/dev/null || echo "")
 if [ -n "$FIX_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$FIX_PORT/serie.html"; then
-    printf '[{"name":"Serie","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/serie.html"}]' \
-        "$STATIC_SBX/media/Serie" "$FIX_PORT" > "$STATIC_SBX/AniDownloader/series_data.json"
+    printf '[{"name":"Serie","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/serie.html"},{"name":"Serie2","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/serie2.html"}]' \
+        "$STATIC_SBX/media/Serie" "$FIX_PORT" "$STATIC_SBX/media/Serie2" "$FIX_PORT" > "$STATIC_SBX/AniDownloader/series_data.json"
     SHA_BEFORE=$(file_sha "$STATIC_SBX/AniDownloader/series_data.json")
 
     if XDG_CONFIG_HOME="$STATIC_SBX" XDG_CACHE_HOME="$STATIC_SBX/cache" \
@@ -276,15 +280,16 @@ if [ -n "$FIX_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$FIX_PORT/s
     else
         fail "flusso statico: exit $? (vedi $RPT/static_run.log)"
     fi
-    if [ "$(find "$STATIC_SBX/media/Serie" -name '*_Ep_0*.mp4' | wc -l)" -eq 2 ]; then
-        pass "flusso statico: 2 episodi scaricati via API grabber"
+    if [ "$(find "$STATIC_SBX/media/Serie" -name '*_Ep_0*.mp4' | wc -l)" -eq 2 ] \
+        && [ "$(find "$STATIC_SBX/media/Serie2" -name '*_Ep_0*.mp4' | wc -l)" -eq 2 ]; then
+        pass "flusso statico: 4 episodi scaricati (2 serie in parallelo)"
     else
-        fail "flusso statico: attesi 2 episodi scaricati: $(ls "$STATIC_SBX/media/Serie" 2>/dev/null)"
+        fail "flusso statico: attesi 4 episodi (2+2): $(ls "$STATIC_SBX/media/Serie" "$STATIC_SBX/media/Serie2" 2>/dev/null | tr '\n' ' ')"
     fi
-    if jq -e '.[0].last_downloaded_episode == 2' "$STATIC_SBX/AniDownloader/series_data.json" >/dev/null 2>&1; then
-        pass "flusso statico: last_downloaded_episode aggiornato a 2"
+    if jq -e '.[0].last_downloaded_episode == 2 and .[1].last_downloaded_episode == 2' "$STATIC_SBX/AniDownloader/series_data.json" >/dev/null 2>&1; then
+        pass "flusso statico: last_downloaded_episode=2 per entrambe le serie"
     else
-        fail "flusso statico: last_downloaded_episode non aggiornato"
+        fail "flusso statico: last_downloaded_episode non aggiornato: $(cat "$STATIC_SBX/AniDownloader/series_data.json")"
     fi
     if ! grep -q 'ChromeDriver\|chromedriver' "$RPT/static_run.log"; then
         pass "flusso statico: nessun riferimento a ChromeDriver nel run"
