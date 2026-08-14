@@ -79,8 +79,11 @@ std::vector<DirEntry> listDirectories(const std::string& dirPath) {
         auto filename = entry.path().filename().string();
         if (filename[0] == '.') continue;
         auto ftime = std::filesystem::last_write_time(entry);
-        auto mtime = std::chrono::duration_cast<std::chrono::seconds>(
-            ftime.time_since_epoch()).count();
+        // Conversione portatile file_clock -> system_clock: l'epoch di file_time_type
+        // dipende dalla piattaforma (libstdc++ usa 2174-01-01 -> mtime negativi).
+        auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+            ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
+        auto mtime = std::chrono::duration_cast<std::chrono::seconds>(sctp.time_since_epoch()).count();
         entries.push_back({filename, entry.path().string(), mtime});
     }
 
