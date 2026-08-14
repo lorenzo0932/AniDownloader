@@ -43,4 +43,7 @@ output/
 REFACTOR-*.md
 TODO-*.md
 
+# Local-only (never pushed): agent instructions, plan docs
+AGENTS.md
+
 struttura.txt
