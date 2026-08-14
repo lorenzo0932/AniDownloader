@@ -3,6 +3,8 @@
   import { fly } from 'svelte/transition';
   import { api, posterUrl } from '../api.js';
   import ConfirmModal from './ConfirmModal.svelte';
+  import OverallHeader from './OverallHeader.svelte';
+  import ProgressList from './ProgressList.svelte';
 
   let seriesList = $state([]);
   let downloadRunning = $state(false);
@@ -277,30 +279,19 @@
 </script>
 
 <div class="vetrina" in:fly={{ y: 8, duration: 200 }}>
-  <div class="toolbar">
-    <button class="btn-primary" onclick={startDownload} disabled={downloadRunning}>
-      Avvia Download
-    </button>
-    <button class="btn-danger" onclick={stopClicked} disabled={!downloadRunning}>
-      Ferma Download
-    </button>
-    {#if phase === 'analysis' && !summary}
-      <span class="loading-spinner"></span>
-    {/if}
-    <span class="status-label">{overallStatus}</span>
-    <span class="sse-badge" class:connected={sseConnected}>
-      {sseConnected ? 'SSE' : 'Disconnesso'}
-    </span>
-  </div>
-
-  {#if globalPercent > 0}
-    <div class="global-bar-wrap">
-      <div class="global-bar">
-        <div class="global-bar-fill" style="width:{globalPercent}%"></div>
-      </div>
-      <span class="global-bar-text">{globalPercent}% ({activeCount} attive, {doneCount} completate, {skippedCount} saltate)</span>
-    </div>
-  {/if}
+  <OverallHeader
+    {downloadRunning}
+    {overallStatus}
+    {sseConnected}
+    {phase}
+    {summary}
+    {globalPercent}
+    {activeCount}
+    {doneCount}
+    {skippedCount}
+    onstart={startDownload}
+    onstop={stopClicked}
+  />
 
   {#if error}
     <div class="error">{error}</div>
@@ -422,85 +413,13 @@
       </div>
     </div>
   {:else if !summary}
-    <div class="series-list">
-      {#if analysisSeries.length > 0}
-        <div class="group-label">Analisi in corso ({analysisSeries.length})</div>
-        {#each analysisSeries as s (s.name)}
-          <div class="series-row analysing">
-            <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
-            <div class="series-info">
-              <span class="series-name">{s.name}</span>
-              <span class="series-status">Analisi...</span>
-            </div>
-          </div>
-        {/each}
-      {/if}
-
-      {#if activeTasks.length > 0}
-        <div class="group-label">In elaborazione ({activeTasks.length})</div>
-        {#each activeTasks as task (task.key)}
-          <div class="series-row active">
-            <div class="series-info">
-              <span class="series-name">{task.seriesName}{task.episode > 0 ? ` (Ep ${task.episode})` : ''}</span>
-              <span class="series-status">{task.statusText}</span>
-            </div>
-            <div class="pbar-wrap">
-              <div class="pbar">
-                <div class="pbar-fill" style="width:{task.percent}%"></div>
-              </div>
-              <span class="pbar-text">{Math.round(task.percent)}%</span>
-            </div>
-          </div>
-        {/each}
-      {/if}
-
-      {#if doneTasks.length > 0}
-        <div class="group-label">Completate ({doneTasks.length})</div>
-        {#each doneTasks as task (task.key)}
-          <div class="series-row done">
-            <div class="series-info">
-              <span class="series-name">{task.seriesName}{task.episode > 0 ? ` (Ep ${task.episode})` : ''}</span>
-              <span class="series-status ok">{task.statusText}</span>
-            </div>
-          </div>
-        {/each}
-      {/if}
-
-      {#if skippedTasks.length > 0}
-        <div class="group-label">
-          <button class="group-toggle" onclick={() => skipExpanded = !skipExpanded}>
-            Saltate ({skippedTasks.length}) {skipExpanded ? '\u25BC' : '\u25B6'}
-          </button>
-        </div>
-        {#if skipExpanded}
-          {#each skippedTasks as task (task.key)}
-            <div class="series-row skipped">
-              <div class="series-info">
-                <span class="series-name">{task.seriesName}{task.episode > 0 ? ` (Ep ${task.episode})` : ''}</span>
-                <span class="series-status skip">{task.statusText}</span>
-              </div>
-            </div>
-          {/each}
-        {/if}
-      {/if}
-
-      {#if waitingSeries.length > 0}
-        <div class="group-label">
-          <button class="group-toggle" onclick={() => waitingExpanded = !waitingExpanded}>
-            In attesa ({waitingSeries.length}) {waitingExpanded ? '\u25BC' : '\u25B6'}
-          </button>
-        </div>
-        {#if waitingExpanded}
-          {#each waitingSeries as s (s.name)}
-            <div class="series-row waiting">
-              <div class="series-info">
-                <span class="series-name">{s.name}</span>
-              </div>
-            </div>
-          {/each}
-        {/if}
-      {/if}
-    </div>
+    <ProgressList
+      {analysisSeries}
+      {activeTasks}
+      {doneTasks}
+      {skippedTasks}
+      {waitingSeries}
+    />
   {/if}
 
   <ConfirmModal
@@ -546,19 +465,11 @@
 <style>
   .vetrina { display: flex; flex-direction: column; gap: 1rem; }
 
-  .toolbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
   .btn-primary {
     padding: 0.6rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
   }
   .btn-primary:hover { background: var(--accent-hover); }
-  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn-danger {
-    padding: 0.6rem 1.25rem; background: var(--danger-bg); border: 1px solid var(--danger-border); border-radius: 8px;
-    color: var(--danger); font-size: 0.85rem; font-weight: 600; cursor: pointer;
-  }
-  .btn-danger:hover { background: var(--danger-bg-hover); }
-  .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-secondary {
     padding: 0.6rem 1.25rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; cursor: pointer;
@@ -566,30 +477,6 @@
   }
   .btn-secondary:hover { background: var(--bg-hover); color: var(--text-primary); }
   .btn-sm { padding: 0.45rem 0.9rem; font-size: 0.8rem; }
-  .status-label { font-size: 0.9rem; color: var(--text-secondary); font-weight: 600; flex: 1; }
-  .sse-badge {
-    font-size: 0.75rem; color: var(--text-muted); background: var(--bg-secondary); border: 1px solid var(--border-color);
-    padding: 0.2rem 0.5rem; border-radius: 4px;
-  }
-  .sse-badge.connected { color: var(--success); border-color: var(--success-border); }
-
-  .loading-spinner {
-    width: 16px; height: 16px; border: 2px solid var(--border-color);
-    border-top: 2px solid var(--accent); border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    flex-shrink: 0;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .global-bar-wrap { display: flex; align-items: center; gap: 0.75rem; }
-  .global-bar {
-    flex: 1; height: 10px; background: var(--border-color); border-radius: 5px; overflow: hidden;
-  }
-  .global-bar-fill {
-    height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-light));
-    border-radius: 5px; transition: width 0.3s ease;
-  }
-  .global-bar-text { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
 
   .error {
     background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger);
@@ -640,45 +527,18 @@
     text-transform: uppercase; letter-spacing: 0.05em;
     padding: 0.75rem 0 0.25rem; border-bottom: 1px solid var(--border-color); margin-bottom: 0.25rem;
   }
-  .group-toggle {
-    background: none; border: none; color: var(--accent-light); cursor: pointer;
-    font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
-    padding: 0;
-  }
-  .group-toggle:hover { color: var(--accent); }
-
   .series-row {
     display: flex; align-items: center; gap: 0.75rem;
     background: var(--bg-secondary); border-radius: 8px; padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color);
     animation: rowIn 0.3s ease-out both;
   }
-  .series-row:nth-child(2) { animation-delay: 20ms; }
-  .series-row:nth-child(3) { animation-delay: 40ms; }
-  .series-row:nth-child(4) { animation-delay: 60ms; }
-  .series-row:nth-child(5) { animation-delay: 80ms; }
-  .series-row.active { border-color: var(--accent-bg); }
-  .series-row.analysing { opacity: 0.65; }
-  .series-row.done { opacity: 0.7; }
-  .series-row.skipped { opacity: 0.5; }
-  .series-row.waiting { opacity: 0.4; }
-
   .poster-thumb {
     width: 40px; height: 56px; border-radius: 4px; object-fit: cover;
     background: var(--bg-tertiary); flex-shrink: 0;
   }
   .series-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
   .series-name { font-size: 0.85rem; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .series-status { font-size: 0.75rem; color: var(--text-muted); }
-  .series-status.ok { color: var(--success); }
-  .series-status.skip { color: var(--warning); }
-
-  .pbar-wrap { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; min-width: 140px; }
-  .pbar { flex: 1; height: 8px; background: var(--border-color); border-radius: 4px; overflow: hidden; }
-  .pbar-fill {
-    height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s ease;
-  }
-  .pbar-text { font-size: 0.75rem; color: var(--accent-light); width: 2.5rem; text-align: right; }
 
   .log-section { margin-top: 0.5rem; }
   .log-toggle {
@@ -704,29 +564,16 @@
   }
 
   @media (max-width: 768px) {
-    .toolbar { flex-direction: column; align-items: stretch; }
-    .toolbar .btn-primary, .toolbar .btn-danger { width: 100%; justify-content: center; }
-    .status-label { text-align: center; }
-    .sse-badge { align-self: flex-end; }
-
     .summary-box { flex-direction: column; align-items: stretch; gap: 0.75rem; }
     .summary-actions { flex-direction: column; align-items: stretch; }
     .summary-actions .btn-primary,
     .summary-actions .btn-secondary { width: 100%; justify-content: center; }
     .summary-icon { display: none; }
 
-    .global-bar-wrap { flex-direction: column; align-items: stretch; gap: 0.25rem; }
-    .global-bar-text { white-space: normal; text-align: center; }
-
     .series-row { padding: 0.4rem 0.5rem; gap: 0.5rem; flex-wrap: nowrap; }
     .poster-thumb { width: 32px; height: 44px; }
-    .pbar-wrap { min-width: 100px; }
-    .pbar-text { width: 2rem; font-size: 0.7rem; }
     .series-name { font-size: 0.8rem; }
-    .series-status { font-size: 0.7rem; }
 
     .log-view { font-size: 0.65rem; max-height: 150px; }
-
-
   }
 </style>
