@@ -31,10 +31,10 @@ Stato dell'applicazione.
 ```json
 {
     "success": true,
-    "version": "2.0.0",
-    "config_path": "/home/user/.config/AniDownloader/config.json",
-    "series_path": "/home/user/.config/AniDownloader/series_data.json",
-    "log_path": "/home/user/.config/AniDownloader/logs/AniDownloader.log"
+    "version": "2.0.1",
+    "port": 8989,
+    "downloadRunning": false,
+    "sseClients": 0
 }
 ```
 
