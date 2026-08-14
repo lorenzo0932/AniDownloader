@@ -23,7 +23,6 @@ Auto-generato al primo avvio. Supporta i seguenti campi:
 | `convert_to_h265` | bool | `true` | Conversione HEVC post-download |
 | `num_chunks` | int | `0` | Chunk FFmpeg (`0` = auto, `1` = no chunk, `>1` = chunk parallelo) |
 | `auto_cleanup_on_close` | bool | `true` | Pulizia file parziali alla chiusura |
-| `chromedriver_path` | string | `chromedriver` | Path o nome del binary ChromeDriver |
 
 ---
 

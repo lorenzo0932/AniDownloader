@@ -227,8 +227,7 @@ Legge la configurazione corrente.
         "retry_delay_ms": 2000,
         "convert_to_h265": true,
         "num_chunks": 0,
-        "auto_cleanup_on_close": true,
-        "chromedriver_path": "chromedriver"
+        "auto_cleanup_on_close": true
     }
 }
 ```

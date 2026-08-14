@@ -52,7 +52,7 @@ AniDownloader è un sistema **monolitico C++17** che integra:
     ├── per ogni serie: thread separato
     │   └── PlanningService::planSingleSeries()
     │       └── Scraper::planSeriesTask()
-    │           ├── ChromeDriver → scrape pagina episodi
+    │           ├── AnimeW: lista episodi + endpoint statico /api/episode/info
     │           ├── ScraperUtils::computeNextNeeded()
     │           └── restituisce DownloadTask[]
     │
@@ -104,4 +104,3 @@ frontend esterne.
 - `Config::PathHelper` astrae i path (XDG su Linux, APPDATA su Windows)
 - `ScraperUtils::Q()` quoting shell differente per POSIX/Windows
 - `ScraperUtils::DEVNULL()` redirezione output nulla cross-platform
-- ChromeDriver avviato con flag specifici per piattaforma

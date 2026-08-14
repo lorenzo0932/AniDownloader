@@ -48,33 +48,31 @@ PlanningService::planSingleSeries()
         │   │   fallback a getHighestEpisodeFile() + 1
         │   └── se nessun valido → ep 1
         │
-        ├── ChromeDriver → naviga pagina episodi
-        │   ├── trova lista episodi
-        │   ├── estrae URL video diretto
-        │   └── genera nome file
+        ├── AnimeW: lista episodi (regex) + endpoint statico del player
+        │   ├── GET /api/episode/info?id=<episodeId>&alt=1 → {"grabber": ...}
+        │   ├── grabber = URL diretto del video sul CDN (sweetpixel)
+        │   └── genera nome file dal pattern del CDN
         │
         └── restituisce DownloadTask[..]
 ```
 
-## ChromeDriver
+## Flusso statico AnimeW (niente browser)
 
-Entrambi gli scraper usano ChromeDriver per il rendering JavaScript
-(necessario per i player embedded dei siti).
+Dalla feature 6 il flusso di AnimeW è **interamente statico** (nessuna
+dipendenza da ChromeDriver/browser):
 
-- **Porta**: 9515 (default ChromeDriver)
-- **Avvio**: automatico all'inizio di `ExecutionEngine::run()`
-  - Linux: `pgrep chromedriver || chromedriver --port=9515 &`
-  - Windows: `tasklist | find chromedriver || start chromedriver --port=9515`
-- **Concorrenza**: limitata da `ScraperSemaphoreGuard` (semforo globale RAII)
+1. `getCandidates`: GET sulla pagina serie → regex `data-episode-num` + `href`
+   (lista episodi, id = ultimo segmento dell'URL pagina episodio).
+2. Per ogni episodio mancante: `GET https://www.animeworld.ac/api/episode/info?id=<id>&alt=1`
+   con UA + Referer statici → risposta `{"grabber": "<URL video>", ...}`.
+3. `grabber` → `DownloadTask` (URL predicibile del CDN, es.
+   `https://srv<NN>-<name>.sweetpixel.org/DDL/ANIME/<Romaji>/<Romaji>_Ep_<NN>_SUB_ITA.mp4`).
 
-### ScraperSemaphoreGuard
+Fallimenti rumorosi (feature 5): API fallita / grabber assente → `Logger::warn`
+con status e contesto; id inesistente → `{"error":true}`.
 
-```cpp
-class ScraperSemaphoreGuard {
-    // Limita a MAX_CONCURRENT sessioni ChromeDriver simultanee
-    // RAII: costruttore acquire, distruttore release
-};
-```
+Per i test offline l'endpoint è sovrascrivibile con la variabile d'ambiente
+`ANIDOWNLOADER_API_BASE` (usata dallo smoke per la fixture locale).
 
 ## ScraperUtils
 

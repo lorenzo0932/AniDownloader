@@ -111,14 +111,3 @@ di rete, scarica manualmente:
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_SOURCE_DIR_JSON=/path/to/json
 ```
-
-### ChromeDriver per scraping
-
-AniDownloader cerca `chromedriver` nel PATH. Installalo:
-
-```bash
-# Debian/Ubuntu
-sudo apt install chromium-chromedriver
-
-# O scarica manualmente da https://googlechromelabs.github.io/chrome-for-testing/
-```
