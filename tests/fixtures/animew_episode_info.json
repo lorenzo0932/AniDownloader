@@ -1,0 +1,5 @@
+{
+    "grabber": "https://srv18-tsurukusa.sweetpixel.org/DDL/ANIME/Guarding/Guarding_Ep_01_SUB_ITA.mp4",
+    "name": "zzz112",
+    "target": "/api/episode/serverPlayerAnimeWorld?alt=1&id=zzz112"
+}

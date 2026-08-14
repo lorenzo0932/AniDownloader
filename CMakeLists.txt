@@ -212,6 +212,26 @@ target_link_libraries(test_media PRIVATE
 )
 add_test(NAME test_media COMMAND test_media)
 
+# ─── TEST SCRAPER (parser offline: fixture HTML/JSON in tests/fixtures/) ───
+add_executable(test_scraper
+    tests/test_scraper.cpp
+    src/scrapers/AnimeWScraper.cpp
+    src/scrapers/AnimeUScraper.cpp
+    src/scrapers/ScraperUtils.cpp
+    src/core/Logger.cpp
+    src/core/Series.cpp
+)
+target_include_directories(test_scraper PRIVATE include)
+target_compile_definitions(test_scraper PRIVATE
+    FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+)
+target_link_libraries(test_scraper PRIVATE
+    nlohmann_json::nlohmann_json
+    cpr::cpr
+    Threads::Threads
+)
+add_test(NAME test_scraper COMMAND test_scraper)
+
 # ─── SMOKE E2E (solo Linux: script POSIX con curl/jq/python3) ───
 if(UNIX AND NOT APPLE)
     add_test(NAME smoke_e2e COMMAND bash ${CMAKE_SOURCE_DIR}/tests/e2e/smoke.sh)
