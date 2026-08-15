@@ -85,11 +85,33 @@ jobs:
         if: runner.os == 'Linux'
         run: ctest --test-dir build --output-on-failure
 
-      - name: Build frontend
-        run: |
-          cd web
-          npm ci
-          npm run build
+  # ─── Frontend: unit test Vitest + build di produzione (unico check con npm ci) ───
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Run tests
+        run: npm run test
+        working-directory: web
+
+      # La build resta qui volutamente: è l'unico punto che verifica la build di
+      # produzione con `npm ci` esatto (embed_web.py nel build C++ usa `npm install`).
+      - name: Build production
+        run: npm run build
+        working-directory: web
 
   # ─── Formattazione: nessun file fuori stile ───
   format:
