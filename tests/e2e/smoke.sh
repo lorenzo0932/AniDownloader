@@ -461,14 +461,15 @@ if [ -n "$SCN_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$SCN_PORT/s
         fail "S3: file attesi Ep_03/Ep_04: $(ls "$SCEN_SBX/media/Serie4" 2>/dev/null | tr '\n' ' ')"
     fi
 
-    # --- S4: lastDownloaded>0 + media vuota → quirk nextNeeded=1 bloccato (4 file) ---
+    # --- S4: lastDownloaded=3 + media vuota → prossimo episodio = 4 (fix feature 11, 1 file) ---
     printf '[{"name":"Serie5","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s4.html","last_downloaded_episode":3}]' \
         "$SCEN_SBX/media/Serie5" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
     scen_run s4
-    if [ "$(find "$SCEN_SBX/media/Serie5" -name '*_Ep_0*.mp4' | wc -l)" -eq 4 ]; then
-        pass "S4: quirk bloccato: 4 episodi riscaricati (nextNeeded=1 con media vuota)"
+    if [ "$(find "$SCEN_SBX/media/Serie5" -name '*_Ep_04.mp4' | wc -l)" -eq 1 ] \
+        && [ "$(find "$SCEN_SBX/media/Serie5" -name '*_Ep_0*.mp4' | wc -l)" -eq 1 ]; then
+        pass "S4: fix feature 11: media vuota + last=3 → scaricato solo Ep_04 (1 file)"
     else
-        fail "S4: attesi 4 file: $(ls "$SCEN_SBX/media/Serie5" 2>/dev/null | tr '\n' ' ')"
+        fail "S4: atteso 1 solo file Ep_04: $(ls "$SCEN_SBX/media/Serie5" 2>/dev/null | tr '\n' ' ')"
     fi
 
     # --- S5: priorità alta → entrambe le serie completate ---

@@ -296,6 +296,8 @@ namespace Core {
             if (!validEpisodePath(episodesMap, n).empty())
                 return n + 1;
         }
-        return 1;
+        // Media senza episodi validi fino a last: riparti da last+1 (feature 11,
+        // fix quirk S4) invece di riscaricare tutto da 1.
+        return lastDownloadedEpisode + 1;
     }
 } // namespace Core

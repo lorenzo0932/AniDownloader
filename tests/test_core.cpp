@@ -107,7 +107,12 @@ static void testScraperUtils() {
 
     // computeNextNeeded senza spawnare ffprobe (path inesistenti -> early exit)
     std::map<int, std::string> fake = {{1, "/nonexistent/x.mp4"}, {2, "/nonexistent/y.mp4"}};
-    CHECK(ScraperUtils::computeNextNeeded(dir.string(), 2, fake) == 1);
+    // Nessun episodio valido fino a last → riparte da last+1 (fix feature 11)
+    CHECK(ScraperUtils::computeNextNeeded(dir.string(), 2, fake) == 3);
+    // S4: media vuota + last=3 → prossimo episodio = 4 (non 1)
+    auto emptyDir = dir / "vuota";
+    std::filesystem::create_directories(emptyDir);
+    CHECK(ScraperUtils::computeNextNeeded(emptyDir.string(), 3, fake) == 4);
     CHECK(ScraperUtils::computeNextNeeded("/nonexistent/dir", 0, {}) == 1);
 
     std::filesystem::remove_all(dir);
