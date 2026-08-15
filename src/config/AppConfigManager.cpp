@@ -141,7 +141,7 @@ namespace Config {
 
         // 2. Budget Thread: Burst (85% CPU) vs Background (50% CPU)
         float usageFactor = burstMode ? 0.85f : 0.50f;
-        int targetThreadsBudget = static_cast<int>(totalThreads * usageFactor);
+        int targetThreadsBudget = static_cast<int>(static_cast<float>(totalThreads) * usageFactor);
         if (targetThreadsBudget < 1)
             targetThreadsBudget = 1;
 

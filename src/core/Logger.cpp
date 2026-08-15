@@ -11,7 +11,8 @@ namespace Core {
     std::ofstream Logger::s_logStream;
     std::chrono::steady_clock::time_point Logger::s_lastRotCheck{};
 
-    static constexpr std::uintmax_t MAX_LOG_SIZE = 5 * 1024 * 1024; // 5 MB
+    static constexpr std::uintmax_t MAX_LOG_SIZE =
+        static_cast<std::uintmax_t>(5) * 1024 * 1024; // 5 MB
 
     void Logger::init(const std::string& logFilePath) {
         std::lock_guard<std::mutex> lock(s_mutex);
@@ -22,7 +23,8 @@ namespace Core {
                 s_logStream.close();
             s_logStream.open(s_logPath, std::ios::app);
         } catch (...) {
-        } // intenzionale: il logger non deve mai lanciare (rete di sicurezza)
+            // intenzionale: il logger non deve mai lanciare (rete di sicurezza)
+        }
     }
 
     void Logger::info(const std::string& msg) { write("INFO", msg); }
@@ -69,7 +71,8 @@ namespace Core {
                             << '\n' << std::flush;
             }
         } catch (...) {
-        } // intenzionale: il logger non deve mai lanciare (rete di sicurezza)
+            // intenzionale: il logger non deve mai lanciare (rete di sicurezza)
+        }
     }
 
 } // namespace Core

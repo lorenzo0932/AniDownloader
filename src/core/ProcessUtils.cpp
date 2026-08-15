@@ -142,7 +142,7 @@ namespace Core {
                 if (line.find("MemAvailable:") == 0)
                     std::sscanf(line.c_str(), "MemAvailable: %ld", &available);
             }
-            return ((double)(total - available) / total) * 100.0;
+            return ((double)(total - available) / (double)total) * 100.0;
 #endif
         }
 
@@ -157,7 +157,8 @@ namespace Core {
                     try {
                         t = std::stoll(line.substr(12));
                     } catch (...) {
-                    } // intenzionale: parse numerico, rumore senza valore
+                        // intenzionale: parse numerico, rumore senza valore
+                    }
             return static_cast<double>(t);
         }
 

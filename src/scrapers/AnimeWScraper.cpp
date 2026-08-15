@@ -66,9 +66,8 @@ namespace Core {
                                                   std::regex_constants::icase);
             static const std::regex sampleHrefRegex(R"raw(<a[^>]*href[^>]*>)raw",
                                                     std::regex_constants::icase);
-            if (std::regex_search(html, sm, sampleEpRegex))
-                sample = sm.str(0);
-            else if (std::regex_search(html, sm, sampleHrefRegex))
+            if (std::regex_search(html, sm, sampleEpRegex) ||
+                std::regex_search(html, sm, sampleHrefRegex))
                 sample = sm.str(0);
             else
                 sample = html.substr(0, 300);
@@ -101,7 +100,7 @@ namespace Core {
             if (!j.contains("error") && j.contains("grabber"))
                 return j["grabber"].get<std::string>();
         } catch (const std::exception&) {
-            // body non JSON: nessun URL video, gestito dal chiamante
+            // body non JSON: intenzionale, nessun URL video — gestito dal chiamante
         }
         return "";
     }
