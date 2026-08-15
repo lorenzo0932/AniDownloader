@@ -53,13 +53,6 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
-      - name: Build frontend
-        run: |
-          cd web
-          npm ci
-          npm run build
-          cd ..
-
       - name: Copy binary to Tauri binaries
         run: |
           mkdir -p src-tauri/binaries
@@ -132,13 +125,6 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
           cmake --build build --config Release
 
-      - name: Build frontend
-        run: |
-          cd web
-          npm ci
-          npm run build
-          cd ..
-
       - name: Copy binary to Tauri binaries
         shell: cmd
         run: |
@@ -199,13 +185,6 @@ jobs:
         run: |
           cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
           cmake --build build
-
-      - name: Build frontend
-        run: |
-          cd web
-          npm ci
-          npm run build
-          cd ..
 
       - name: Copy binary to Tauri binaries
         run: |
