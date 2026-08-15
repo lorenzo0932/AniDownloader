@@ -9,6 +9,19 @@
 #include <map>
 #include <mutex>
 #include <regex>
+#ifdef __linux__
+#include <fcntl.h>
+#include <linux/fs.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
+#ifdef __APPLE__
+#include <stdio.h>
+#endif
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 namespace Core {
 
@@ -140,6 +153,33 @@ namespace Core {
                   [](const DirEntry& a, const DirEntry& b) { return a.name < b.name; });
 
         return entries;
+    }
+
+    bool publishNoReplace(const std::string& tempPath, const std::string& finalPath) {
+#ifdef __linux__
+        // renameat2 con RENAME_NOREPLACE: atomico e fallisce se la destinazione
+        // esiste. Disponibile su kernel >= 3.15; ENOSYS/EINVAL = fail-closed.
+        if (::syscall(SYS_renameat2, AT_FDCWD, tempPath.c_str(), AT_FDCWD, finalPath.c_str(),
+                      RENAME_NOREPLACE) == 0)
+            return true;
+        return false;
+#elif defined(__APPLE__)
+        // renamex_np con RENAME_EXCL: atomico no-replace (macOS 10.12+).
+        if (::renamex_np(tempPath.c_str(), finalPath.c_str(), RENAME_EXCL) == 0)
+            return true;
+        return false;
+#elif defined(_WIN32)
+        // Senza MOVEFILE_REPLACE_EXISTING fallisce se la destinazione esiste.
+        if (::MoveFileExA(tempPath.c_str(), finalPath.c_str(), MOVEFILE_WRITE_THROUGH) != 0)
+            return true;
+        return false;
+#else
+        // Piattaforma sconosciuta: niente primitiva no-replace → fail-closed,
+        // mai un fallback che possa sovrascrivere.
+        (void)tempPath;
+        (void)finalPath;
+        return false;
+#endif
     }
 
 } // namespace Core

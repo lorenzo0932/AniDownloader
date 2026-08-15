@@ -158,17 +158,20 @@ namespace Core {
                     if (!res.success && stopSignal &&
                         m_config.get<bool>("auto_cleanup_on_close", true)) {
                         std::string expPath = ScraperUtils::expandTilde(item.first.path);
-                        std::filesystem::path fullFile =
-                            std::filesystem::path(expPath) / item.second.fileName;
+                        // Feature 11: i parziali vivono in .part/.part.aria2.
+                        // Il nome finale esiste solo dopo il publish (file valido):
+                        // non va mai toccato in un cleanup.
+                        std::filesystem::path partFile =
+                            std::filesystem::path(expPath) / (item.second.fileName + ".part");
                         try {
                             bool removedFile = false;
                             bool removedAria2 = false;
-                            if (std::filesystem::exists(fullFile)) {
-                                std::filesystem::remove(fullFile);
+                            if (std::filesystem::exists(partFile)) {
+                                std::filesystem::remove(partFile);
                                 removedFile = true;
                             }
-                            if (std::filesystem::exists(fullFile.string() + ".aria2")) {
-                                std::filesystem::remove(fullFile.string() + ".aria2");
+                            if (std::filesystem::exists(partFile.string() + ".aria2")) {
+                                std::filesystem::remove(partFile.string() + ".aria2");
                                 removedAria2 = true;
                             }
                             if (removedFile || removedAria2) {

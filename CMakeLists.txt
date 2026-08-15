@@ -200,6 +200,7 @@ add_executable(test_media
     src/core/MediaProcessor.cpp
     src/core/MediaProbe.cpp
     src/core/ProcessUtils.cpp
+    src/core/FileUtils.cpp
     src/scrapers/ScraperUtils.cpp
     src/core/Logger.cpp
     src/config/AppConfigManager.cpp

@@ -213,6 +213,16 @@ else
     fail "sha256 JSON cambiato dopo il run"
 fi
 
+# Fixture video valido per i download (feature 11: il check di integrità
+# rifiuta i file non video). Copia + padding a 1.1MB (isMediaFileHealthy
+# richiede >= 1MB): senza dipendere da ffmpeg per la generazione.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+FIXTURE_VIDEO="$SCRIPT_DIR/../fixtures/sample_video.mp4"
+make_valid_video() { # $1 output path
+    cp "$FIXTURE_VIDEO" "$1" 2>/dev/null || return 1
+    truncate -s 1100000 "$1" 2>/dev/null || return 1
+}
+
 echo "[2b/3] CLI: flusso statico AnimeW (pagina + API episodio + download)"
 
 # Fixture offline del flusso statico (feature 6): pagina serie con la lista
@@ -221,10 +231,8 @@ echo "[2b/3] CLI: flusso statico AnimeW (pagina + API episodio + download)"
 STATIC_SBX="$RPT/static"
 mkdir -p "$STATIC_SBX/AniDownloader" "$STATIC_SBX/cache" "$STATIC_SBX/media/Serie" "$STATIC_SBX/media/Serie2"
 printf '{"convert_to_h265":false}' > "$STATIC_SBX/AniDownloader/config.json"
-dd if=/dev/urandom of="$RPT/video1.mp4" bs=1M count=1 status=none
-dd if=/dev/urandom of="$RPT/video2.mp4" bs=1M count=1 status=none
-dd if=/dev/urandom of="$RPT/video3.mp4" bs=1M count=1 status=none
-dd if=/dev/urandom of="$RPT/video4.mp4" bs=1M count=1 status=none
+make_valid_video "$RPT/video1.mp4" && make_valid_video "$RPT/video2.mp4" && \
+    make_valid_video "$RPT/video3.mp4" && make_valid_video "$RPT/video4.mp4" || exit 1
 
 cat > "$STATIC_SBX/fixture.py" <<'PY'
 import http.server, os, sys
@@ -309,13 +317,13 @@ echo "[2c/3] CLI: scenari limite (feature 7)"
 # bug-prone (file corrotto, conversione h264 attiva/disattiva, offset passati,
 # lastDownloaded con media vuota, priorità). Ogni scenario: JSON fresco +
 # run + assert su file/log/JSON. Un fixture serve le pagine /s1..s5.html
-# (0..4 episodi) e i video v*.mp4 (random, 1MB).
+# (0..4 episodi) e i video v*.mp4 (validi, 1MB — vedi feature 11).
 SCEN_SBX="$RPT/scen"
 mkdir -p "$SCEN_SBX/AniDownloader" "$SCEN_SBX/cache" "$SCEN_SBX/cache/AniDownloader"
 for s in 1 2 3 4 5 6 7; do mkdir -p "$SCEN_SBX/media/Serie$s"; done
 SCEN_LOG="$SCEN_SBX/cache/AniDownloader/serie_critical_errors.log"
 for v in v31 v32 v41 v42 v43 v44 v51; do
-    dd if=/dev/urandom of="$RPT/$v.mp4" bs=1M count=1 status=none 2>/dev/null || true
+    make_valid_video "$RPT/$v.mp4" || exit 1
 done
 
 cat > "$SCEN_SBX/fixture_scen.py" <<'PY'

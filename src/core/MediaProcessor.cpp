@@ -1,4 +1,5 @@
 #include "core/MediaProcessor.hpp"
+#include "core/FileUtils.hpp"
 #include "core/Logger.hpp"
 #include "core/MediaProbe.hpp"
 #include "core/ProcessUtils.hpp"
@@ -37,17 +38,24 @@ namespace Core {
         std::string expandedPath = ScraperUtils::expandTilde(series.path);
         std::string fullFile = (fs::path(expandedPath) / task.fileName).string();
         std::string aria2File = fullFile + ".aria2";
+        std::string partFile = fullFile + ".part";
+        std::string partAria2 = partFile + ".aria2";
 
         bool needsDownload = true;
         bool needsConversion = strategy.convertToH265;
 
-        // --- PRE-CHECK: RISOLUZIONE CRASH DI SISTEMA E COERENZA CODIFICA ---
+        // --- PRE-CHECK: MACCHINA A STATI (feature 11) ---
+        // | finale sano                      | skip / conversione locale       |
+        // | finale + .aria2 (legacy pre-11)  | delete entrambi → download .part|
+        // | finale corrotto                  | delete → download .part         |
+        // | .part + .part.aria2              | resume (--continue) → publish   |
+        // | .part senza .aria2 (no proof)    | delete → download da zero       |
         if (fs::exists(fullFile)) {
             m_progressCallback(series.name, "Verifica file esistente...");
 
             if (fs::exists(aria2File)) {
                 m_progressCallback(series.name,
-                                   "Rilevato download incompleto, rimozione residui...");
+                                   "Rilevato download incompleto legacy, rimozione residui...");
                 std::error_code ec;
                 fs::remove(fullFile, ec);
                 fs::remove(aria2File, ec);
@@ -75,6 +83,26 @@ namespace Core {
             }
         }
 
+        // Residuo .part da un run precedente (crash o stop):
+        if (fs::exists(partFile) || fs::exists(partAria2)) {
+            if (fs::exists(partAria2)) {
+                // Download interrotto: il resume lo riprende dal punto di
+                // interruzione (--continue). Se la sorgente è cambiata, aria2
+                // riparte da zero da solo.
+                m_progressCallback(series.name, "Ripresa download interrotto...");
+                needsDownload = true;
+            } else {
+                // Nessun controllo di controllo aria2: nessuna prova che il
+                // .part corrisponda alla sorgente → delete + redownload.
+                m_progressCallback(series.name, "Residuo .part senza prova di integrità, "
+                                                "rimozione...");
+                std::error_code ec;
+                fs::remove(partFile, ec);
+                fs::remove(partAria2, ec);
+                needsDownload = true;
+            }
+        }
+
         // Task di conversione locale (videoUrl vuoto) con file sorgente mancante:
         // fallisci subito invece di 3 retry di aria2 con URL vuoto.
         if (needsDownload && task.videoUrl.empty()) {
@@ -92,14 +120,19 @@ namespace Core {
         else
             m_progressCallback(series.name, "MODE:CONV");
 
-        // --- FASE 1: DOWNLOAD CON ARIA2C ---
+        // --- FASE 1: DOWNLOAD CON ARIA2C (in .part, con resume) ---
         auto startDl = std::chrono::steady_clock::now();
         if (needsDownload) {
             m_progressCallback(series.name, "Download...");
+            // --continue=true: i trasferimenti interrotti riprendono dal punto
+            // di interruzione (i .part non vengono MAI cancellati tra i
+            // tentativi, altrimenti il resume sarebbe distrutto). Se la
+            // sorgente è cambiata, aria2 riparte da zero da solo.
             std::string dlCmd =
-                "aria2c -x 16 -s 16 --summary-interval=1 --allow-overwrite=true --dir=" +
-                ScraperUtils::Q(expandedPath) + " -o " + ScraperUtils::Q(task.fileName) + " " +
-                ScraperUtils::Q(task.videoUrl);
+                "aria2c -x 16 -s 16 --summary-interval=1 --continue=true --allow-overwrite=true "
+                "--dir=" +
+                ScraperUtils::Q(expandedPath) + " -o " + ScraperUtils::Q(task.fileName + ".part") +
+                " " + ScraperUtils::Q(task.videoUrl);
 
             static const std::regex dlRegex(R"raw(\((\d+)%\))raw");
             int status = 0;
@@ -117,9 +150,6 @@ namespace Core {
                 Logger::warn(std::format("{}: Download fallito, tentativo {}/3, retry tra 3s...",
                                          series.name, attempt));
                 m_progressCallback(series.name, std::format("Retry download ({}/3)...", attempt));
-                std::error_code ec;
-                fs::remove(fullFile, ec);
-                fs::remove(aria2File, ec);
                 std::this_thread::sleep_for(std::chrono::seconds(3));
             }
 
@@ -129,6 +159,28 @@ namespace Core {
                 Logger::error(series.name + ": Download fallito dopo 3 tentativi");
                 return res;
             }
+
+            // Check di integrità sul .part PRIMA della pubblicazione: nessun
+            // file corrotto può finire in media (la garanzia strutturale S1).
+            m_progressCallback(series.name, "Verifica file scaricato...");
+            if (!MediaProbe::isMediaFileHealthy(partFile, m_stopSignal)) {
+                res.errorMessage = "File scaricato non valido (check di integrità fallito)";
+                Logger::error(series.name + ": " + res.errorMessage);
+                std::error_code ec;
+                fs::remove(partFile, ec);
+                fs::remove(partAria2, ec);
+                return res;
+            }
+
+            // Publish atomico no-replace: il nome finale non deve esistere.
+            // In caso di EEXIST (o primitiva non disponibile) il task fallisce
+            // e il .part resta per il run successivo (limite noto del piano).
+            if (!publishNoReplace(partFile, fullFile)) {
+                res.errorMessage = "Publish fallito: il file finale esiste già";
+                Logger::error(series.name + ": " + res.errorMessage);
+                return res;
+            }
+
             res.downloadTime =
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - startDl).count();
         } else {
