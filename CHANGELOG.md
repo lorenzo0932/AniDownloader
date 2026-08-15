@@ -16,6 +16,11 @@ e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
 - Template PR (`.github/PULL_REQUEST_TEMPLATE.md`).
 - Ruleset GitHub `dev-soft (GitHub Flow)` su `dev` e repo settings:
   squash-only merge + delete branch on merge.
+- Test unit offline dei parser (feature 10): `test_scraper` con fixture
+  HTML/JSON minimizzate in `tests/fixtures/` (parse pagine/episodi, titolo,
+  casi limite), senza rete.
+- Job CI `coverage`: build con `--coverage`, report lcov/genhtml (branch
+  coverage) come artifact + riepilogo nel log (Linux, nessuna soglia).
 
 ### Modificato
 
