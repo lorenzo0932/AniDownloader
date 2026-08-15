@@ -79,7 +79,7 @@ jobs:
         run: cmake -B build -DCMAKE_CXX_COMPILER_LAUNCHER=ccache ${{ matrix.cmake_args || '-DCMAKE_BUILD_TYPE=Debug' }}
 
       - name: Build C++
-        run: cmake --build build
+        run: cmake --build build --parallel
 
       - name: Test C++ (Linux)
         if: runner.os == 'Linux'
@@ -228,7 +228,7 @@ jobs:
       - name: Generate compile commands
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
-      - name: Run clang-tidy (fail-on-error)
+      - name: Run clang-tidy (fail-on-error, parallelo)
         run: |
-          clang-tidy -p build --warnings-as-errors='*' \
+          run-clang-tidy -p build -j 2 -warnings-as-errors '*' \
             $(git ls-files 'src/**/*.cpp' | grep -v embedded_web_data.cpp)
