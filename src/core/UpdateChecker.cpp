@@ -9,7 +9,7 @@
 namespace Core {
 
     void UpdateChecker::checkForUpdates(const std::string& currentVersion, Callback callback) {
-        std::thread([currentVersion, callback]() {
+        std::thread([currentVersion, callback = std::move(callback)]() {
             try {
                 cpr::Response r = cpr::Get(
                     cpr::Url{

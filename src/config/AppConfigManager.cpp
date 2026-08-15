@@ -40,7 +40,7 @@ namespace Config {
 
     } // namespace
 
-    AppConfigManager::AppConfigManager(fs::path configPath) : m_configPath(configPath) {
+    AppConfigManager::AppConfigManager(const fs::path& configPath) : m_configPath(configPath) {
         try {
             fs::create_directories(PathHelper::getConfigDir());
         } catch (const std::exception& e) {

@@ -19,7 +19,7 @@ namespace Core {
     namespace ProcessUtils {
 
         int runCommand(const std::string& cmd, std::atomic<bool>& stopSignal,
-                       std::function<void(const std::string&)> onLineRead) {
+                       const std::function<void(const std::string&)>& onLineRead) {
             std::string fullCmd = cmd + " 2>&1";
 
 #ifdef _WIN32

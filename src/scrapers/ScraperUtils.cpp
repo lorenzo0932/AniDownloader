@@ -133,9 +133,9 @@ namespace Core {
     }
 
     std::string ScraperUtils::generateFilename(const std::string& downloadUrl, int epNum) {
-        std::string urlFile = downloadUrl.substr(downloadUrl.find_last_of("/") + 1);
-        if (urlFile.find("?") != std::string::npos)
-            urlFile = urlFile.substr(0, urlFile.find("?"));
+        std::string urlFile = downloadUrl.substr(downloadUrl.find_last_of('/') + 1);
+        if (urlFile.find('?') != std::string::npos)
+            urlFile = urlFile.substr(0, urlFile.find('?'));
 
         std::string root = "";
         std::smatch m;

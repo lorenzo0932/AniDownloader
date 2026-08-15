@@ -43,12 +43,13 @@ namespace Core {
         std::vector<Ep> eps;
 
         for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
-            std::smatch match = *i;
+            const std::smatch& match = *i;
             eps.push_back({std::stoi(match[2].str()), match[1].str()});
         }
 
         std::sort(eps.begin(), eps.end(), [](const Ep& a, const Ep& b) { return a.n < b.n; });
 
+        results.reserve(eps.size());
         for (const auto& ep : eps)
             results.push_back({ep.n, ep.u});
 

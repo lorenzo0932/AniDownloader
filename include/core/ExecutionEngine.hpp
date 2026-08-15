@@ -32,10 +32,10 @@ namespace Core {
         explicit ExecutionEngine(Config::AppConfigManager& config);
 
         void run(const std::vector<Series>& seriesList, bool burstMode,
-                 std::atomic<bool>& stopSignal, ProgressCb onProgress, StatusCb onStatus,
+                 std::atomic<bool>& stopSignal, ProgressCb onProgress, const StatusCb& onStatus,
                  FinishedCb onTaskFinished,
                  SkippedCb onTaskSkipped, // AGGIUNTO
-                 AnalysisCb onAnalysisDone);
+                 const AnalysisCb& onAnalysisDone);
 
       private:
         Config::AppConfigManager& m_config;

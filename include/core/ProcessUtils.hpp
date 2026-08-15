@@ -9,7 +9,7 @@ namespace Core {
     namespace ProcessUtils {
 
         int runCommand(const std::string& cmd, std::atomic<bool>& stopSignal,
-                       std::function<void(const std::string&)> onLineRead = nullptr);
+                       const std::function<void(const std::string&)>& onLineRead = nullptr);
 
         double getRamUsagePercent();
 

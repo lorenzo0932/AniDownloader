@@ -44,7 +44,7 @@ namespace Core {
         std::atomic<bool> stop{false};
         std::vector<DownloadTask> tasks;
         try {
-            tasks = scraper->planSeriesTask(series, stop, progressCb);
+            tasks = scraper->planSeriesTask(series, stop, std::move(progressCb));
         } catch (const std::exception& e) {
             DownloadTask err;
             err.shouldProcess = false;
