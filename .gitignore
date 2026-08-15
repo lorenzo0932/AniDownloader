@@ -46,4 +46,10 @@ TODO-*.md
 # Local-only (never pushed): agent instructions, plan docs
 AGENTS.md
 
+# AI artifacts — MAI su GitHub (vivono solo su local/reference)
+plan/
+bugs_analysis.md
+.opencode/
+scripts/bundle_codebase.sh
+
 struttura.txt
