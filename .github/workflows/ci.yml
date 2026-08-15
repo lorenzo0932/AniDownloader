@@ -210,7 +210,8 @@ jobs:
           path: coverage-report
           if-no-files-found: warn
 
-  # ─── clang-tidy: report-only (artifact) ───
+  # ─── clang-tidy: fail-on-error (feature 13, fase 2 del piano 08) ───
+  # Le esclusioni vivono in .clang-tidy (config), mai soppressioni inline.
   tidy:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -227,20 +228,7 @@ jobs:
       - name: Generate compile commands
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
-      - name: Run clang-tidy
+      - name: Run clang-tidy (fail-on-error)
         run: |
-          mkdir -p tidy-report
-          set +e
-          clang-tidy -p build \
-            $(git ls-files 'src/**/*.cpp' | grep -v embedded_web_data.cpp) \
-            > tidy-report/clang-tidy.txt 2>&1
-          TIDY_EXIT=$?
-          echo "clang-tidy exit: $TIDY_EXIT (report-only, non blocca)"
-          exit 0
-
-      - name: Upload report
-        uses: actions/upload-artifact@v5
-        with:
-          name: clang-tidy-report
-          path: tidy-report/clang-tidy.txt
-          if-no-files-found: warn
+          clang-tidy -p build --warnings-as-errors='*' \
+            $(git ls-files 'src/**/*.cpp' | grep -v embedded_web_data.cpp)

@@ -56,6 +56,19 @@ e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
   (join RAII, stop-path con detach a latenza invariata), designated
   initializers su `EpisodeInfo`/`TaskReport`, `std::string_view` su
   `getRecentLines`/`expandTilde`.
+- Feature 13 — pulizia finale (warning zero + housekeeping):
+  - Zero warning `clang-tidy` sul codice del progetto: `std::array` al posto
+    dei C-array, `const&`/`std::move` sui callback, `find('x')`, concat con
+    `+=`, return diretti, cast di narrowing/widening espliciti, branch-clone
+    unito. Il job CI `tidy` ora è **fail-on-error** (rosso su warning nuovi);
+    le uniche esclusioni sono motivate in `.clang-tidy` (deps vendored, header
+    generato `embedded_web.hpp`, catch intenzionali, due `int` già ben nominati).
+  - Housekeeping root: rimosso `package-lock.json` vuoto (il lock reale è
+    `web/package-lock.json`).
+  - CI: action bumpate a `@v5` (Node 24 nativo, via i warning di deprecazione
+    Node 20), `CPR_FORCE_USE_SYSTEM_CURL` → `CPR_USE_SYSTEM_CURL` (cpr 1.10.5).
+  - Build di sviluppo più veloce: preset CMake `dev` (Ninja + ccache, build
+    incrementali ~1s), fallback `dev-slow` (Makefiles).
 
 ## [2.0.1] - 2026
 
