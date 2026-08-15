@@ -159,20 +159,14 @@ namespace Core {
 #ifdef __linux__
         // renameat2 con RENAME_NOREPLACE: atomico e fallisce se la destinazione
         // esiste. Disponibile su kernel >= 3.15; ENOSYS/EINVAL = fail-closed.
-        if (::syscall(SYS_renameat2, AT_FDCWD, tempPath.c_str(), AT_FDCWD, finalPath.c_str(),
-                      RENAME_NOREPLACE) == 0)
-            return true;
-        return false;
+        return ::syscall(SYS_renameat2, AT_FDCWD, tempPath.c_str(), AT_FDCWD, finalPath.c_str(),
+                         RENAME_NOREPLACE) == 0;
 #elif defined(__APPLE__)
         // renamex_np con RENAME_EXCL: atomico no-replace (macOS 10.12+).
-        if (::renamex_np(tempPath.c_str(), finalPath.c_str(), RENAME_EXCL) == 0)
-            return true;
-        return false;
+        return ::renamex_np(tempPath.c_str(), finalPath.c_str(), RENAME_EXCL) == 0;
 #elif defined(_WIN32)
         // Senza MOVEFILE_REPLACE_EXISTING fallisce se la destinazione esiste.
-        if (::MoveFileExA(tempPath.c_str(), finalPath.c_str(), MOVEFILE_WRITE_THROUGH) != 0)
-            return true;
-        return false;
+        return ::MoveFileExA(tempPath.c_str(), finalPath.c_str(), MOVEFILE_WRITE_THROUGH) != 0;
 #else
         // Piattaforma sconosciuta: niente primitiva no-replace → fail-closed,
         // mai un fallback che possa sovrascrivere.
