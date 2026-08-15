@@ -155,8 +155,13 @@ namespace Core {
                     MediaProcessor mp(taskProgressCb, stopSignal);
                     ProcessResult res = mp.processTask(item.second, item.first, strategy);
 
+                    // Feature 11: i parziali (.part/.part.aria2) vengono rimossi
+                    // su stop SOLO se l'utente ha chiesto cleanup esplicito E il
+                    // resume è disattivo. Con resume_interrupted_downloads=true
+                    // (default) restano per il resume del run successivo.
                     if (!res.success && stopSignal &&
-                        m_config.get<bool>("auto_cleanup_on_close", true)) {
+                        m_config.get<bool>("auto_cleanup_on_close", true) &&
+                        !m_config.get<bool>("resume_interrupted_downloads", true)) {
                         std::string expPath = ScraperUtils::expandTilde(item.first.path);
                         // Feature 11: i parziali vivono in .part/.part.aria2.
                         // Il nome finale esiste solo dopo il publish (file valido):

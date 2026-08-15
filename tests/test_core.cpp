@@ -1,5 +1,6 @@
 // Unit test per le funzioni pure del core (nessuna dipendenza da processi esterni).
 // Eseguire con: ctest --test-dir build  (oppure ./build/test_core)
+#include "config/AppConfigManager.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/ProcessUtils.hpp"
 #include "core/Series.hpp"
@@ -10,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -200,6 +202,57 @@ static void testInstanceLock(const char* selfPath) {
     std::filesystem::remove_all(dir);
 }
 
+// Matrice di migrazione config feature 11 (vedi plan/11):
+// | auto_cleanup_on_close | resume_interrupted_downloads | Effetto |
+// | assente               | assente → default true        | partials trattenuti (nuovo default) |
+// | true esplicito        | assente                       | resume=false (comportamento vecchio preservato) |
+// | false esplicito       | assente                       | resume=true (stesso comportamento) |
+// | qualunque             | presente                      | la nuova chiave vince |
+static void testConfigMigration() {
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_cfg";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+#ifdef _WIN32
+    _putenv_s("XDG_CONFIG_HOME", dir.string().c_str());
+#else
+    setenv("XDG_CONFIG_HOME", dir.string().c_str(), 1);
+#endif
+    auto cfgPath = dir / "AniDownloader" / "config.json";
+    std::filesystem::create_directories(cfgPath.parent_path());
+
+    auto writeCfg = [&](const std::string& body) {
+        std::ofstream f(cfgPath);
+        f << body;
+    };
+
+    {
+        // auto_cleanup=true esplicito (scelta deliberata di pulizia) → resume=false
+        writeCfg(R"({"auto_cleanup_on_close":true})");
+        Config::AppConfigManager m(cfgPath);
+        CHECK(m.get<bool>("resume_interrupted_downloads", true) == false);
+    }
+    {
+        // auto_cleanup=false esplicito (già tratteneva i partials) → resume=true
+        writeCfg(R"({"auto_cleanup_on_close":false})");
+        Config::AppConfigManager m(cfgPath);
+        CHECK(m.get<bool>("resume_interrupted_downloads", true) == true);
+    }
+    {
+        // chiave assente → nuovo default true (cambio = scopo della feature)
+        writeCfg("{}");
+        Config::AppConfigManager m(cfgPath);
+        CHECK(m.get<bool>("resume_interrupted_downloads", true) == true);
+    }
+    {
+        // la nuova chiave presente vince sempre
+        writeCfg(R"({"auto_cleanup_on_close":true,"resume_interrupted_downloads":true})");
+        Config::AppConfigManager m(cfgPath);
+        CHECK(m.get<bool>("resume_interrupted_downloads", true) == true);
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -210,6 +263,7 @@ int main(int argc, char** argv) {
     testSeriesJsonRoundtrip();
     testScraperUtils();
     testSeriesRepository();
+    testConfigMigration();
     testInstanceLock(argv[0]);
 
     if (g_failures == 0) {

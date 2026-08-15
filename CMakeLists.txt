@@ -177,6 +177,8 @@ target_compile_definitions(AniDownloader PRIVATE
 enable_testing()
 add_executable(test_core
     tests/test_core.cpp
+    src/config/AppConfigManager.cpp
+    src/config/PathHelper.cpp
     src/core/InstanceLock.cpp
     src/core/ProcessUtils.cpp
     src/core/UpdateChecker.cpp

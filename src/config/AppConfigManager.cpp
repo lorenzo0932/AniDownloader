@@ -57,7 +57,8 @@ namespace Config {
             {"is_json_path_customized", false},
             {"convert_to_h265", true},
             {"num_chunks", 0},               // 0 = Modalità Auto (Dinamica)
-            {"auto_cleanup_on_close", true}, // Pulizia file parziali
+            {"auto_cleanup_on_close", true}, // Pulizia file parziali (deprecata: vince resume_interrupted_downloads)
+            {"resume_interrupted_downloads", true}, // Feature 11: riprende i download interrotti tra run
             {"max_network_retries", 3},      // Retry HTTP/aria2c
             {"retry_delay_ms", 2000}         // Delay iniziale tra retry (exponential backoff)
         };
@@ -72,6 +73,18 @@ namespace Config {
         try {
             std::ifstream f(m_configPath);
             m_config = nlohmann::json::parse(f);
+            // Feature 11 — matrice di migrazione di resume_interrupted_downloads
+            // (prima del merge dei default: `contains` deve riflettere il FILE):
+            // | auto_cleanup_on_close      | resume_interrupted_downloads | Effetto |
+            // | assente (default storico)  | assente → default true       | partials trattenuti (cambio di default = scopo feature 11) |
+            // | true esplicito             | assente                      | comportamento vecchio preservato: resume=false |
+            // | false esplicito            | assente                      | già tratteneva i partials ⟺ resume=true, nessun cambio |
+            // | qualunque                  | presente                     | la nuova chiave vince |
+            if (!m_config.contains("resume_interrupted_downloads") &&
+                m_config.contains("auto_cleanup_on_close") &&
+                m_config["auto_cleanup_on_close"] == true) {
+                m_config["resume_interrupted_downloads"] = false;
+            }
             nlohmann::json defaults = getDefaultConfig();
             for (auto& [key, value] : defaults.items()) {
                 if (!m_config.contains(key))
