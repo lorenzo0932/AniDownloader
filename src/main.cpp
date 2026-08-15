@@ -14,6 +14,7 @@
 #include "config/AppConfigManager.hpp"
 #include "config/PathHelper.hpp"
 #include "core/ExecutionEngine.hpp"
+#include "core/InstanceLock.hpp"
 #include "core/Logger.hpp"
 #include "core/MediaProcessor.hpp"
 #include "core/SeriesRepository.hpp"
@@ -250,6 +251,17 @@ int main(int argc, char* argv[]) {
 #endif
 
     startCleanupWatchdog();
+
+    // Feature 11: lock transazionale — copre snapshot/planning → download →
+    // commit dello stato (applyDownloadedEpisodes sotto). Rilasciato dal
+    // distruttore a fine main, o dal kernel alla morte del processo.
+    std::filesystem::path execLockPath = Config::PathHelper::getConfigDir() / "exec.lock";
+    Core::InstanceLock execLock(execLockPath.string());
+    if (!execLock.acquired()) {
+        std::cout << "\n⚠️  Un'altra esecuzione è già in corso (lock: " << execLockPath
+                  << "). Riprova a fine esecuzione.\n";
+        return 1;
+    }
 
     engine.run(
         seriesList, burstMode, stop,

@@ -145,6 +145,7 @@ set(SOURCES
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
     src/core/ExecutionEngine.cpp
+    src/core/InstanceLock.cpp
     src/core/Logger.cpp
     src/core/ProcessUtils.cpp
     src/core/MediaProbe.cpp
@@ -176,6 +177,8 @@ target_compile_definitions(AniDownloader PRIVATE
 enable_testing()
 add_executable(test_core
     tests/test_core.cpp
+    src/core/InstanceLock.cpp
+    src/core/ProcessUtils.cpp
     src/core/UpdateChecker.cpp
     src/core/Logger.cpp
     src/core/Series.cpp

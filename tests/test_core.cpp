@@ -1,5 +1,7 @@
 // Unit test per le funzioni pure del core (nessuna dipendenza da processi esterni).
 // Eseguire con: ctest --test-dir build  (oppure ./build/test_core)
+#include "core/InstanceLock.hpp"
+#include "core/ProcessUtils.hpp"
 #include "core/Series.hpp"
 #include "core/SeriesRepository.hpp"
 #include "core/UpdateChecker.hpp"
@@ -7,6 +9,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -166,11 +169,48 @@ static void testSeriesRepository() {
     std::filesystem::remove_all(dir);
 }
 
-int main() {
+// Lock esclusivo di processo con subprocess reale: il test esegue se stesso
+// con --try-lock via ProcessUtils (cross-platform, esercita sia il ramo
+// POSIX/flock sia quello Windows/CreateFile). O_CLOEXEC (POSIX) e handle non
+// ereditabile (Windows) impediscono al figlio di "ereditare" il lock: il
+// figlio riapre il path e la seconda acquisizione deve fallire.
+static void testInstanceLock(const char* selfPath) {
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_lock";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    std::string lockPath = (dir / "exec.lock").string();
+    std::string cmd = Core::ScraperUtils::Q(selfPath) + " --try-lock " +
+                      Core::ScraperUtils::Q(lockPath);
+
+    std::atomic<bool> stop(false);
+
+    {
+        Core::InstanceLock parentLock(lockPath);
+        CHECK(parentLock.acquired());
+        int status = Core::ProcessUtils::runCommand(cmd, stop);
+        CHECK(status != 0); // il subprocess deve essere rifiutato
+    }
+
+    {
+        // Lock rilasciato dal distruttore del parent → il subprocess acquisisce
+        int status = Core::ProcessUtils::runCommand(cmd, stop);
+        CHECK(status == 0); // il subprocess acquisisce e termina con successo
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
+int main(int argc, char** argv) {
+    if (argc == 3 && std::string(argv[1]) == "--try-lock") {
+        Core::InstanceLock l(argv[2]);
+        return l.acquired() ? 0 : 1;
+    }
+
     testCompareVersions();
     testSeriesJsonRoundtrip();
     testScraperUtils();
     testSeriesRepository();
+    testInstanceLock(argv[0]);
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";

@@ -1,6 +1,7 @@
 #include "web/WebServer.hpp"
 #include "config/PathHelper.hpp"
 #include "core/FileUtils.hpp"
+#include "core/InstanceLock.hpp"
 #include "core/LogUtils.hpp"
 #include "core/Logger.hpp"
 #include "core/MediaProcessor.hpp"
@@ -819,6 +820,19 @@ namespace Web {
         m_downloadRunning.store(true);
 
         m_downloadThread = std::thread([this, seriesList, burst]() {
+            // Feature 11: lock transazionale (planning → download → save).
+            // Un'altra istanza (CLI o altro demone) attiva → rifiuto chiaro.
+            std::filesystem::path execLockPath =
+                Config::PathHelper::getConfigDir() / "exec.lock";
+            Core::InstanceLock execLock(execLockPath.string());
+            if (!execLock.acquired()) {
+                nlohmann::json ev = {{"type", "overall"},
+                                     {"status", "Già in corso: un'altra esecuzione è attiva"}};
+                broadcastSseEvent(ev.dump());
+                m_downloadRunning.store(false);
+                return;
+            }
+
             m_configManager.reloadConfig();
             Core::ExecutionEngine engine(m_configManager);
 
