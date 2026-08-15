@@ -128,8 +128,11 @@ namespace Core {
             // di interruzione (i .part non vengono MAI cancellati tra i
             // tentativi, altrimenti il resume sarebbe distrutto). Se la
             // sorgente è cambiata, aria2 riparte da zero da solo.
+            // --auto-save-interval=1: il control file .aria2 viene salvato ogni
+            // secondo → un crash (SIGKILL) perde al massimo 1s di progresso.
             std::string dlCmd =
-                "aria2c -x 16 -s 16 --summary-interval=1 --continue=true --allow-overwrite=true "
+                "aria2c -x 16 -s 16 --summary-interval=1 --continue=true --auto-save-interval=1 "
+                "--allow-overwrite=true "
                 "--dir=" +
                 ScraperUtils::Q(expandedPath) + " -o " + ScraperUtils::Q(task.fileName + ".part") +
                 " " + ScraperUtils::Q(task.videoUrl);
