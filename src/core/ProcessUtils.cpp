@@ -7,8 +7,9 @@
 #include <format>
 #include <fstream>
 #include <memory>
+#include <array>
 #ifndef _WIN32
-#include <signal.h>
+#include <csignal>
 #include <sys/poll.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -37,8 +38,8 @@ namespace Core {
             pipe.release();
             return ScraperUtils::pcloseCompat(rawPipe);
 #else
-            int pipefd[2];
-            if (pipe(pipefd) == -1)
+            std::array<int, 2> pipefd{};
+            if (pipe(pipefd.data()) == -1)
                 return -1;
 
             pid_t pid = fork();
@@ -60,7 +61,7 @@ namespace Core {
             close(pipefd[1]);
 
             int fd = pipefd[0];
-            char buf[4096];
+            std::array<char, 4096> buf{};
             std::string lineBuf;
             bool stopped = false;
 
@@ -81,10 +82,10 @@ namespace Core {
 
                 if (ret > 0) {
                     if (pfd.revents & POLLIN) {
-                        ssize_t n = read(fd, buf, sizeof(buf) - 1);
+                        ssize_t n = read(fd, buf.data(), buf.size() - 1);
                         if (n > 0) {
                             buf[n] = '\0';
-                            lineBuf.append(buf, n);
+                            lineBuf.append(buf.data(), static_cast<size_t>(n));
                             size_t pos;
                             while ((pos = lineBuf.find('\n')) != std::string::npos) {
                                 std::string line = lineBuf.substr(0, pos);

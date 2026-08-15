@@ -11,6 +11,7 @@
 #include "web/embedded_web.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -205,9 +206,9 @@ namespace Web {
                 continue;
 
             auto* addr = reinterpret_cast<struct sockaddr_in*>(ifa->ifa_addr);
-            char ip[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &addr->sin_addr, ip, sizeof(ip));
-            std::string ipStr(ip);
+            std::array<char, INET_ADDRSTRLEN> ip{};
+            inet_ntop(AF_INET, &addr->sin_addr, ip.data(), ip.size());
+            std::string ipStr(ip.data());
             if (ipStr.find("169.254.") != 0 && ipStr.find("127.") != 0) {
                 result = ipStr;
                 break;
@@ -471,9 +472,9 @@ namespace Web {
             sendJson(res, errorJson("No dialog tool available"), 501);
             return;
         }
-        char buf[4096] = {};
-        if (fgets(buf, sizeof(buf), fp)) {
-            path = buf;
+        std::array<char, 4096> buf{};
+        if (fgets(buf.data(), static_cast<int>(buf.size()), fp)) {
+            path = buf.data();
             path.erase(std::find_if(path.rbegin(), path.rend(),
                 [](int c) { return c != '\n' && c != '\r'; }).base(), path.end());
         }
@@ -506,9 +507,9 @@ namespace Web {
             sendJson(res, errorJson("No dialog tool available (install zenity or kdialog)"), 501);
             return;
         }
-        char buf[4096] = {};
-        if (fgets(buf, sizeof(buf), fp)) {
-            path = buf;
+        std::array<char, 4096> buf{};
+        if (fgets(buf.data(), static_cast<int>(buf.size()), fp)) {
+            path = buf.data();
             path.erase(std::find_if(path.rbegin(), path.rend(),
                 [](int c) { return c != '\n' && c != '\r'; }).base(), path.end());
         }
@@ -637,10 +638,10 @@ namespace Web {
                     pid_t child = fork();
                     if (child == 0) {
                         pid_t ppid = getppid();
-                        char buf[64];
-                        snprintf(buf, sizeof(buf), "%d", ppid);
+                        std::array<char, 64> buf{};
+                        snprintf(buf.data(), buf.size(), "%d", ppid);
                         execl("/bin/sh", "sh", "-c",
-                              ("pids=$(pgrep -P " + std::string(buf) +
+                              ("pids=$(pgrep -P " + std::string(buf.data()) +
                                " 2>/dev/null); "
                                "for pid in $pids; do pkill -9 -P $pid 2>/dev/null; "
                                "kill -9 $pid 2>/dev/null; done")
@@ -878,10 +879,10 @@ namespace Web {
                 auto now = std::chrono::system_clock::now();
                 auto tt = std::chrono::system_clock::to_time_t(now);
                 auto tm = *std::gmtime(&tt);
-                char buf[24] = {};
-                std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm);
+                std::array<char, 24> buf{};
+                std::strftime(buf.data(), buf.size(), "%Y-%m-%dT%H:%M:%SZ", &tm);
 
-                m_seriesRepository.applyDownloadedEpisodes(maxEpisodes, buf);
+                m_seriesRepository.applyDownloadedEpisodes(maxEpisodes, buf.data());
             }
 
             m_downloadRunning.store(false);
