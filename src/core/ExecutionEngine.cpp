@@ -22,8 +22,8 @@ namespace Core {
 
     void ExecutionEngine::run(const std::vector<Series>& seriesList, bool burstMode,
                               std::atomic<bool>& stopSignal, ProgressCb onProgress,
-                              const StatusCb& onStatus, FinishedCb onTaskFinished, SkippedCb onTaskSkipped,
-                              const AnalysisCb& onAnalysisDone) {
+                              const StatusCb& onStatus, FinishedCb onTaskFinished,
+                              SkippedCb onTaskSkipped, const AnalysisCb& onAnalysisDone) {
         onStatus("Analisi parallelizzata in corso...");
 
         auto result = std::make_shared<PlanningResult>();

@@ -21,8 +21,9 @@ Checks: '-*,
          readability-static-accessed-through-instance'
 WarningsAsErrors: ''
 # Solo gli header del progetto (include/), mai le dipendenze vendored
-# (build/_deps/...): nlohmann/cpr non sono fixabili e inquinerebbero il report.
-HeaderFilterRegex: '^(?!.*build/_deps).*\.hpp$'
+# (build/_deps/...) né gli header auto-generati (embedded_web.hpp: dati binari
+# in C-array da embed_web.py, non convertibili): inquinerebbero il report.
+HeaderFilterRegex: '^(?!.*build/_deps)(?!.*embedded_web).*\.hpp$'
 FormatStyle: file
 CheckOptions:
   # Catch vuoti INTENZIONALI (già commentati con "intenzionale:"): il check

@@ -3,11 +3,11 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include <array>
 #include <cstdio>
 #include <format>
 #include <fstream>
 #include <memory>
-#include <array>
 #ifndef _WIN32
 #include <csignal>
 #include <sys/poll.h>
