@@ -234,6 +234,20 @@ namespace Core {
         std::mt19937 gen(rd());
         std::uniform_int_distribution<unsigned long long> dis(1000, 9999);
 
+        // Feature 11 — fail-fast su cause deterministiche (niente retry inutili):
+        // input illeggibile o binari ffmpeg/ffprobe assenti non diventano
+        // mai "transienti" tra un tentativo e l'altro.
+        if (!fs::exists(inputPath) || fs::file_size(inputPath) == 0) {
+            Logger::error(seriesName + ": input illeggibile per la conversione (" + inputPath +
+                          ")");
+            return false;
+        }
+        if (!MediaProbe::isToolAvailable("ffmpeg") || !MediaProbe::isToolAvailable("ffprobe")) {
+            Logger::error(seriesName + ": ffmpeg/ffprobe non trovati nel PATH, conversione "
+                                        "impossibile");
+            return false;
+        }
+
         for (int attempt = 1; attempt <= MAX_RETRIES; ++attempt) {
             if (m_stopSignal)
                 return false;

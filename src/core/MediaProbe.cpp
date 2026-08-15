@@ -4,8 +4,10 @@
 #include "scrapers/ScraperUtils.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <format>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -36,6 +38,37 @@ namespace Core {
         void clearCache() {
             std::lock_guard<std::mutex> lock(s_cacheMutex);
             s_cache.clear();
+        }
+
+        bool isToolAvailable(const std::string& toolName) {
+            const char* pathEnv = std::getenv("PATH");
+            if (!pathEnv)
+                return false;
+#ifdef _WIN32
+            constexpr char sep = ';';
+            const std::vector<std::string> exts = {".exe", ".com", ".bat", ""};
+#else
+            constexpr char sep = ':';
+            const std::vector<std::string> exts = {""};
+#endif
+            std::string p(pathEnv);
+            std::size_t start = 0;
+            while (true) {
+                auto end = p.find(sep, start);
+                std::string dir = p.substr(start, end == std::string::npos ? end : end - start);
+                if (!dir.empty()) {
+                    for (const auto& ext : exts) {
+                        std::error_code ec;
+                        if (fs::exists(fs::path(dir) / (toolName + ext), ec) &&
+                            fs::is_regular_file(fs::path(dir) / (toolName + ext), ec))
+                            return true;
+                    }
+                }
+                if (end == std::string::npos)
+                    break;
+                start = end + 1;
+            }
+            return false;
         }
 
         double getVideoDuration(const std::string& filePath, std::atomic<bool>& stopSignal) {
