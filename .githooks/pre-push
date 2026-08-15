@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Difesa client-side: blocca push di branch local/* (la garanzia server-side è
+# il ruleset 'never-local' che usa il guard workflow .github/workflows/guard-local.yml).
+# Attivazione: git config core.hooksPath .githooks
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    case "$remote_ref" in
+        refs/heads/local/*)
+            echo "pre-push: push di '$remote_ref' bloccato — i branch local/* devono restare SOLO locali." >&2
+            exit 1
+            ;;
+    esac
+done
+
+exit 0
