@@ -25,7 +25,6 @@
 #include <iostream>
 #include <string>
 #include <thread>
-#include <algorithm>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -124,8 +123,7 @@ struct RangeServer {
                         left -= static_cast<uint64_t>(got);
                         bytesServed += static_cast<uint64_t>(got);
                         if (chunkDelayMs > 0)
-                            std::this_thread::sleep_for(
-                                std::chrono::milliseconds(chunkDelayMs));
+                            std::this_thread::sleep_for(std::chrono::milliseconds(chunkDelayMs));
                     }
                     return true;
                 });
@@ -190,7 +188,8 @@ int main() {
     padToSize(src, 8000000);
 
     // --- 2. Server HTTP locale in-process (Range + conteggio byte) ---
-    RangeServer srv(src, 4); // throttle 4ms/chunk: ~2s per giro (il kill a 1.4s avviene dopo il primo save del control file a 1s)
+    RangeServer srv(src, 4); // throttle 4ms/chunk: ~2s per giro (il kill a 1.4s avviene dopo il
+                             // primo save del control file a 1s)
     std::string url = srv.url;
 
     // --- 3. Happy path con conversione H265 ---

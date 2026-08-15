@@ -247,7 +247,7 @@ namespace Core {
         }
         if (!MediaProbe::isToolAvailable("ffmpeg") || !MediaProbe::isToolAvailable("ffprobe")) {
             Logger::error(seriesName + ": ffmpeg/ffprobe non trovati nel PATH, conversione "
-                                        "impossibile");
+                                       "impossibile");
             return false;
         }
 

@@ -12,7 +12,7 @@ namespace Core {
     // viene ereditato dai figli). Windows: CreateFileA con share mode 0
     // (apertura esclusiva; handle non ereditabile di default).
     class InstanceLock {
-    public:
+      public:
         explicit InstanceLock(const std::string& lockPath);
         ~InstanceLock();
         InstanceLock(const InstanceLock&) = delete;
@@ -20,7 +20,7 @@ namespace Core {
 
         [[nodiscard]] bool acquired() const noexcept;
 
-    private:
+      private:
         struct Impl;
         Impl* m_impl;
     };

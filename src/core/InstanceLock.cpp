@@ -25,9 +25,9 @@ namespace Core {
         // Share mode 0 = nessun accesso condiviso: una seconda apertura da un
         // altro processo fallisce con ERROR_SHARING_VIOLATION. Il parametro
         // lpSecurityAttributes è nullptr → l'handle non è ereditabile.
-        impl->handle = CreateFileA(lockPath.c_str(), GENERIC_READ | GENERIC_WRITE,
-                                   0 /* no sharing */, nullptr, OPEN_ALWAYS,
-                                   FILE_ATTRIBUTE_NORMAL, nullptr);
+        impl->handle =
+            CreateFileA(lockPath.c_str(), GENERIC_READ | GENERIC_WRITE, 0 /* no sharing */, nullptr,
+                        OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (impl->handle == INVALID_HANDLE_VALUE) {
             delete impl;
             m_impl = nullptr;

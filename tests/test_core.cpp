@@ -181,8 +181,8 @@ static void testInstanceLock(const char* selfPath) {
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
     std::string lockPath = (dir / "exec.lock").string();
-    std::string cmd = Core::ScraperUtils::Q(selfPath) + " --try-lock " +
-                      Core::ScraperUtils::Q(lockPath);
+    std::string cmd =
+        Core::ScraperUtils::Q(selfPath) + " --try-lock " + Core::ScraperUtils::Q(lockPath);
 
     std::atomic<bool> stop(false);
 
@@ -203,11 +203,13 @@ static void testInstanceLock(const char* selfPath) {
 }
 
 // Matrice di migrazione config feature 11 (vedi plan/11):
+// clang-format off
 // | auto_cleanup_on_close | resume_interrupted_downloads | Effetto |
 // | assente               | assente → default true        | partials trattenuti (nuovo default) |
 // | true esplicito        | assente                       | resume=false (comportamento vecchio preservato) |
 // | false esplicito       | assente                       | resume=true (stesso comportamento) |
 // | qualunque             | presente                      | la nuova chiave vince |
+// clang-format on
 static void testConfigMigration() {
     auto dir = std::filesystem::temp_directory_path() / "anidl_test_cfg";
     std::filesystem::remove_all(dir);

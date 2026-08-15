@@ -822,8 +822,7 @@ namespace Web {
         m_downloadThread = std::thread([this, seriesList, burst]() {
             // Feature 11: lock transazionale (planning → download → save).
             // Un'altra istanza (CLI o altro demone) attiva → rifiuto chiaro.
-            std::filesystem::path execLockPath =
-                Config::PathHelper::getConfigDir() / "exec.lock";
+            std::filesystem::path execLockPath = Config::PathHelper::getConfigDir() / "exec.lock";
             Core::InstanceLock execLock(execLockPath.string());
             if (!execLock.acquired()) {
                 nlohmann::json ev = {{"type", "overall"},
