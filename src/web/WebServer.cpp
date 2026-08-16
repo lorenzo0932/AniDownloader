@@ -223,7 +223,7 @@ namespace Web {
 
     void WebServer::setupRoutes() {
         // CORS preflight
-        m_svr.Options(R"(.*)", [this](const httplib::Request&, httplib::Response& res) {
+        m_svr.Options(R"(.*)", [](const httplib::Request&, httplib::Response& res) {
             res.set_header("Access-Control-Allow-Origin", corsOrigin());
             res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
             res.set_header("Access-Control-Allow-Headers", "Content-Type");
@@ -578,7 +578,7 @@ namespace Web {
             try {
                 auto data = loadConfigJson();
                 sendJson(res, successJson({{"config", data}}));
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 sendJson(res, errorJson("Failed to load config"), 500);
             }
         });
@@ -591,7 +591,7 @@ namespace Web {
                     existing[key] = val;
                 saveConfigJson(existing);
                 sendJson(res, successJson());
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 sendJson(res, errorJson("Invalid config data"), 400);
             }
         });

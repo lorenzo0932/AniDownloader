@@ -42,6 +42,15 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor)
 endif()
 
+# Warning zero come proprietà permanente: -Werror scoped SOLO sui target del
+# progetto (mai su _deps/FetchContent: dipendenze vendored come zlib su Windows
+# emettono warning propri). MSVC usa /WX (equivalente di -Werror).
+if(MSVC)
+    set(PROJECT_WERROR_FLAGS /WX)
+else()
+    set(PROJECT_WERROR_FLAGS -Werror)
+endif()
+
 # --- GESTIONE DIPENDENZE ---
 include(FetchContent)
 
@@ -58,6 +67,7 @@ endif()
 FetchContent_Declare(
     json
     URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(json)
 
@@ -85,6 +95,7 @@ FetchContent_MakeAvailable(cpr)
 FetchContent_Declare(
     httplib
     URL https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.18.1.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(httplib)
 
@@ -237,6 +248,21 @@ target_link_libraries(test_scraper PRIVATE
     Threads::Threads
 )
 add_test(NAME test_scraper COMMAND test_scraper)
+
+# Warning zero come proprietà permanente sui target del progetto (non _deps).
+# _CRT_SECURE_NO_WARNINGS: std::getenv/std::localtime (C standard) sono
+# deprecati solo dalle CRT MSVC (C4996) — codice cross-platform legittimo.
+target_compile_options(AniDownloader PRIVATE ${PROJECT_WERROR_FLAGS})
+target_compile_options(test_core PRIVATE ${PROJECT_WERROR_FLAGS})
+target_compile_options(test_media PRIVATE ${PROJECT_WERROR_FLAGS})
+target_compile_options(test_scraper PRIVATE ${PROJECT_WERROR_FLAGS})
+
+if(MSVC)
+    target_compile_definitions(AniDownloader PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(test_core PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(test_media PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(test_scraper PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 
 # ─── SMOKE E2E (solo Linux: script POSIX con curl/jq/python3) ───
 if(UNIX AND NOT APPLE)

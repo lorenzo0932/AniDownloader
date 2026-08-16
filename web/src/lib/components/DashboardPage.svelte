@@ -59,15 +59,12 @@
 
   onMount(() => { load(); });
 
-  let prevSortField = $state(sortField);
-  let prevSortDir = $state(sortDir);
+  let loadedFor = $state({ field: 'name', dir: 'asc' });
   $effect(() => {
-    if (sortField !== prevSortField || sortDir !== prevSortDir) {
-      prevSortField = sortField;
-      prevSortDir = sortDir;
+    if (sortField !== loadedFor.field || sortDir !== loadedFor.dir) {
+      loadedFor = { field: sortField, dir: sortDir };
       load();
     }
-    sortField, sortDir;
   });
 
   function setSort(field) {

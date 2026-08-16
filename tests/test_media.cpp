@@ -106,16 +106,16 @@ struct RangeServer {
             res.set_content_provider(
                 size, "video/mp4",
                 [this](uint64_t offset, uint64_t length, httplib::DataSink& sink) {
-                    std::ifstream f(file, std::ios::binary);
-                    f.seekg(static_cast<std::streamoff>(offset));
+                    std::ifstream stream(file, std::ios::binary);
+                    stream.seekg(static_cast<std::streamoff>(offset));
                     constexpr size_t CHUNK = 16384;
                     std::vector<char> buf(CHUNK);
                     uint64_t left = length;
                     while (left > 0) {
                         size_t n =
                             static_cast<size_t>((std::min)(left, static_cast<uint64_t>(CHUNK)));
-                        f.read(buf.data(), static_cast<std::streamsize>(n));
-                        auto got = f.gcount();
+                        stream.read(buf.data(), static_cast<std::streamsize>(n));
+                        auto got = stream.gcount();
                         if (got <= 0)
                             return false;
                         if (!sink.write(buf.data(), static_cast<size_t>(got)))
@@ -142,7 +142,7 @@ struct RangeServer {
 };
 
 // Uccide aria2 (una sola volta) per simulare SIGKILL sul processo figlio.
-static void killAria2Once(const std::string& pattern, std::atomic<bool>& fired) {
+static void killAria2Once(const std::string& pattern [[maybe_unused]], std::atomic<bool>& fired) {
     if (fired.exchange(true))
         return;
 #ifdef _WIN32
@@ -295,8 +295,8 @@ int main() {
         CHECK(fs::exists(partAria));
 
         // Run successivo: il pre-check trova .part+.aria2 → resume
-        auto res2 = runTask(workDir, url, partName, false, 1);
-        CHECK(res2.success);
+        auto resumeRes = runTask(workDir, url, partName, false, 1);
+        CHECK(resumeRes.success);
         CHECK(fs::exists(workDir / partName));
         CHECK(!fs::exists(partPath));
         uint64_t secondRound = srv.bytesServed - bytesAtStop;

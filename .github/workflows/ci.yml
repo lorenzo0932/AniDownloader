@@ -73,7 +73,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Configure C++
         run: cmake -B build -DCMAKE_CXX_COMPILER_LAUNCHER=ccache ${{ matrix.cmake_args || '-DCMAKE_BUILD_TYPE=Debug' }}
@@ -95,7 +95,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
@@ -195,8 +195,9 @@ jobs:
         run: >
           lcov --capture --directory build --output-file coverage.info
           --exclude '*/build/*' --exclude '*/tests/*'
-          --ignore-errors mismatch
-          --rc lcov_branch_coverage=1 &&
+          --ignore-errors mismatch,gcov
+          --rc lcov_branch_coverage=1
+          --rc geninfo_unexecuted_blocks=1 &&
           genhtml coverage.info --branch-coverage --ignore-errors empty
           --output-directory coverage-report
 
@@ -228,7 +229,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Generate compile commands
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON

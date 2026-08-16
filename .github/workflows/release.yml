@@ -46,7 +46,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Build C++ backend
         run: |
@@ -117,7 +117,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Build C++ backend
         shell: cmd
@@ -179,12 +179,12 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Build C++ backend
         run: |
           cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
+          cmake --build build --parallel
 
       - name: Copy binary to Tauri binaries
         run: |
