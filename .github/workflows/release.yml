@@ -31,6 +31,30 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Cache dipendenze (Cargo + npm): si riusa finché i lock file non cambiano.
+      # Riduce drasticamente i tempi CI senza rischio di binari stale (la chiave
+      # include i lock file).
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-linux-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-linux-
+
+      - name: Cache npm
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: npm-linux-${{ hashFiles('package-lock.json', 'web/package-lock.json') }}
+          restore-keys: |
+            npm-linux-
+
       - name: System deps (C++)
         run: |
           sudo apt-get update -qq
@@ -38,28 +62,46 @@ jobs:
             cmake ninja-build pkg-config \
             libcurl4-openssl-dev libssl-dev \
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
-            patchelf
+            patchelf \
+            aria2 ffmpeg \
+            xvfb dbus-x11 imagemagick
 
-      - name: Install Rust
+      # Toolchain pinnata in rust-toolchain.toml (1.96.0). Prima era
+      # @stable → ogni build CI poteva compilare con una stable diversa
+      # (bug white-screen 2.1.0). L'action legge il file; specifichiamo
+      # anche il channel esplicito per robustezza.
+      - name: Install Rust (pinned)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
 
+      # Node pinnato alla patch verificata in locale (v22.22.2), non "22"
+      # generico → riproducibilità tra CI e build locale.
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 22.22.2
 
       - name: Build C++ backend
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
+      - name: Test C++ backend (CTest)
+        run: ctest --test-dir build --output-on-failure
+
       - name: Copy binary to Tauri binaries
         run: |
           mkdir -p src-tauri/binaries
           cp build/AniDownloader src-tauri/binaries/anidownloaderd-x86_64-unknown-linux-gnu
 
-      - name: Build Tauri (AppImage)
-        run: npx @tauri-apps/cli build
+      - name: Build Tauri (AppImage, tauri-cli pinned)
+        # tauri-cli pinnato in package.json (devDependency @tauri-apps/cli 2.11.4).
+        # Prima: `npx @tauri-apps/cli build` scaricava l'ULTIMA versione ad ogni
+        # build → non riproducibile (bug white-screen 2.1.0).
+        run: |
+          npm install --no-audit --no-fund
+          npm run tauri:build
         env:
           NO_STRIP: 1
           TAURI_SIGNING_PRIVATE_KEY: ''
@@ -70,6 +112,64 @@ jobs:
           ARCH=$(uname -m)
           mv src-tauri/target/release/bundle/appimage/*.AppImage \
              "AniDownloader-${{ github.ref_name }}-linux-${ARCH}.AppImage"
+
+      # ── Launch test della AppImage (regressione white-screen 2.1.0) ──
+      # Avvia la AppImage in un X virtuale, aspetta che il sidecar C++ risponda
+      # su :8989, cattura uno screenshot e verifica che NON sia uno schermo
+      # uniforme (bianco). Se la pagina è bianca, i colori unici sono ~1.
+      - name: Launch test AppImage (anti white-screen)
+        run: |
+          set -euo pipefail
+          APP="AniDownloader-${{ github.ref_name }}-linux-x86_64.AppImage"
+          chmod +x "$APP"
+
+          # X virtuale per la webview
+          Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
+          XVFB_PID=$!
+          export DISPLAY=:99
+          trap 'kill $XVFB_PID 2>/dev/null || true' EXIT
+
+          # Avvio la AppImage (dbus-run-session per il tray/notifiche)
+          dbus-run-session -- "./$APP" > appimage-launch.log 2>&1 &
+          APP_PID=$!
+          trap 'kill $APP_PID $XVFB_PID 2>/dev/null || true' EXIT
+
+          # Attende il sidecar web su :8989 (max 60s)
+          SIDECAR_OK=0
+          for i in $(seq 1 60); do
+            if curl -s -m 2 http://127.0.0.1:8989/api/status >/dev/null 2>&1; then
+              echo "✅ Sidecar web attivo dopo ${i}s"
+              SIDECAR_OK=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$SIDECAR_OK" != "1" ]; then
+            echo "❌ Sidecar web non ha risposto su :8989 — log:"; cat appimage-launch.log
+            exit 1
+          fi
+
+          # Dà tempo alla webview di renderizzare
+          sleep 8
+          import -window root -display :99 screenshot.png || true
+
+          # Numero di colori unici nello screenshot (1 = schermo uniforme/bianco)
+          COLORS=$(identify -format "%k" screenshot.png 2>/dev/null || echo 0)
+          echo "Colori unici nello screenshot: $COLORS"
+          if [ "${COLORS:-0}" -le 1 ]; then
+            echo "❌ Schermo bianco/uniforme — webview non renderizzata"
+            exit 1
+          fi
+          echo "✅ Webview renderizzata ($COLORS colori)"
+
+      - name: Upload AppImage screenshot
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: appimage-launch-test
+          path: |
+            screenshot.png
+            appimage-launch.log
 
       - name: Package headless
         run: |
@@ -106,8 +206,32 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install Rust
+      # Cache dipendenze (Cargo + npm) — path per-OS Windows.
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            %USERPROFILE%\.cargo\registry
+            %USERPROFILE%\.cargo\git
+            src-tauri\target
+          key: cargo-windows-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-windows-
+
+      - name: Cache npm
+        uses: actions/cache@v5
+        with:
+          path: |
+            %LOCALAPPDATA%\npm-cache
+            node_modules
+          key: npm-windows-${{ hashFiles('package-lock.json', 'web/package-lock.json') }}
+          restore-keys: |
+            npm-windows-
+
+      - name: Install Rust (pinned)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
 
       - name: Install OpenSSL & libcurl (vcpkg)
         shell: pwsh
@@ -117,7 +241,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 22.22.2
 
       - name: Build C++ backend
         shell: cmd
@@ -131,8 +255,10 @@ jobs:
           if not exist src-tauri\binaries mkdir src-tauri\binaries
           copy build\Release\AniDownloader.exe src-tauri\binaries\anidownloaderd-x86_64-pc-windows-msvc.exe
 
-      - name: Build Tauri (NSIS)
-        run: npx @tauri-apps/cli build
+      - name: Build Tauri (NSIS, tauri-cli pinned)
+        run: |
+          npm install --no-audit --no-fund
+          npm run tauri:build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ''
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
@@ -173,13 +299,37 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install Rust
+      # Cache dipendenze (Cargo + npm) — path per-OS macOS (stessi di Linux).
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-macos-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-macos-
+
+      - name: Cache npm
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: npm-macos-${{ hashFiles('package-lock.json', 'web/package-lock.json') }}
+          restore-keys: |
+            npm-macos-
+
+      - name: Install Rust (pinned)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
 
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 22.22.2
 
       - name: Build C++ backend
         run: |
@@ -191,8 +341,10 @@ jobs:
           mkdir -p src-tauri/binaries
           cp build/AniDownloader src-tauri/binaries/anidownloaderd-aarch64-apple-darwin
 
-      - name: Build Tauri (DMG)
-        run: npx @tauri-apps/cli build
+      - name: Build Tauri (DMG, tauri-cli pinned)
+        run: |
+          npm install --no-audit --no-fund
+          npm run tauri:build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ''
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''

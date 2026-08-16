@@ -1,0 +1,12 @@
+# Pin della toolchain Rust per riproducibilità delle build.
+#
+# PRIMA (bug white-screen 2.1.0): CI usava `dtolnay/rust-toolchain@stable`
+# (ultima stable del momento) → ogni build CI poteva differire dalla locale.
+# Ora la toolchain è bloccata alla versione verificata in locale (rustc 1.96.0,
+# ac68faa20 2026-05-25) così CI e build locale compilano lo stesso toolchain.
+#
+# Per aggiornare intenzionalmente: bumpare `channel` e aggiornare CI.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

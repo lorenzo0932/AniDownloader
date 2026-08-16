@@ -11,6 +11,9 @@ dist/
 web/dist/
 web/node_modules/
 
+# node_modules di progetto (root: tauri-cli pinnato)
+node_modules/
+
 # IDE / Config personali
 opencode.json
 
@@ -35,6 +38,13 @@ series_data.json
 
 # AppImage extraction artifact
 squashfs-root/
+
+# Artefatti diagnostici locali (white-screen investigation) — NON su GitHub
+.ci-extract/
+.release-compare/
+.tmp-old20.AppImage
+STUDIO_WHITESCREEN_2.1.0.md
+ci-docker-verify.sh
 
 # Build output directories
 output/

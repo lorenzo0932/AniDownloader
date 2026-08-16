@@ -1,0 +1,14 @@
+{
+  "name": "anidownloader-project",
+  "private": true,
+  "version": "2.1.0",
+  "description": "Tooling di progetto per AniDownloader (Tauri CLI pinnato per build riproducibili)",
+  "license": "MIT",
+  "scripts": {
+    "tauri:build": "tauri build",
+    "tauri:dev": "tauri dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

@@ -223,11 +223,20 @@ if $BUILD_LOCAL; then
 
     if $INSTALL_DESKTOP; then
         APPIMAGE=$(find src-tauri/target/release -name "*.AppImage" 2>/dev/null | head -1)
-        if [ -z "$APPIMAGE" ] && command -v npx &>/dev/null && [ -f "src-tauri/tauri.conf.json" ]; then
+        if [ -z "$APPIMAGE" ] && [ -f "src-tauri/tauri.conf.json" ]; then
             echo "Build Tauri (AppImage)..."
-            NO_STRIP=1 npx @tauri-apps/cli build 2>&1 && \
-                APPIMAGE=$(find src-tauri/target/release -name "*.AppImage" 2>/dev/null | head -1) || \
-                APPIMAGE=""
+            # tauri-cli PINNATO in package.json (root): riproducibile tra locale e CI.
+            if [ -f "package.json" ] && command -v npm &>/dev/null; then
+                (npm install --no-audit --no-fund --silent && \
+                 NO_STRIP=1 npm run tauri:build 2>&1) && \
+                    APPIMAGE=$(find src-tauri/target/release -name "*.AppImage" 2>/dev/null | head -1) || \
+                    APPIMAGE=""
+            elif command -v npx &>/dev/null; then
+                # Fallback legacy: npx scarica l'ultima versione (non riproducibile).
+                NO_STRIP=1 npx @tauri-apps/cli build 2>&1 && \
+                    APPIMAGE=$(find src-tauri/target/release -name "*.AppImage" 2>/dev/null | head -1) || \
+                    APPIMAGE=""
+            fi
         fi
 
         if [ -n "$APPIMAGE" ]; then

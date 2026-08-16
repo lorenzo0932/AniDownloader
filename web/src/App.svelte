@@ -68,7 +68,7 @@
   <div class="app-layout">
     <nav class="sidebar" class:sidebar-collapsed={sidebarCollapsed}>
       <div class="sidebar-header">
-        <img src="./logo.png" class="sidebar-logo" alt="AniDownloader" />
+        <img src="/logo.png" class="sidebar-logo" alt="AniDownloader" />
         {#if !sidebarCollapsed}<h1>AniDownloader</h1>{/if}
         <button class="sidebar-toggle" onclick={toggleSidebar} title={sidebarCollapsed ? 'Espandi' : 'Collassa'}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
