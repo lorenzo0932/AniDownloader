@@ -5,7 +5,27 @@ Tutte le modifiche notevoli a questo progetto sono documentate in questo file.
 Il formato si basa su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Unreleased]
+## [2.1.1] - 2026-08-16
+
+### Corretto
+
+- **White-screen AppImage 2.1.0** — causa root: `base: './'` (path asset
+  relativi) in `web/vite.config.js` non risolvibile nella webview Tauri
+  (gli asset embedded sono registrati come `/assets/...`). Ripristinato
+  `base: '/'` (path assoluti) e logo `/logo.png`.
+
+### Aggiunto
+
+- **Toolchain pinnata per riproducibilità** (fix white-screen): `rust-toolchain.toml`
+  (Rust 1.96.0), `@tauri-apps/cli 2.11.4` pinnato in `package.json` con script
+  `tauri:build`/`tauri:dev`, semver stretti (`=`) in `src-tauri/Cargo.toml`.
+- **CI release irrobustita** (`.github/workflows/release.yml`): Rust/Node pinnati,
+  `npm run tauri:build` (CLI pinnato), **CTest prima del packaging**, **launch test
+  AppImage anti white-screen** (xvfb + screenshot + conteggio colori unici),
+  `actions/cache` per Cargo+npm sui 3 job.
+- **Verifica CI ripetibile in Docker**: `ci/Dockerfile` + `ci/verify.sh`
+  (build C++ → CTest → sidecar → AppImage → launch test, container `ubuntu:24.04`).
+- `install.sh`: usa il tauri-cli pinnato se disponibile, fallback `npx`.
 
 ## [2.1.0] - 2026
 
