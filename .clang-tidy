@@ -1,5 +1,5 @@
 # clang-tidy — check ad alto valore e basso rumore.
-# Fase 1: report-only (il job CI pubblica il report come artifact, non fallisce).
+# Fase 2: fail-on-error (feature 13) — il job CI fallisce su warning nuovi.
 Checks: '-*,
          bugprone-*,
          performance-*,
@@ -20,5 +20,17 @@ Checks: '-*,
          readability-redundant-member-init,
          readability-static-accessed-through-instance'
 WarningsAsErrors: ''
-HeaderFilterRegex: 'include/.*\.hpp'
+# Solo gli header del progetto (include/), mai le dipendenze vendored
+# (build/_deps/...) né gli header auto-generati (embedded_web.hpp: dati binari
+# in C-array da embed_web.py, non convertibili): inquinerebbero il report.
+HeaderFilterRegex: '^(?!.*build/_deps)(?!.*embedded_web).*\.hpp$'
 FormatStyle: file
+CheckOptions:
+  # Catch vuoti INTENZIONALI (già commentati con "intenzionale:"): il check
+  # li considera deliberati, non nascondono bug. Esclusione config, mai inline.
+  - key: bugprone-empty-catch.IgnoreCatchWithKeywords
+    value: '@TODO;@FIXME;intenzionale'
+  # httpGetWithRetry(url, headers, maxRetries, retryDelayMs): i due int sono
+  # già nominati in modo non ambiguo; il rischio di scambio è solo teorico.
+  - key: bugprone-easily-swappable-parameters.IgnoredParameterNames
+    value: 'maxRetries;retryDelayMs'

@@ -206,6 +206,16 @@ cmake --build build
 npx @tauri-apps/cli build
 ```
 
+Per lo sviluppo quotidiano il preset `dev` usa **Ninja + ccache** (build
+incrementali ~1s anche dopo il touch di header inclusi ovunque):
+
+```bash
+cmake --preset dev && cmake --build --preset dev
+```
+
+Se ninja o ccache non sono disponibili, fallback classico
+`cmake --preset dev-slow`.
+
 Vedi [docs/BUILD.md](docs/BUILD.md) per dettagli su opzioni CMake, cross-compilazione e troubleshooting.
 
 ---

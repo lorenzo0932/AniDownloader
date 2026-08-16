@@ -22,8 +22,8 @@ namespace Core {
 
     void ExecutionEngine::run(const std::vector<Series>& seriesList, bool burstMode,
                               std::atomic<bool>& stopSignal, ProgressCb onProgress,
-                              StatusCb onStatus, FinishedCb onTaskFinished, SkippedCb onTaskSkipped,
-                              AnalysisCb onAnalysisDone) {
+                              const StatusCb& onStatus, FinishedCb onTaskFinished,
+                              SkippedCb onTaskSkipped, const AnalysisCb& onAnalysisDone) {
         onStatus("Analisi parallelizzata in corso...");
 
         auto result = std::make_shared<PlanningResult>();
@@ -139,6 +139,7 @@ namespace Core {
         std::vector<std::future<void>> workers;
         int downloadWorkers = (std::min)(static_cast<int>(toProcess.size()),
                                          (std::max)(strategy.maxConcurrentTasks * 2, 4));
+        workers.reserve(downloadWorkers);
         for (int i = 0; i < downloadWorkers; ++i) {
             workers.push_back(std::async(std::launch::async, [&]() {
                 while (true) {

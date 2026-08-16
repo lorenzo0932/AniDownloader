@@ -40,7 +40,7 @@ namespace Config {
 
     } // namespace
 
-    AppConfigManager::AppConfigManager(fs::path configPath) : m_configPath(configPath) {
+    AppConfigManager::AppConfigManager(const fs::path& configPath) : m_configPath(configPath) {
         try {
             fs::create_directories(PathHelper::getConfigDir());
         } catch (const std::exception& e) {
@@ -141,7 +141,7 @@ namespace Config {
 
         // 2. Budget Thread: Burst (85% CPU) vs Background (50% CPU)
         float usageFactor = burstMode ? 0.85f : 0.50f;
-        int targetThreadsBudget = static_cast<int>(totalThreads * usageFactor);
+        int targetThreadsBudget = static_cast<int>(static_cast<float>(totalThreads) * usageFactor);
         if (targetThreadsBudget < 1)
             targetThreadsBudget = 1;
 

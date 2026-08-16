@@ -91,7 +91,8 @@ namespace Core {
             try {
                 duration = std::stod(output);
             } catch (...) {
-            } // intenzionale: parse numerico, rumore senza valore
+                // intenzionale: parse numerico, rumore senza valore
+            }
 
             {
                 std::lock_guard<std::mutex> lock(s_cacheMutex);

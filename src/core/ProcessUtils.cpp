@@ -3,12 +3,13 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+#include <array>
 #include <cstdio>
 #include <format>
 #include <fstream>
 #include <memory>
 #ifndef _WIN32
-#include <signal.h>
+#include <csignal>
 #include <sys/poll.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -18,7 +19,7 @@ namespace Core {
     namespace ProcessUtils {
 
         int runCommand(const std::string& cmd, std::atomic<bool>& stopSignal,
-                       std::function<void(const std::string&)> onLineRead) {
+                       const std::function<void(const std::string&)>& onLineRead) {
             std::string fullCmd = cmd + " 2>&1";
 
 #ifdef _WIN32
@@ -37,8 +38,8 @@ namespace Core {
             pipe.release();
             return ScraperUtils::pcloseCompat(rawPipe);
 #else
-            int pipefd[2];
-            if (pipe(pipefd) == -1)
+            std::array<int, 2> pipefd{};
+            if (pipe(pipefd.data()) == -1)
                 return -1;
 
             pid_t pid = fork();
@@ -60,7 +61,7 @@ namespace Core {
             close(pipefd[1]);
 
             int fd = pipefd[0];
-            char buf[4096];
+            std::array<char, 4096> buf{};
             std::string lineBuf;
             bool stopped = false;
 
@@ -81,10 +82,10 @@ namespace Core {
 
                 if (ret > 0) {
                     if (pfd.revents & POLLIN) {
-                        ssize_t n = read(fd, buf, sizeof(buf) - 1);
+                        ssize_t n = read(fd, buf.data(), buf.size() - 1);
                         if (n > 0) {
                             buf[n] = '\0';
-                            lineBuf.append(buf, n);
+                            lineBuf.append(buf.data(), static_cast<size_t>(n));
                             size_t pos;
                             while ((pos = lineBuf.find('\n')) != std::string::npos) {
                                 std::string line = lineBuf.substr(0, pos);
@@ -141,7 +142,7 @@ namespace Core {
                 if (line.find("MemAvailable:") == 0)
                     std::sscanf(line.c_str(), "MemAvailable: %ld", &available);
             }
-            return ((double)(total - available) / total) * 100.0;
+            return ((double)(total - available) / (double)total) * 100.0;
 #endif
         }
 
@@ -156,7 +157,8 @@ namespace Core {
                     try {
                         t = std::stoll(line.substr(12));
                     } catch (...) {
-                    } // intenzionale: parse numerico, rumore senza valore
+                        // intenzionale: parse numerico, rumore senza valore
+                    }
             return static_cast<double>(t);
         }
 

@@ -20,7 +20,7 @@ namespace Config {
     class AppConfigManager {
       public:
         explicit AppConfigManager(
-            std::filesystem::path configPath = PathHelper::getAppConfigPath());
+            const std::filesystem::path& configPath = PathHelper::getAppConfigPath());
 
         template <typename T> T get(const std::string& key, T defaultValue) const {
             if (m_config.contains(key)) {

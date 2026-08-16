@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Xcode 15 (default macos-14) = libc++ 15: manca std::jthread e
       # std::format è incompleto. L'immagine monta anche Xcode 16.x
@@ -53,7 +53,7 @@ jobs:
         run: brew install ccache
 
       - name: Cache ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ccache
           key: ccache-${{ matrix.os }}-${{ hashFiles('CMakeLists.txt', 'src/**', 'include/**') }}
@@ -71,7 +71,7 @@ jobs:
         run: brew install cmake ninja pkg-config
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -79,7 +79,7 @@ jobs:
         run: cmake -B build -DCMAKE_CXX_COMPILER_LAUNCHER=ccache ${{ matrix.cmake_args || '-DCMAKE_BUILD_TYPE=Debug' }}
 
       - name: Build C++
-        run: cmake --build build
+        run: cmake --build build --parallel
 
       - name: Test C++ (Linux)
         if: runner.os == 'Linux'
@@ -90,10 +90,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: 'npm'
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install clang-format
         run: sudo apt-get install -y -qq clang-format
@@ -133,7 +133,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install system deps
         run: >
@@ -168,7 +168,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install system deps
         run: >
@@ -204,18 +204,19 @@ jobs:
         run: lcov --list coverage.info | grep -E "src/scrapers|src/core|src/web" || true
 
       - name: Upload report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-report
           path: coverage-report
           if-no-files-found: warn
 
-  # ─── clang-tidy: report-only (artifact) ───
+  # ─── clang-tidy: fail-on-error (feature 13, fase 2 del piano 08) ───
+  # Le esclusioni vivono in .clang-tidy (config), mai soppressioni inline.
   tidy:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install clang-tidy + deps
         run: >
@@ -224,23 +225,23 @@ jobs:
           clang-tidy cmake ninja-build pkg-config
           libcurl4-openssl-dev
 
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
       - name: Generate compile commands
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
-      - name: Run clang-tidy
-        run: |
-          mkdir -p tidy-report
-          set +e
-          clang-tidy -p build \
-            $(git ls-files 'src/**/*.cpp' | grep -v embedded_web_data.cpp) \
-            > tidy-report/clang-tidy.txt 2>&1
-          TIDY_EXIT=$?
-          echo "clang-tidy exit: $TIDY_EXIT (report-only, non blocca)"
-          exit 0
+      # WebServer.cpp include web/embedded_web.hpp, generato da embed_web.py solo
+      # durante la build: il job tidy fa solo configure, quindi lo generiamo prima.
+      - name: Generate embedded frontend header
+        run: >
+          python3 scripts/embed_web.py
+          "${GITHUB_WORKSPACE}/web" "${GITHUB_WORKSPACE}/web/dist"
+          "${GITHUB_WORKSPACE}/include/web/embedded_web.hpp"
 
-      - name: Upload report
-        uses: actions/upload-artifact@v4
-        with:
-          name: clang-tidy-report
-          path: tidy-report/clang-tidy.txt
-          if-no-files-found: warn
+      - name: Run clang-tidy (fail-on-error, parallelo)
+        run: |
+          run-clang-tidy -p build -j 2 -warnings-as-errors '*' \
+            $(git ls-files 'src/**/*.cpp' | grep -v embedded_web_data.cpp)

@@ -14,6 +14,7 @@
 #include <regex>
 #include <system_error>
 #include <thread>
+#include <utility>
 
 namespace fs = std::filesystem;
 
@@ -24,7 +25,7 @@ namespace Core {
     std::atomic<int> MediaProcessor::s_activeConversions{0};
 
     MediaProcessor::MediaProcessor(ProgressCallback callback, std::atomic<bool>& stopSignal)
-        : m_progressCallback(callback), m_stopSignal(stopSignal) {}
+        : m_progressCallback(std::move(callback)), m_stopSignal(stopSignal) {}
 
     void MediaProcessor::notifyStop() {
         std::lock_guard<std::mutex> lock(s_convMutex);
@@ -289,9 +290,14 @@ namespace Core {
                     m_progressCallback(seriesName, "Encoding...");
                     fs::path progP = workDir / "prog.txt";
                     std::string cmd =
-                        nicePrefix + "ffmpeg -v error -y -i " + ScraperUtils::Q(inputPath) + " " +
-                        baseArgs + " -progress " + ScraperUtils::Q(progP.string()) + " " +
-                        ScraperUtils::Q(finalMergedInWork.string()) + ScraperUtils::DEVNULL();
+                        nicePrefix + "ffmpeg -v error -y -i " + ScraperUtils::Q(inputPath);
+                    cmd += " ";
+                    cmd += baseArgs;
+                    cmd += " -progress ";
+                    cmd += ScraperUtils::Q(progP.string());
+                    cmd += " ";
+                    cmd += ScraperUtils::Q(finalMergedInWork.string());
+                    cmd += ScraperUtils::DEVNULL();
 
                     auto f = std::async(std::launch::async, [&cmd, this]() {
                         return ProcessUtils::runCommand(cmd, m_stopSignal, nullptr);
@@ -325,7 +331,7 @@ namespace Core {
 
                     std::vector<fs::path> parts;
                     for (const auto& p : fs::directory_iterator(workDir))
-                        if (p.path().filename().string().find("s") == 0)
+                        if (p.path().filename().string().find('s') == 0)
                             parts.push_back(p.path());
                     std::sort(parts.begin(), parts.end());
 
@@ -339,10 +345,15 @@ namespace Core {
                     for (const auto& p : parts) {
                         fs::path outP = p.string() + ".enc.mp4";
                         fs::path progP = p.string() + ".txt";
-                        std::string cmd = nicePrefix + "ffmpeg -v error -y -i " +
-                                          ScraperUtils::Q(p.string()) + " " + baseArgs +
-                                          " -progress " + ScraperUtils::Q(progP.string()) + " " +
-                                          ScraperUtils::Q(outP.string()) + ScraperUtils::DEVNULL();
+                        std::string cmd = nicePrefix + "ffmpeg -v error -y -i ";
+                        cmd += ScraperUtils::Q(p.string());
+                        cmd += " ";
+                        cmd += baseArgs;
+                        cmd += " -progress ";
+                        cmd += ScraperUtils::Q(progP.string());
+                        cmd += " ";
+                        cmd += ScraperUtils::Q(outP.string());
+                        cmd += ScraperUtils::DEVNULL();
                         auto ffJob =
                             std::async(std::launch::async, [cmd, stopSig = &m_stopSignal]() -> int {
                                 return ProcessUtils::runCommand(cmd, *stopSig, nullptr);
