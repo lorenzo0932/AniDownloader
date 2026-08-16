@@ -56,7 +56,8 @@ Artefatti generati da GitHub Actions su tag `v*` e caricati su Releases.
 ### install.sh (utente)
 
 ```bash
-./install.sh              # Menu interattivo, download da GitHub Releases
+./install.sh              # Menu interattivo, last release STABILE
+./install.sh --dev        # Canale pre-release (tag vX.Y.Z-dev.N, fallback a stabile)
 ./install.sh v2.0.0       # Versione specifica
 ```
 
@@ -121,6 +122,11 @@ come commit locali, il push resta su richiesta dell'utente.
 
 ## CI/CD
 
+- **`release-please.yml`**: rilascio automatico da conventional commits —
+  su `dev` apre/aggiorna la PR di **pre-release** `vX.Y.Z-dev.N` (+ tag
+  prerelease al merge), su `main` la PR di **release stabile** `vX.Y.Z`
+  (bump versioni + CHANGELOG). Il merge dei PR di rilascio/promozione resta
+  azione esplicita del maintainer. Nessun bump manuale della versione.
 - **`ci.yml`**: matrix OS (Linux/macOS) — build C++ + ctest + lint frontend.
 - **`release.yml`**: tag `v*` o `workflow_dispatch` (scelta piattaforma) —
   build C++ → sidecar in `src-tauri/binaries/` → packaging (headless tar.gz,
