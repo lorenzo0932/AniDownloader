@@ -583,10 +583,12 @@ fi
 
 echo "[5/14] /api/status"
 curl -s -m 10 "$BASE/api/status" > "$RPT/status.json"
-if jq -e '.version == "2.0.1"' "$RPT/status.json" >/dev/null; then
-    pass "version == 2.0.1"
+EXPECTED_VERSION=$(grep -oP 'project\(AniDownloaderCpp VERSION \K[0-9.]+' "$REPO_DIR/CMakeLists.txt" 2>/dev/null)
+EXPECTED_VERSION="${EXPECTED_VERSION:-2.1.0}"
+if jq -e --arg v "$EXPECTED_VERSION" '.version == $v' "$RPT/status.json" >/dev/null; then
+    pass "version == $EXPECTED_VERSION"
 else
-    fail "version attesa 2.0.1: $(cat "$RPT/status.json")"
+    fail "version attesa $EXPECTED_VERSION: $(cat "$RPT/status.json")"
 fi
 if jq -e --argjson p "$PORT" '.port == $p' "$RPT/status.json" >/dev/null; then
     pass "port == $PORT"
