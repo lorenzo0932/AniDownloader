@@ -2,7 +2,7 @@
 
 ## Visione d'insieme
 
-AniDownloader è un sistema **monolitico C++17** che integra:
+AniDownloader è un sistema **monolitico C++20** che integra:
 
 - Motore di download/conversione multi-thread
 - Scrapers nativi per siti streaming italiani

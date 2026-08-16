@@ -31,6 +31,10 @@ sudo dnf install webkit2gtk4.1-devel libappindicator-gtk3-devel
 sudo pacman -S webkit2gtk-4.1 libappindicator-gtk3
 ```
 
+Serve anche **Rust** (toolchain pinnata in `rust-toolchain.toml`:
+`rustup toolchain install` la installa automaticamente) e **Node.js**
+(per il tauri-cli pinnato in `package.json`).
+
 ### Runtime (richiesti per eseguire)
 
 ```bash
@@ -51,7 +55,10 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 
 # 3. (opzionale) App nativa Tauri
-npx @tauri-apps/cli build
+npm run tauri:build   # tauri-cli pinnato in package.json (riproducibile)
+
+# La toolchain Rust è pinnata in rust-toolchain.toml (1.96.0):
+# CI e build locale compilano lo stesso toolchain.
 ```
 
 Output: `build/AniDownloader`
@@ -75,12 +82,12 @@ cmake --build build-debug
 ### Per Tauri sidecar
 
 Il CMakeLists.txt rileva automaticamente il target triple e copia il binario
-in `src-tauri/binaries/` con il nome corretto per Tauri:
+in `src-tauri/binaries/` con il nome corretto per Tauri (`anidownloaderd`):
 
-- Linux x86_64: `AniDownloader-x86_64-unknown-linux-gnu`
-- Windows x86_64: `AniDownloader-x86_64-pc-windows-msvc.exe`
-- macOS arm64: `AniDownloader-aarch64-apple-darwin`
-- macOS x86_64: `AniDownloader-x86_64-apple-darwin`
+- Linux x86_64: `anidownloaderd-x86_64-unknown-linux-gnu`
+- Windows x86_64: `anidownloaderd-x86_64-pc-windows-msvc.exe`
+- macOS arm64: `anidownloaderd-aarch64-apple-darwin`
+- macOS x86_64: `anidownloaderd-x86_64-apple-darwin`
 
 ## Troubleshooting
 

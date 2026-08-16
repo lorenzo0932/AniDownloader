@@ -3,7 +3,7 @@
 > Scarica, converti e organizza automaticamente i tuoi anime preferiti.
 
 Sei stanco di controllare manualmente se è uscito il nuovo episodio?
-AniDownloader è un demone scritto in **C++17** che controlla i siti di streaming italiani
+AniDownloader è un demone scritto in **C++20** che controlla i siti di streaming italiani
 (AnimeWorld, AnimeUnity), scarica i nuovi episodi via **aria2c**, li converte in
 **H.265 (HEVC)** risparmiando fino al 50% di spazio, e li organizza automaticamente.
 
@@ -22,8 +22,8 @@ la conversione H.265.
 
 AniDownloader nasce per risolvere questi problemi:
 
-- **Scrapers nativi C++** — niente Python, niente Puppeteer. Solo ChromeDriver
-  leggero per il rendering JavaScript, chiamato direttamente via pipe.
+- **Scrapers nativi C++** — niente Python, niente browser. Solo HTTP + regex
+  nativi, leggeri e veloci.
 - **Conversione H.265 automatica** — FFmpeg con chunking parallelo per
   sfruttare tutti i core della CPU. Codec video moderno, spazio dimezzato.
 - **Dual delivery** — stessa UI Svelte 5 accessibile via browser (`--web`)
@@ -39,11 +39,11 @@ AniDownloader nasce per risolvere questi problemi:
 
 |                                      |                                                                                                                                              |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🎯**Scrapers nativi**          | AnimeWorld (`AnimeWScraper`), AnimeUnity (`AnimeUScraper`). C++ puro, leggero, senza dipendenze esterne oltre a ChromeDriver.            |
+| 🎯**Scrapers nativi**          | AnimeWorld (`AnimeWScraper`), AnimeUnity (`AnimeUScraper`). C++ puro, leggero, senza dipendenze esterne.                              |
 | ⚡**Download parallelo**       | Fino a 16 connessioni per file con aria2c. Concorrenza multi-serie configurabile automaticamente in base alla CPU.                           |
 | 🎞️**HEVC automatico**        | Conversione post-download con FFmpeg. Uso intelligente di`/dev/shm` se la RAM è sufficiente. Chunking parallelo per encoding più veloce. |
 | 🌐**Web UI moderna**           | Svelte 5 SPA con dashboard live in tempo reale (SSE), gestione serie CRUD, tema dark/light, log viewer.                                      |
-| 🖥️**App nativa**             | Tauri v2: tray icon, notifiche desktop, finestra dedicata. Packaging AppImage / .dmg / .msi.                                                 |
+| 🖥️**App nativa**             | Tauri v2: tray icon, notifiche desktop, finestra dedicata. Packaging AppImage / NSIS (.exe) / .dmg.                                       |
 | 🔄**Aggiornamenti automatici** | Check versioni via GitHub API con confronto semver.                                                                                          |
 | 🔔**Notifiche desktop**        | Completamento, errori e skip segnalati nativamente dal sistema.                                                                              |
 | 🕐**Automazione systemd**      | Timer per controllo periodico (default ogni 15 minuti). Servizio web permanente.                                                             |
@@ -111,7 +111,7 @@ Build da sorgente:
 .\install.ps1
 
 # macOS
-npx @tauri-apps/cli build
+npm run tauri:build   # tauri-cli pinnato in package.json (riproducibile)
 ```
 
 Documentazione completa: [docs/BUILD.md](docs/BUILD.md).
@@ -183,7 +183,7 @@ sudo pacman -S ffmpeg aria2
 ### Build
 
 - **CMake** >= 3.17
-- **Compilatore C++17** (GCC 8+, Clang 7+, MSVC 2019+)
+- **Compilatore C++20** (GCC 13+, Clang 14+, MSVC 2022 17.6+ — servono `std::format`/`std::jthread`)
 - **Node.js** >= 18
 - **OpenSSL** / **libcurl** (gestite via FetchContent o di sistema)
 
@@ -202,8 +202,8 @@ cd web && npm install && npm run build && cd ..
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 
-# (Opzionale) App nativa Tauri
-npx @tauri-apps/cli build
+# (Opzionale) App nativa Tauri (tauri-cli pinnato in package.json)
+npm run tauri:build
 ```
 
 Per lo sviluppo quotidiano il preset `dev` usa **Ninja + ccache** (build
@@ -291,7 +291,7 @@ revisionata e approvata manualmente.
 
 ### Fatto in 2.0
 
-- [X] Riscrittura completa in C++17
+- [X] Riscrittura completa in C++20
 - [X] Web UI Svelte 5 (dashboard, CRUD, config, log)
 - [X] API REST + SSE progresso live
 - [X] App nativa Tauri (tray, notifiche, finestra)
@@ -299,7 +299,7 @@ revisionata e approvata manualmente.
 - [X] Conversione H.265 automatica
 - [X] Scrapers nativi (AnimeWorld, AnimeUnity)
 - [X] Installazione/disinstallazione cross-platform
-- [X] Retry automatico (HTTP, aria2c, ChromeDriver)
+- [X] Retry automatico (HTTP, aria2c)
 - [X] Logger con rotazione
 - [X] Cache poster immagini
 - [X] Aggiornamenti automatici (GitHub API)

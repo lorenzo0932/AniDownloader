@@ -56,7 +56,7 @@ install.sh
 | File | Exec | Terminal |
 |------|------|----------|
 | `AniDownloader.desktop` | `AniDownloader.AppImage` | No |
-| `AniDownloader-CLI.desktop` | `AniDownloader --burst` | Sì |
+| `AniDownloader-CLI.desktop` | `anidownloaderd --burst` | Sì |
 | `AniDownloader-Web.desktop` | Script helper → browser | No |
 
 ### Systemd
@@ -99,24 +99,43 @@ Trigger: push di tag `v*` → GitHub Actions produce e carica:
 ### Naming convention
 
 ```
-AniDownloader-v2.0.0-x86_64.AppImage
-anidownloaderd-v2.0.0-linux-x86_64.tar.gz
-AniDownloader_2.0.0_x64-setup.exe
-AniDownloader_2.0.0_x64.dmg
+AniDownloader-v2.1.0-linux-x86_64.AppImage
+anidownloaderd-v2.1.0-linux-x86_64.tar.gz
+AniDownloader_2.1.0_x64-setup.exe      (NSIS)
+AniDownloader_2.1.0_aarch64.dmg
 ```
+
+Pattern reali (vedi `.github/workflows/release.yml`):
+- AppImage: `AniDownloader-<ref_name>-linux-<arch>.AppImage`
+- Headless: `anidownloaderd-<ref_name>-linux-<arch>.tar.gz` (Linux),
+  `anidownloaderd-<ref_name>-win-<arch>.zip` (Windows),
+  `anidownloaderd-<ref_name>-mac-<arch>.tar.gz` (macOS)
+- Windows: `bundle/nsis/*.exe`; macOS: `bundle/dmg/*.dmg`
 
 ## GitHub Actions
 
 `.github/workflows/release.yml`:
 - Trigger: `tags: v*`
-- Matrix: `ubuntu-latest`, `windows-latest`, `macos-latest`
-- Steps: checkout → build C++ → build frontend → [Tauri bundle] → upload
+- Matrix: `ubuntu-24.04`, `windows-2022`, `macos-14`
+- Toolchain **pinnata**: Rust `1.96.0` (`rust-toolchain.toml`), tauri-cli
+  `2.11.4` (`package.json`), Node LTS — build riproducibile tra CI e locale.
+- Steps: checkout → cache Cargo/npm → build C++ → **CTest** (fail-fast prima
+  del packaging) → [Tauri bundle] → **launch test AppImage anti white-screen**
+  (xvfb + screenshot, verifica che la webview non sia bianca) → upload
+- Cache: `actions/cache` per `~/.cargo` e `node_modules` sui 3 job
+
+La verifica CI è riproducibile anche in locale via Docker:
+
+```bash
+# build C++ + CTest + launch test webview in un container ubuntu:24.04
+bash ci/verify.sh   # vedi ci/Dockerfile
+```
 
 ## Installazione headless manuale
 
 ```bash
 # Download da GitHub Releases
-curl -fsSL "https://github.com/lorenzo0932/AniDownloader/releases/download/v2.0.0/anidownloaderd-v2.0.0-linux-x86_64.tar.gz" \
+curl -fsSL "https://github.com/lorenzo0932/AniDownloader/releases/download/v2.1.0/anidownloaderd-v2.1.0-linux-x86_64.tar.gz" \
   | tar xzf - -C ~/.local/share/anidownloader-headless/
 
 # Oppure via install.sh

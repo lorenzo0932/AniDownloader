@@ -31,7 +31,7 @@ Stato dell'applicazione.
 ```json
 {
     "success": true,
-    "version": "2.0.1",
+    "version": "2.1.0",
     "port": 8989,
     "downloadRunning": false,
     "sseClients": 0
