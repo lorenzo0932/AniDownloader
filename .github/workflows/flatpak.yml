@@ -1,0 +1,56 @@
+name: Flatpak
+
+# Build e pubblicazione della distribuzione Flatpak di AniDownloader.
+#
+# Design (2026-08-16):
+# - Workflow SEPARATO da Release: il flatpak è il canale Linux unico (AppImage
+#   deprecata). Su push di tag `v*` (o dispatch manuale) builda il bundle dal
+#   COMMIT CORRENTE del checkout (source `type: dir` nel manifest) e lo allega
+#   alla GitHub Release come artefatto `AniDownloader-<ref>-linux-<arch>.flatpak`.
+# - Il manifest flatpak è in `flatpak/com.anidownloader.desktop.yml`; le cache
+#   offline npm/cargo/root (node-sources.json, cargo-sources.json,
+#   root-node-sources.json) sono committate → build riproducibile e offline.
+# - Il permesso `--filesystem=host` (accesso a tutti i dischi) è nel manifest,
+#   coerente con la build nativa.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  flatpak:
+    name: Build Flatpak (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: flatpak/com.anidownloader.desktop.yml
+          bundle: AniDownloader-${{ github.ref_name }}-linux-x86_64.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}
+          arch: x86_64
+          upload-artifact: true
+          artifact-name: AniDownloader-linux-x86_64.flatpak
+
+      # Attach alla GitHub Release (stesso tag che ha triggerato release.yml).
+      # Idempotente: se la release non esiste ancora (race con release.yml),
+      # softprops la crea; se esiste, aggiunge solo il file.
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AniDownloader-${{ github.ref_name }}-linux-x86_64.flatpak
+          fail_on_unmatched_files: true

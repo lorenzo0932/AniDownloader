@@ -20,6 +20,6 @@
       "icons/icon.ico"
     ],
     "externalBin": ["binaries/anidownloaderd"],
-    "targets": ["appimage", "nsis", "dmg"]
+    "targets": ["nsis", "dmg"]
   }
 }

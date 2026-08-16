@@ -1,0 +1,139 @@
+# Manifest Flatpak per AniDownloader (Tauri v2 + sidecar C++)
+#
+# Base: https://tauri.app/distribute/flatpak/
+# Runtime GNOME (include WebKitGTK compilato e testato → niente bundling
+# delle librerie → niente crash WebKit tipo white-screen AppImage).
+#
+# Build: frontend Svelte (npm) → embed_web.py → backend C++ (cmake) →
+# binario Tauri (cargo) → install in /app. Il sidecar `anidownloaderd`
+# viene lanciato dal binario Rust e serve la webview su 127.0.0.1:8989.
+
+id: com.anidownloader.desktop
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+
+command: anidownloader
+
+finish-args:
+  # Finestra (Wayland + fallback X11)
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=ipc
+  # Tray icon via DBus
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+  # Network: il sidecar serve su 127.0.0.1:8989 e gli scraper
+  # chiamano i siti di streaming (AnimeWorld/AnimeUnity) + GitHub API
+  - --share=network
+  # Accesso a TUTTI i filesystem (non solo la home): i download/conversione e
+  # il browse possono puntare a qualsiasi disco montato (/mnt, /media,
+  # /run/media, pool ZFS/BTRFS, ecc.), come nell'installazione nativa.
+  # ── NOTA (trade-off deliberato) ──
+  # `--filesystem=host` svuota di fatto il sandbox filesystem. È accettabile
+  # perché l'app ha già --share=network e lancia aria2c/ffmpeg come subprocess
+  # (modello "app trusted" sulla propria macchina). NON è accettabile per una
+  # review Flathub: se un giorno si vorrà pubblicare, andrà migrato a un modello
+  # a permessi minimi (xdg-desktop-portal + path espliciti).
+  - --filesystem=host
+  # Condivisione config/cache con l'installazione nativa: il C++ usa
+  # XDG_CONFIG_HOME/XDG_CACHE_HOME, che flatpak reindirizza di default in
+  # ~/.var/app/com.anidownloader.desktop/. Con questi flag, i path XDG
+  # dell'app nel sandbox puntano alle cartelle REALI dell'host
+  # (~/.config/AniDownloader, ~/.cache/AniDownloader) → le serie, config e
+  # log sono condivisi con l'installazione classica (headless/systemd).
+  - --filesystem=xdg-config/AniDownloader:create
+  - --filesystem=xdg-cache/AniDownloader:create
+
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node20
+  - org.freedesktop.Sdk.Extension.rust-stable
+
+build-options:
+  append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
+  env:
+    NPM_CONFIG_CACHE: /run/build/anidownloader/flatpak-node/npm-cache
+    NPM_CONFIG_OFFLINE: 'true'
+
+modules:
+  # ── libayatana-appindicator: serve il tray icon (libappindicator-sys).
+  #    Il runtime GNOME non lo include → usiamo il modulo collaudato di Flathub
+  #    (con tutte le dipendenze: libdbusmenu, ayatana-ido, libayatana-indicator).
+  - libayatana-appindicator-gtk3.json
+
+  # ── aria2: downloader usato dal core C++ (aria2c). Il runtime GNOME non lo
+  #    include → build da sorgente (solo HTTP/HTTPS: niente bittorrent/metalink,
+  #    dipendenze opzionali c-ares/libssh2 disattivate; TLS via OpenSSL, già nel
+  #    runtime GNOME → nessuna lib extra da bundleare).
+  - aria2.json
+
+  - name: anidownloader
+    buildsystem: simple
+    build-options:
+      env:
+        HOME: /run/build/anidownloader
+        CARGO_HOME: /run/build/anidownloader/cargo
+        CARGO_NET_OFFLINE: 'true'
+        XDG_CACHE_HOME: /run/build/anidownloader/flatpak-node/cache
+    sources:
+      # Build dal checkout CORRENTE (CI: commit della run; locale: workspace).
+      # `type: dir` è la scelta ufficiale per CI (docs flatpak: "best suited for
+      # use in CI to build the latest changes") — niente fetch di un tag fisso →
+      # la release riflette il commit su cui è partita la CI.
+      # NB: niente `exclude` (non supportato da flatpak-builder per dir). In CI
+      # il checkout di actions/checkout contiene SOLO i file tracciati (niente
+      # target/node_modules/build multi-GB). In locale, install.sh builda da una
+      # copia pulita (git archive) nella stessa identica maniera.
+      - type: dir
+        path: ..
+      - cargo-sources.json
+      - node-sources.json
+      # Cache npm offline del package.json ROOT (contiene @tauri-apps/cli 2.11.4,
+      # necessario per `tauri build` — embedda il frontend nel binario Rust).
+      # Generata da `package-lock.json` della root del repo.
+      - root-node-sources.json
+      # Dipendenze FetchContent del backend C++ (vendored: il sandbox non ha
+      # rete in fase build). Puntate da FETCHCONTENT_SOURCE_DIR_* sotto.
+      - type: archive
+        url: https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+        sha256: d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d
+        dest: deps/json-src
+      - type: git
+        url: https://github.com/libcpr/cpr.git
+        tag: 1.10.5
+        dest: deps/cpr-src
+      - type: archive
+        url: https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.18.1.tar.gz
+        sha256: 405abd8170f2a446fc8612ac635d0db5947c0d2e156e32603403a4496255ff00
+        dest: deps/httplib-src
+    build-commands:
+      # ── 1. Frontend Svelte (npm offline dalla cache _cacache generata) ──
+      - cd web && npm install --no-audit --no-fund && npm run build
+      # ── 2. Embed del frontend nel binario C++ ──
+      - python3 scripts/embed_web.py web dist "$PWD/include/web/embedded_web.hpp"
+      # ── 3. Backend C++ (sidecar anidownloaderd) — deps vendored ──
+      - cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DFETCHCONTENT_SOURCE_DIR_JSON="$PWD/deps/json-src" -DFETCHCONTENT_SOURCE_DIR_CPR="$PWD/deps/cpr-src" -DFETCHCONTENT_SOURCE_DIR_HTTPLIB="$PWD/deps/httplib-src"
+      # Jobs DINAMICI: $(nproc) si adatta alle risorse disponibili (CI runner,
+      # dev box) invece dell'hardcode a 16. flatpak-builder --jobs/N è la stessa
+      # fonte usata da cmake/ninja.
+      - cmake --build build --parallel "$(nproc)"
+      # ── 4. Sidecar per Tauri (externalBin) ──
+      - mkdir -p src-tauri/binaries
+      - cp build/AniDownloader src-tauri/binaries/anidownloaderd-x86_64-unknown-linux-gnu
+      # ── 5. Deps npm ROOT (tauri-cli 2.11.4) — offline dalla cache flatpak-node ──
+      - npm install --no-audit --no-fund
+      # ── 6. Cargo vendored (da cargo-sources.json) ──
+      - mkdir -p src-tauri/.cargo && printf '%s\n' '[source.crates-io]' 'replace-with = "vendored-sources"' '' '[source.vendored-sources]' 'directory = "/run/build/anidownloader/cargo/vendor"' > src-tauri/.cargo/config.toml
+      # ── 7. Build Tauri: `tauri build --no-bundle` embedda il frontend
+      #    (frontendDist ../web/dist) nel binario Rust. Senza bundle AppImage/DEB
+      #    (--no-bundle): il flatpak usa solo il binario + runtime GNOME.
+      #    CARGO_BUILD_JOBS=$(nproc): jobs dinamici per cargo. ──
+      - CARGO_BUILD_JOBS="$(nproc)" npm run tauri:build -- --no-bundle
+      # ── 8. Installazione ──
+      - install -Dm755 src-tauri/target/release/anidownloader /app/bin/anidownloader
+      - install -Dm755 src-tauri/target/release/anidownloaderd /app/bin/anidownloaderd
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.anidownloader.desktop.png
+      - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/com.anidownloader.desktop.png
+      - mkdir -p /app/share/applications && printf '%s\n' '[Desktop Entry]' 'Categories=Network;AudioVideo;' 'Comment=AniDownloader - Anime download manager' 'Exec=anidownloader' 'Icon=com.anidownloader.desktop' 'Name=AniDownloader' 'Terminal=false' 'Type=Application' > /app/share/applications/com.anidownloader.desktop.desktop
+      - mkdir -p /app/share/metainfo && printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<component type="desktop-application">' '<id>com.anidownloader.desktop</id>' '<launchable type="desktop-id">com.anidownloader.desktop.desktop</launchable>' '<name>AniDownloader</name>' '<summary>Download, converti e organizza automaticamente i tuoi anime</summary>' '<developer id="io.github.lorenzo0932"><name>lorenzo0932</name></developer>' '<metadata_license>MIT</metadata_license>' '<project_license>MIT</project_license>' '<url type="homepage">https://github.com/lorenzo0932/AniDownloader</url>' '<content_rating type="oars-1.1" />' '<description>' '<p>Demone in C++20 che controlla i siti di streaming italiani (AnimeWorld, AnimeUnity), scarica i nuovi episodi via aria2c, li converte in H.265 e li organizza automaticamente.</p>' '<p>UI web Svelte 5 servita dal binario C++ su :8989, oppure app nativa Tauri con tray icon.</p>' '</description>' '<releases>' '<release version="2.1.1" date="2026-08-16" />' '</releases>' '</component>' > /app/share/metainfo/com.anidownloader.desktop.metainfo.xml

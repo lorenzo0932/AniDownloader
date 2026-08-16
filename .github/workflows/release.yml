@@ -95,81 +95,11 @@ jobs:
           mkdir -p src-tauri/binaries
           cp build/AniDownloader src-tauri/binaries/anidownloaderd-x86_64-unknown-linux-gnu
 
-      - name: Build Tauri (AppImage, tauri-cli pinned)
-        # tauri-cli pinnato in package.json (devDependency @tauri-apps/cli 2.11.4).
-        # Prima: `npx @tauri-apps/cli build` scaricava l'ULTIMA versione ad ogni
-        # build → non riproducibile (bug white-screen 2.1.0).
-        run: |
-          npm install --no-audit --no-fund
-          npm run tauri:build
-        env:
-          NO_STRIP: 1
-          TAURI_SIGNING_PRIVATE_KEY: ''
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
-
-      - name: Rename AppImage for consistent naming
-        run: |
-          ARCH=$(uname -m)
-          mv src-tauri/target/release/bundle/appimage/*.AppImage \
-             "AniDownloader-${{ github.ref_name }}-linux-${ARCH}.AppImage"
-
-      # ── Launch test della AppImage (regressione white-screen 2.1.0) ──
-      # Avvia la AppImage in un X virtuale, aspetta che il sidecar C++ risponda
-      # su :8989, cattura uno screenshot e verifica che NON sia uno schermo
-      # uniforme (bianco). Se la pagina è bianca, i colori unici sono ~1.
-      - name: Launch test AppImage (anti white-screen)
-        run: |
-          set -euo pipefail
-          APP="AniDownloader-${{ github.ref_name }}-linux-x86_64.AppImage"
-          chmod +x "$APP"
-
-          # X virtuale per la webview
-          Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
-          XVFB_PID=$!
-          export DISPLAY=:99
-          trap 'kill $XVFB_PID 2>/dev/null || true' EXIT
-
-          # Avvio la AppImage (dbus-run-session per il tray/notifiche)
-          dbus-run-session -- "./$APP" > appimage-launch.log 2>&1 &
-          APP_PID=$!
-          trap 'kill $APP_PID $XVFB_PID 2>/dev/null || true' EXIT
-
-          # Attende il sidecar web su :8989 (max 60s)
-          SIDECAR_OK=0
-          for i in $(seq 1 60); do
-            if curl -s -m 2 http://127.0.0.1:8989/api/status >/dev/null 2>&1; then
-              echo "✅ Sidecar web attivo dopo ${i}s"
-              SIDECAR_OK=1
-              break
-            fi
-            sleep 1
-          done
-          if [ "$SIDECAR_OK" != "1" ]; then
-            echo "❌ Sidecar web non ha risposto su :8989 — log:"; cat appimage-launch.log
-            exit 1
-          fi
-
-          # Dà tempo alla webview di renderizzare
-          sleep 8
-          import -window root -display :99 screenshot.png || true
-
-          # Numero di colori unici nello screenshot (1 = schermo uniforme/bianco)
-          COLORS=$(identify -format "%k" screenshot.png 2>/dev/null || echo 0)
-          echo "Colori unici nello screenshot: $COLORS"
-          if [ "${COLORS:-0}" -le 1 ]; then
-            echo "❌ Schermo bianco/uniforme — webview non renderizzata"
-            exit 1
-          fi
-          echo "✅ Webview renderizzata ($COLORS colori)"
-
-      - name: Upload AppImage screenshot
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: appimage-launch-test
-          path: |
-            screenshot.png
-            appimage-launch.log
+      # ── NOTA: il desktop Linux NON usa più l'AppImage (deprecata). ──
+      # Il canale desktop Linux è il Flatpak, buildato dal workflow dedicato
+      # `.github/workflows/flatpak.yml` (che embedda Tauri + sidecar C++ nel
+      # runtime GNOME → niente white-screen, niente bundling WebKitGTK).
+      # Qui il job linux produce SOLO l'artefatto headless (server/NAS).
 
       - name: Package headless
         run: |
@@ -187,7 +117,6 @@ jobs:
           # niente più release senza descrizione come la 2.1.0_dev).
           generate_release_notes: true
           files: |
-            AniDownloader-*.AppImage
             anidownloaderd-*.tar.gz
 
       - name: Upload artifact
@@ -195,7 +124,6 @@ jobs:
         with:
           name: linux-artifacts
           path: |
-            AniDownloader-*.AppImage
             anidownloaderd-*.tar.gz
 
   windows:
