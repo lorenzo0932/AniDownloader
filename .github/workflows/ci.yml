@@ -236,7 +236,10 @@ jobs:
       # WebServer.cpp include web/embedded_web.hpp, generato da embed_web.py solo
       # durante la build: il job tidy fa solo configure, quindi lo generiamo prima.
       - name: Generate embedded frontend header
-        run: python3 scripts/embed_web.py web web/dist include/web/embedded_web.hpp
+        run: >
+          python3 scripts/embed_web.py
+          "${GITHUB_WORKSPACE}/web" "${GITHUB_WORKSPACE}/web/dist"
+          "${GITHUB_WORKSPACE}/include/web/embedded_web.hpp"
 
       - name: Run clang-tidy (fail-on-error, parallelo)
         run: |
