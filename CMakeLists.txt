@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.17)
-project(AniDownloaderCpp VERSION 2.1.2 LANGUAGES CXX)
+project(AniDownloaderCpp LANGUAGES CXX)
+
+# Versione di prodotto. `project(... VERSION ...)` non accetta prerelease
+# semver (es. 2.1.3-dev.1), quindi è una variabile dedicata, aggiornata da
+# release-please via annotazione `x-release-please-version`.
+set(ANIDOWNLOADER_VERSION "2.1.2")  # x-release-please-version
 
 # --- STANDARD C++ ---
 set(CMAKE_CXX_STANDARD 20)
@@ -181,7 +186,7 @@ target_link_libraries(AniDownloader
 )
 
 target_compile_definitions(AniDownloader PRIVATE
-    ANIDOWNLOADER_VERSION="${PROJECT_VERSION}"
+    ANIDOWNLOADER_VERSION="${ANIDOWNLOADER_VERSION}"
 )
 
 # ─── TEST ───
