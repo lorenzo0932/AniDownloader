@@ -7,7 +7,7 @@
     { "type": "generic", "path": "CMakeLists.txt" },
     { "type": "generic", "path": "flatpak/com.anidownloader.desktop.yml" },
     { "type": "toml", "path": "src-tauri/Cargo.toml", "jsonpath": "$.package.version" },
-    { "type": "toml", "path": "src-tauri/Cargo.lock", "jsonpath": "$.package[?(@.name=='anidownloader')].version" },
+    { "type": "toml", "path": "src-tauri/Cargo.lock", "jsonpath": "$.package[?(@.name.value=='anidownloader')].version" },
     { "type": "json", "path": "web/package.json", "jsonpath": "$.version" },
     { "type": "json", "path": "web/package-lock.json", "jsonpath": "$.version" },
     { "type": "json", "path": "web/package-lock.json", "jsonpath": "$.packages[\"\"].version" }
