@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "bdbd420fbf0097b9c823d945301e2e84b8b6bd80",
+  "release-type": "node",
+  "include-component-in-tag": false,
+  "extra-files": [
+    { "type": "generic", "path": "CMakeLists.txt" },
+    { "type": "generic", "path": "flatpak/com.anidownloader.desktop.yml" },
+    { "type": "toml", "path": "src-tauri/Cargo.toml", "jsonpath": "$.package.version" },
+    { "type": "toml", "path": "src-tauri/Cargo.lock", "jsonpath": "$.package[?(@.name=='anidownloader')].version" },
+    { "type": "json", "path": "web/package.json", "jsonpath": "$.version" },
+    { "type": "json", "path": "web/package-lock.json", "jsonpath": "$.version" },
+    { "type": "json", "path": "web/package-lock.json", "jsonpath": "$.packages[\"\"].version" }
+  ],
+  "packages": {
+    ".": {
+      "versioning": "prerelease",
+      "prerelease": true,
+      "prerelease-type": "dev",
+      "skip-changelog": true
+    }
+  }
+}
