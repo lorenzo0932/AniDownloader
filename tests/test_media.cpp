@@ -142,7 +142,7 @@ struct RangeServer {
 };
 
 // Uccide aria2 (una sola volta) per simulare SIGKILL sul processo figlio.
-static void killAria2Once(const std::string& pattern, std::atomic<bool>& fired) {
+static void killAria2Once(const std::string& pattern [[maybe_unused]], std::atomic<bool>& fired) {
     if (fired.exchange(true))
         return;
 #ifdef _WIN32
