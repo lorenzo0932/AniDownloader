@@ -20,6 +20,15 @@ get_latest_release() {
         grep '"tag_name"' | cut -d'"' -f4
 }
 
+# Ultima PRERELEASE semver (canale dev, tag `vX.Y.Z-dev.N` prodotti da
+# release-please). I tag legacy come `v2.1.2_dev` (underscore) non matchano
+# e vengono ignorati.
+get_latest_dev() {
+    curl -sL "https://api.github.com/repos/$REPO/releases?per_page=100" | \
+        grep -oP '"tag_name": "\Kv?[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+' | \
+        sort -V | tail -1
+}
+
 download_asset() {
     local version="$1" asset="$2" output="$3"
     url="https://github.com/$REPO/releases/download/$version/$asset"
@@ -114,10 +123,12 @@ echo ""
 # 1b. Parsing argomenti
 # ──────────────────────────────────────────────
 FORCE_LOCAL=false
+FORCE_DEV=false
 VERSION=""
 for arg in "$@"; do
     case "$arg" in
         --local) FORCE_LOCAL=true ;;
+        --dev) FORCE_DEV=true ;;
         *) VERSION="$arg" ;;
     esac
 done
@@ -130,8 +141,17 @@ if $FORCE_LOCAL; then
     echo "  Build locale forzata (--local)"
 else
     if [ -z "$VERSION" ]; then
-        echo "Recupero ultima release da GitHub..."
-        VERSION=$(get_latest_release) || true
+        if $FORCE_DEV; then
+            echo "Recupero ultima prerelease da GitHub (--dev)..."
+            VERSION=$(get_latest_dev) || true
+            if [ -z "$VERSION" ]; then
+                echo "  Nessuna prerelease disponibile, uso l'ultima release stabile."
+                VERSION=$(get_latest_release) || true
+            fi
+        else
+            echo "Recupero ultima release da GitHub..."
+            VERSION=$(get_latest_release) || true
+        fi
         if [ -n "$VERSION" ]; then
             echo "  Trovata: $VERSION"
             BUILD_LOCAL=false

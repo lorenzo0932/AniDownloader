@@ -20,7 +20,9 @@ install.sh
   ├── 1. Menu interattivo
   │
   ├── 2. Determina versione
-  │   ├── GitHub API → latest release tag
+  │   ├── default → GitHub API → ultima release STABILE (tag semver)
+  │   ├── --dev   → GitHub API → ultima PRERELEASE (tag vX.Y.Z-dev.N),
+  │   │             fallback a stabile se non ci sono prerelease
   │   └── fallback: build locale
   │
   ├── 3. Crea directory (~/.local/bin, ~/.config/AniDownloader, ...)
@@ -100,6 +102,29 @@ Trigger: push di tag `v*` → GitHub Actions produce e carica:
 | Desktop | macOS | `.dmg` | `release.yml` |
 
 > Su Linux il **Flatpak è il canale desktop ufficiale** (AppImage deprecata).
+
+### Rilasci automatici (release-please)
+
+Il bump della versione e il tag sono gestiti da **release-please**
+(`.github/workflows/release-please.yml`, config `release-please-config*.json`):
+
+| Branch | Canale | Tag | Contenuto |
+|--------|--------|-----|-----------|
+| `dev`  | pre-release | `vX.Y.Z-dev.N` | Prerelease: bump dei file di versione su conventional commits, niente CHANGELOG (`skip-changelog`). Al merge del PR `release-please` crea il tag prerelease → build artefatti dev. |
+| `main` | stabile     | `vX.Y.Z`      | Release stabile: raccoglie i commit dall'ultima release, aggiorna files + `CHANGELOG.md`. Al merge crea il tag → build artefatti release. |
+
+Il merge del PR di rilascio (o di promozione `dev → main`) è sempre
+un'azione esplicita del maintainer; il tag è la *conseguenza* di quel merge.
+Prerequisiti GitHub (una tantum): secret `RELEASE_PLEASE_TOKEN` (PAT con
+`contents: write`) usato dal workflow — gli eventi generati dal `GITHUB_TOKEN`
+non triggerano altri workflow — e `Settings → Actions → Allow GitHub Actions
+to create and approve pull requests`.
+
+File di versione aggiornati automaticamente: `CMakeLists.txt`
+(annotazione `x-release-please-version`), `package*.json` root + `web/`,
+`src-tauri/{Cargo.toml,Cargo.lock}`, `tauri.conf.json` non più incluso
+(la versione deriva da `Cargo.toml`), metainfo Flatpak
+(`x-release-please-version-date`).
 
 ### Naming convention
 

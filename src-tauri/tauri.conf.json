@@ -1,6 +1,5 @@
 {
   "productName": "AniDownloader",
-  "version": "2.1.2",
   "identifier": "com.anidownloader.desktop",
   "build": {
     "devUrl": "http://localhost:5173",

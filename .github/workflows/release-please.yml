@@ -1,0 +1,57 @@
+name: Release Please
+
+# Rilasci automatici basati su conventional commits (gestiti da release-please):
+# - branch `dev`: apre/aggiorna la PR di PRERELEASE vX.Y.Z-dev.N → al merge crea
+#   il tag prerelease → release.yml / flatpak.yml buildano gli artefatti dev.
+# - branch `main` (stabile): apre/aggiorna la PR di release stabile vX.Y.Z → al
+#   merge crea il tag stabile → artefatti di release.
+# Config per branch: release-please-config-dev.json (+ manifest -dev) su dev,
+# release-please-config.json (+ manifest) su main.
+#
+# ⚠️ TOKEN: serve un PAT (non il default GITHUB_TOKEN) come secret
+# `RELEASE_PLEASE_TOKEN`. Eventi generati dal GITHUB_TOKEN (push del tag,
+# release creata) NON triggerano altri workflow → senza PAT i workflow di
+# build su tag v* (release.yml, flatpak.yml) non partirebbero.
+# Obbligatorio anche: Settings → Actions → "Allow GitHub Actions to create
+# and approve pull requests".
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dev:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          command: manifest
+          target-branch: dev
+          default-branch: dev
+          config-file: release-please-config-dev.json
+          manifest-file: .release-please-manifest-dev.json
+
+  main:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          command: manifest
+          target-branch: main
+          default-branch: main

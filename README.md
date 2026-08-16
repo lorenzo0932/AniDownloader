@@ -72,6 +72,12 @@ Il menu ti guida nella scelta:
 2. **Solo Headless** (daemon systemd per server/NAS)
 3. **Entrambi** (consigliato)
 
+> ℹ️ **Canali di rilascio**: di default `install.sh` installa l'ultima **release
+> stabile**. Per le **anteprime pre-release** (build dal branch `dev`, tag
+> `vX.Y.Z-dev.N`) usa
+> `./install.sh --dev`: se nessuna pre-release è disponibile, ricade sulla
+> stabile.
+
 > ℹ️ Su Linux il **Flatpak è il canale desktop ufficiale** (AppImage deprecata:
 > il WebKitGTK bundle della distro di build crashava su altre distro). Il
 > Flatpak usa il runtime GNOME con WebKitGTK testato → niente white-screen.
