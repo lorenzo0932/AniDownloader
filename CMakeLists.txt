@@ -250,10 +250,19 @@ target_link_libraries(test_scraper PRIVATE
 add_test(NAME test_scraper COMMAND test_scraper)
 
 # Warning zero come proprietà permanente sui target del progetto (non _deps).
+# _CRT_SECURE_NO_WARNINGS: std::getenv/std::localtime (C standard) sono
+# deprecati solo dalle CRT MSVC (C4996) — codice cross-platform legittimo.
 target_compile_options(AniDownloader PRIVATE ${PROJECT_WERROR_FLAGS})
 target_compile_options(test_core PRIVATE ${PROJECT_WERROR_FLAGS})
 target_compile_options(test_media PRIVATE ${PROJECT_WERROR_FLAGS})
 target_compile_options(test_scraper PRIVATE ${PROJECT_WERROR_FLAGS})
+
+if(MSVC)
+    target_compile_definitions(AniDownloader PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(test_core PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(test_media PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(test_scraper PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 
 # ─── SMOKE E2E (solo Linux: script POSIX con curl/jq/python3) ───
 if(UNIX AND NOT APPLE)
