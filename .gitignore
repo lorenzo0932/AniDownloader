@@ -47,15 +47,17 @@ squashfs-root/
 .tmp-old20.AppImage
 STUDIO_WHITESCREEN_2.1.0.md
 ci-docker-verify.sh
+
+# Flatpak: cache/artefatti di build (ovunque nel tree — incluse le dir con
+# .git nidificati dentro .flatpak-builder)
 .flatpak-builder/
-flatpak/.flatpak-builder
-flatpak/build-repo/
+**/.flatpak-builder/
 flatpak/build/
+flatpak/build-repo/
 
 # Flatpak: bundle locale non committabile
 AniDownloader.flatpak
 AniDownloader-CROSS4.AppImage
-
 
 # Build output directories
 output/
@@ -74,3 +76,4 @@ bugs_analysis.md
 scripts/bundle_codebase.sh
 
 struttura.txt
+
