@@ -10,8 +10,8 @@
 </script>
 
 {#if show}
-  <div class="confirm-overlay" onclick={onCancel} onkeydown={handleKeydown} role="dialog" aria-modal="true">
-    <div class="confirm-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+  <div class="confirm-overlay" onclick={onCancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="confirm-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
       <div class="confirm-header">
         <h3>{title}</h3>
       </div>

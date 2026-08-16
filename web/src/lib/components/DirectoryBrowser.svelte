@@ -3,7 +3,7 @@
 
   let { show = false, currentPath = '~/Video', title = 'Sfoglia Directory', onselect, oncancel } = $props();
 
-  let path = $state(currentPath);
+  let path = $state('');
   let entries = $state([]);
   let loading = $state(false);
   let error = $state('');
@@ -73,6 +73,7 @@
 
   $effect(() => {
     if (show && currentPath) {
+      path = currentPath;
       load(currentPath);
       manualInput = currentPath;
     }
@@ -80,8 +81,8 @@
 </script>
 
 {#if show}
-  <div class="browser-overlay" onclick={oncancel} onkeydown={handleKeydown} role="dialog" aria-modal="true">
-    <div class="browser-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+  <div class="browser-overlay" onclick={oncancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="browser-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
       <div class="browser-header">
         <h3>{title}</h3>
       </div>
