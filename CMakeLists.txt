@@ -4,7 +4,7 @@ project(AniDownloaderCpp LANGUAGES CXX)
 # Versione di prodotto. `project(... VERSION ...)` non accetta prerelease
 # semver (es. 2.1.3-dev.1), quindi è una variabile dedicata, aggiornata da
 # release-please via annotazione `x-release-please-version`.
-set(ANIDOWNLOADER_VERSION "2.1.2")  # x-release-please-version
+set(ANIDOWNLOADER_VERSION "2.2.0-dev")  # x-release-please-version
 
 # --- STANDARD C++ ---
 set(CMAKE_CXX_STANDARD 20)
