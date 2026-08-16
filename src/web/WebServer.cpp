@@ -578,7 +578,7 @@ namespace Web {
             try {
                 auto data = loadConfigJson();
                 sendJson(res, successJson({{"config", data}}));
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 sendJson(res, errorJson("Failed to load config"), 500);
             }
         });
@@ -591,7 +591,7 @@ namespace Web {
                     existing[key] = val;
                 saveConfigJson(existing);
                 sendJson(res, successJson());
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 sendJson(res, errorJson("Invalid config data"), 400);
             }
         });

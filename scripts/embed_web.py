@@ -56,7 +56,7 @@ def main():
     for root, dirs, names in os.walk(input_dir):
         for name in names:
             full_path = os.path.join(root, name)
-            rel_path = "/" + os.path.relpath(full_path, input_dir)
+            rel_path = "/" + os.path.relpath(full_path, input_dir).replace(os.sep, "/")
             files.append((rel_path, full_path))
 
     files.sort(key=lambda x: x[0])
