@@ -7,6 +7,8 @@ e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026
+
 ### Aggiunto
 
 - Igiene CI (feature 8): job sanitizer (ASan+UBSan) su Linux, ccache,
@@ -69,6 +71,11 @@ e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
     Node 20), `CPR_FORCE_USE_SYSTEM_CURL` → `CPR_USE_SYSTEM_CURL` (cpr 1.10.5).
   - Build di sviluppo più veloce: preset CMake `dev` (Ninja + ccache, build
     incrementali ~1s), fallback `dev-slow` (Makefiles).
+- Feature 12 — test frontend: Vitest + Testing Library (componenti
+  AddSeriesForm, SeriesCard, TaskItem, api client), `npm test` in CI.
+- Feature 14 — CI hygiene: `-Werror`/`/WX` scoped sui target del progetto,
+  Node 20→22 LTS, CMP0135 DOWNLOAD_EXTRACT_TIMESTAMP, soppressione rumore
+  coverage, warning Svelte (capture initial value + a11y) a zero.
 
 ## [2.0.1] - 2026
 
