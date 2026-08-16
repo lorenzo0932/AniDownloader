@@ -4370,6 +4370,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/tauri-plugin-opener/tauri-plugin-opener-2.5.4.crate",
+        "sha256": "17e1bea14edce6b793a04e2417e3fd924b9bc4faae83cdee7d714156cceeed29",
+        "dest": "cargo/vendor/tauri-plugin-opener-2.5.4"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"17e1bea14edce6b793a04e2417e3fd924b9bc4faae83cdee7d714156cceeed29\", \"files\": {}}",
+        "dest": "cargo/vendor/tauri-plugin-opener-2.5.4",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/tauri-plugin-shell/tauri-plugin-shell-2.3.5.crate",
         "sha256": "8457dbf9e2bab1edd8df22bb2c20857a59a9868e79cb3eac5ed639eec4d0c73b",
         "dest": "cargo/vendor/tauri-plugin-shell-2.3.5"

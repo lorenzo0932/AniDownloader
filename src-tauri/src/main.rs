@@ -8,6 +8,7 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -42,6 +43,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // ─── 1. MOSSA: File fisici in /tmp/ per libappindicator (Wayland SNI via DBus) ───
             let temp_dir = std::env::temp_dir();
@@ -127,6 +129,7 @@ fn main() {
             }
 
             // ─── 3. MOSSA: Finestra con icona ───
+            let handle = app.handle().clone();
             let _window = WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -138,6 +141,16 @@ fn main() {
             .min_inner_size(850.0, 600.0)
             .resizable(true)
             .center()
+            // Apertura dei link esterni (es. URL serie nel modale di Gestione
+            // Serie): un `<a target="_blank">` in WebKitGTK chiede una nuova
+            // finestra; senza handler qui il click non farebbe nulla. Apriamo
+            // http(s) nel browser di sistema e neghiamo la finestra interna.
+            .on_new_window(move |url, _features| {
+                if url.scheme() == "http" || url.scheme() == "https" {
+                    let _ = handle.opener().open_url(url.to_string(), None::<&str>);
+                }
+                tauri::webview::NewWindowResponse::Deny
+            })
             .build()?;
 
             Ok(())

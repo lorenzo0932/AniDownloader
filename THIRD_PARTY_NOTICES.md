@@ -15,7 +15,7 @@ are in the `licenses/` directory.
 | libcurl (system package) | distro-provided | https://curl.se | curl | Daniel Stenberg and contributors |
 | OpenSSL / libcrypto (AES-256-GCM, PBKDF2) | distro-provided | https://www.openssl.org | Apache-2.0 | OpenSSL Software Foundation |
 | Tauri (desktop wrapper) | 2.x | https://github.com/tauri-apps/tauri | MIT / Apache-2.0 | Tauri contributors |
-| tauri-plugin-notification / dialog / fs / shell | 2.x | https://github.com/tauri-apps/plugins-workspace | MIT / Apache-2.0 | Tauri contributors |
+| tauri-plugin-notification / dialog / fs / shell / opener | 2.x | https://github.com/tauri-apps/plugins-workspace | MIT / Apache-2.0 | Tauri contributors |
 | serde, serde_json | 1.x | https://github.com/serde-rs/serde | MIT / Apache-2.0 | serde developers |
 | png | 0.17 | https://github.com/image-rs/image-png | MIT / Apache-2.0 | image-rs contributors |
 | Svelte (frontend) | 5.x | https://github.com/sveltejs/svelte | MIT | Svelte contributors |
