@@ -115,6 +115,10 @@ Il bump della versione e il tag sono gestiti da **release-please**
 
 Il merge del PR di rilascio (o di promozione `dev → main`) è sempre
 un'azione esplicita del maintainer; il tag è la *conseguenza* di quel merge.
+Prerequisiti GitHub (una tantum): secret `RELEASE_PLEASE_TOKEN` (PAT con
+`contents: write`) usato dal workflow — gli eventi generati dal `GITHUB_TOKEN`
+non triggerano altri workflow — e `Settings → Actions → Allow GitHub Actions
+to create and approve pull requests`.
 
 File di versione aggiornati automaticamente: `CMakeLists.txt`
 (annotazione `x-release-please-version`), `package*.json` root + `web/`,

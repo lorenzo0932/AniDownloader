@@ -7,6 +7,13 @@ name: Release Please
 #   merge crea il tag stabile → artefatti di release.
 # Config per branch: release-please-config-dev.json (+ manifest -dev) su dev,
 # release-please-config.json (+ manifest) su main.
+#
+# ⚠️ TOKEN: serve un PAT (non il default GITHUB_TOKEN) come secret
+# `RELEASE_PLEASE_TOKEN`. Eventi generati dal GITHUB_TOKEN (push del tag,
+# release creata) NON triggerano altri workflow → senza PAT i workflow di
+# build su tag v* (release.yml, flatpak.yml) non partirebbero.
+# Obbligatorio anche: Settings → Actions → "Allow GitHub Actions to create
+# and approve pull requests".
 
 on:
   push:
@@ -15,6 +22,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
   pull-requests: write
 
 concurrency:
@@ -29,7 +37,7 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           command: manifest
           target-branch: dev
           default-branch: dev
@@ -43,7 +51,7 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           command: manifest
           target-branch: main
           default-branch: main
