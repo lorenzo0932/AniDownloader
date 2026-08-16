@@ -184,7 +184,7 @@ jobs:
       - name: Build C++ backend
         run: |
           cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
+          cmake --build build --parallel
 
       - name: Copy binary to Tauri binaries
         run: |
