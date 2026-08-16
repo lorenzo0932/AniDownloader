@@ -249,14 +249,36 @@ if $BUILD_LOCAL; then
             INSTALL_DESKTOP=false
         else
             FLATPAK_TMP=$(mktemp -d)
-            # Copia pulita dal commit corrente: flatpak/ è già committato nel
-            # repo, quindi git archive include manifest, cache npm/cargo e
-            # modulo aria2 (niente build/ o build-repo/ sporchi dal workspace).
-            git archive HEAD | tar -x -C "$FLATPAK_TMP"
+            FLATPAK_LOG="$FLATPAK_TMP/flatpak-build.log"
+            # Copia pulita dal commit corrente: il manifest usa `type: dir` con
+            # `path: ..` → serve la ROOT del repo (web/, src/, scripts/, ...),
+            # non solo flatpak/. Con git archive otteniamo i file tracciati
+            # (niente target/ node_modules/ build/ multi-GB dal workspace).
+            # Fallback (repo senza .git, es. tarball di release): copia della
+            # root con rsync, escludendo gli artefatti di build.
+            if git archive HEAD 2>/dev/null | tar -x -C "$FLATPAK_TMP" 2>/dev/null; then
+                :
+            elif command -v rsync &>/dev/null; then
+                rsync -a --exclude '.git' --exclude 'build' --exclude 'node_modules' \
+                    --exclude 'src-tauri/target' --exclude 'src-tauri/binaries' \
+                    --exclude 'web/dist' --exclude 'web/node_modules' \
+                    --exclude 'flatpak/build' --exclude 'flatpak/build-repo' \
+                    --exclude 'AniDownloader.flatpak' --exclude '*.AppImage' \
+                    . "$FLATPAK_TMP/"
+            else
+                # Ultimo fallback senza rsync: copia della root escludendo gli
+                # artefatti pesanti via find/cp.
+                mkdir -p "$FLATPAK_TMP"
+                cp -r CMakeLists.txt CMakePresets.json README.md package.json \
+                    package-lock.json rust-toolchain.toml include src web scripts \
+                    resources tests flatpak docs licenses ci install.sh install.ps1 \
+                    uninstall.sh uninstall.ps1 CHANGELOG.md THIRD_PARTY_NOTICES.md \
+                    src-tauri "$FLATPAK_TMP/" 2>/dev/null
+            fi
             pushd "$FLATPAK_TMP" >/dev/null
             if flatpak-builder --user --force-clean --jobs="$(nproc)" --ccache \
                 --repo=flatpak/build-repo flatpak/build \
-                flatpak/com.anidownloader.desktop.yml >"$RPT/flatpak-build.log" 2>&1; then
+                flatpak/com.anidownloader.desktop.yml >"$FLATPAK_LOG" 2>&1; then
                 flatpak build-bundle flatpak/build-repo \
                     "$INSTALL_DIR/$APP_NAME.flatpak" com.anidownloader.desktop
                 popd >/dev/null
@@ -265,7 +287,7 @@ if $BUILD_LOCAL; then
                 echo "  ✅ Desktop Flatpak installato: flatpak run com.anidownloader.desktop"
             else
                 popd >/dev/null
-                echo "  ❌ Build flatpak fallita (vedi $RPT/flatpak-build.log)"
+                echo "  ❌ Build flatpak fallita (vedi $FLATPAK_LOG)"
                 INSTALL_DESKTOP=false
             fi
             rm -rf "$FLATPAK_TMP"
