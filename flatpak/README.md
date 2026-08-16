@@ -71,6 +71,27 @@ flatpak --user install ./AniDownloader.flatpak
 flatpak run com.anidownloader.desktop
 ```
 
+## Test end-to-end del core (offline)
+
+`fixture_flatpak.py` è una fixture HTTP locale che replica il flusso AnimeW
+(pagina serie con `data-episode-num`, endpoint `/api/episode/info`, video di
+prova ≥1MB servito localmente). Serve a verificare che il **core C++ dentro il
+sandbox** scarichi davvero via aria2c.
+
+```bash
+# Terminale 1: avvia la fixture (porta 8899, dir per il video)
+python3 flatpak/fixture_flatpak.py 8899 /tmp/ani-fixture
+
+# Terminale 2: lancia l'app nel sandbox con la fixture come rete di test
+flatpak run com.anidownloader.desktop
+# oppure senza installare:
+flatpak-builder --user --run build flatpak/com.anidownloader.desktop.yml anidownloader
+```
+
+Nota: il download nel sandbox è reale (aria2c incluso dal modulo `aria2.json`);
+il video finto supera solo il check dimensionale (`isMediaFileHealthy` ≥1MB) —
+per testare la conversione H.265 servirebbe un file video reale.
+
 ## Note sul sidecar C++ (:8989)
 
 Il binario Tauri lancia `anidownloaderd --web` come sidecar che ascolta su
