@@ -1,6 +1,6 @@
 [package]
 name = "anidownloader"
-version = "2.2.0-dev"
+version = "2.2.0-dev.1"
 description = "AniDownloader - Anime download manager"
 authors = ["lorenzo0932"]
 license = "MIT"
