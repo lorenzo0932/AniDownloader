@@ -5,7 +5,7 @@ Tutte le modifiche notevoli a questo progetto sono documentate in questo file.
 Il formato si basa su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
 
-## [Unreleased]
+## [2.1.2] - 2026-08-16
 
 ### Aggiunto
 
@@ -32,6 +32,8 @@ e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
 - `src-tauri/tauri.conf.json`: `targets` senza `appimage` (restano `nsis`/`dmg`).
 - `install.sh`/`uninstall.sh`: Desktop Linux via Flatpak; headless/systemd invariati.
 - Docs: `README.md`, `docs/DISTRIBUZIONE.md`, `docs/DESKTOP.md`, `flatpak/README.md`.
+
+## [Unreleased]
 
 ## [2.1.1] - 2026-08-16
 

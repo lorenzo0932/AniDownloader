@@ -584,7 +584,7 @@ fi
 echo "[5/14] /api/status"
 curl -s -m 10 "$BASE/api/status" > "$RPT/status.json"
 EXPECTED_VERSION=$(grep -oP 'project\(AniDownloaderCpp VERSION \K[0-9.]+' "$REPO_DIR/CMakeLists.txt" 2>/dev/null)
-EXPECTED_VERSION="${EXPECTED_VERSION:-2.1.0}"
+EXPECTED_VERSION="${EXPECTED_VERSION:-2.1.2}"
 if jq -e --arg v "$EXPECTED_VERSION" '.version == $v' "$RPT/status.json" >/dev/null; then
     pass "version == $EXPECTED_VERSION"
 else
