@@ -43,7 +43,6 @@ jobs:
           cache-key: flatpak-builder-${{ github.sha }}
           arch: x86_64
           upload-artifact: true
-          artifact-name: AniDownloader-linux-x86_64.flatpak
 
       # Attach alla GitHub Release (stesso tag che ha triggerato release.yml).
       # Idempotente: se la release non esiste ancora (race con release.yml),
