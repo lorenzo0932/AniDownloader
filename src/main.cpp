@@ -44,12 +44,14 @@ static void killProcessTree() {
              "pids=$(pgrep -P %d 2>/dev/null); "
              "for pid in $pids; do pkill -9 -P $pid 2>/dev/null; kill -9 $pid 2>/dev/null; done",
              static_cast<int>(getpid()));
-    std::system(cmd);
+    const int rc = std::system(cmd);
+    (void)rc;
 #else
     char cmd[256];
     snprintf(cmd, sizeof(cmd), "taskkill /F /FI \"PPID eq %lu\" /T >nul 2>&1",
              static_cast<unsigned long>(GetCurrentProcessId()));
-    std::system(cmd);
+    const int rc = std::system(cmd);
+    (void)rc;
 #endif
 }
 

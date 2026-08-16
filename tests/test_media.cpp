@@ -146,9 +146,11 @@ static void killAria2Once(const std::string& pattern [[maybe_unused]], std::atom
     if (fired.exchange(true))
         return;
 #ifdef _WIN32
-    std::system("taskkill /F /IM aria2c.exe >NUL 2>&1");
+    const int rc = std::system("taskkill /F /IM aria2c.exe >NUL 2>&1");
+    (void)rc;
 #else
-    std::system(("pkill -9 -f \"" + pattern + "\" > /dev/null 2>&1").c_str());
+    const int rc = std::system(("pkill -9 -f \"" + pattern + "\" > /dev/null 2>&1").c_str());
+    (void)rc;
 #endif
 }
 
