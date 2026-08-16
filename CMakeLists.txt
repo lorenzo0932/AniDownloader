@@ -42,6 +42,15 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor)
 endif()
 
+# Warning zero come proprietà permanente: -Werror scoped SOLO sui target del
+# progetto (mai su _deps/FetchContent: dipendenze vendored come zlib su Windows
+# emettono warning propri). MSVC usa /WX (equivalente di -Werror).
+if(MSVC)
+    set(PROJECT_WERROR_FLAGS /WX)
+else()
+    set(PROJECT_WERROR_FLAGS -Werror)
+endif()
+
 # --- GESTIONE DIPENDENZE ---
 include(FetchContent)
 
@@ -239,6 +248,12 @@ target_link_libraries(test_scraper PRIVATE
     Threads::Threads
 )
 add_test(NAME test_scraper COMMAND test_scraper)
+
+# Warning zero come proprietà permanente sui target del progetto (non _deps).
+target_compile_options(AniDownloader PRIVATE ${PROJECT_WERROR_FLAGS})
+target_compile_options(test_core PRIVATE ${PROJECT_WERROR_FLAGS})
+target_compile_options(test_media PRIVATE ${PROJECT_WERROR_FLAGS})
+target_compile_options(test_scraper PRIVATE ${PROJECT_WERROR_FLAGS})
 
 # ─── SMOKE E2E (solo Linux: script POSIX con curl/jq/python3) ───
 if(UNIX AND NOT APPLE)
