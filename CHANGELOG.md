@@ -5,6 +5,34 @@ Tutte le modifiche notevoli a questo progetto sono documentate in questo file.
 Il formato si basa su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/),
 e il progetto aderisce al [Semantic Versioning](https://semver.org/lang/it/).
 
+## [Unreleased]
+
+### Aggiunto
+
+- **Distribuzione Flatpak** (`flatpak/`): manifest Tauri v2 + sidecar C++
+  (`com.anidownloader.desktop.yml`), modulo `aria2.json` (build da sorgente del
+  downloader), cache offline npm/cargo/root (`node-sources.json`,
+  `cargo-sources.json`, `root-node-sources.json`), README dedicato.
+- **Workflow CI dedicato** `.github/workflows/flatpak.yml`: builda il **commit
+  corrente** del checkout (source `type: dir` nel manifest) e allega
+  `AniDownloader-<ref>-linux-x86_64.flatpak` alla GitHub Release.
+- **Flatpak = canale desktop Linux unico** (AppImage deprecata): runtime GNOME
+  con WebKitGTK testato → niente white-screen su distro diverse. `install.sh`
+  e `uninstall.sh` aggiornati (installazione/disinstallazione Flatpak).
+- Manifest flatpak: **jobs dinamici** (`--jobs="$(nproc)"`,
+  `CARGO_BUILD_JOBS=$(nproc)`, niente hardcode a 16), **`--filesystem=host`**
+  (accesso a tutti i dischi montati, trade-off documentato), flag
+  `xdg-config/AniDownloader` + `xdg-cache/AniDownloader` per condividere
+  config/serie/log con l'installazione nativa.
+
+### Modificato
+
+- `.github/workflows/release.yml`: il job Linux produce solo il bundle headless
+  (il desktop Linux è il Flatpak, da `flatpak.yml`).
+- `src-tauri/tauri.conf.json`: `targets` senza `appimage` (restano `nsis`/`dmg`).
+- `install.sh`/`uninstall.sh`: Desktop Linux via Flatpak; headless/systemd invariati.
+- Docs: `README.md`, `docs/DISTRIBUZIONE.md`, `docs/DESKTOP.md`, `flatpak/README.md`.
+
 ## [2.1.1] - 2026-08-16
 
 ### Corretto

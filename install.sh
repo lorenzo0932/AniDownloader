@@ -65,17 +65,18 @@ EOF
 
 echo "Cosa vuoi installare?"
 echo ""
-echo "  1) Solo Desktop (AppImage + launcher)  [~80 MB]"
+echo "  1) Solo Desktop (Flatpak)  [~50 MB]"
 echo "     App nativa con icona nel drawer, tray icon."
 echo "     Include Tauri + C++ backend + Web UI integrata."
+echo "     Distribuzione ufficiale Linux (AppImage deprecata)."
 echo ""
 echo "  2) Solo Headless (CLI + servizio systemd)  [~8 MB]"
 echo "     Solo backend C++ per server/NAS/Raspberry Pi."
 echo "     Accesso via browser sulla porta 8989."
 echo "     Il daemon 'anidownloaderd' parte automaticamente."
 echo ""
-echo "  3) Entrambi (consigliato)  [~88 MB]"
-echo "     Desktop + Headless. App nativa + servizio systemd."
+echo "  3) Entrambi (consigliato)  [~58 MB]"
+echo "     Desktop (Flatpak) + Headless. App nativa + servizio systemd."
 echo ""
 echo "  0) Annulla"
 echo ""
@@ -93,6 +94,19 @@ case "$choice" in
     3) INSTALL_DESKTOP=true; INSTALL_HEADLESS=true ;;
     *) echo "Scelta non valida."; exit 1 ;;
 esac
+
+# Il desktop su Linux usa Flatpak (canale unico, AppImage deprecata).
+if $INSTALL_DESKTOP; then
+    if ! command -v flatpak &>/dev/null; then
+        echo ""
+        echo "⚠️  flatpak non trovato — serve per il Desktop (canale Linux unico)."
+        echo "    Installa flatpak e riprova, oppure scegli solo Headless (2)."
+        echo "    Fedora:  sudo dnf install flatpak"
+        echo "    Debian:  sudo apt install flatpak"
+        echo ""
+        exit 1
+    fi
+fi
 
 echo ""
 
@@ -185,10 +199,9 @@ esac
 if [ "$ARCH" != "x86_64" ]; then
     echo ""
     echo "⚠️  Attenzione: architettura $ARCH"
-    echo "    Gli eseguibili precompilati (AppImage, headless) sono pubblicati"
-    echo "    solo per x86_64. Su $ARCH funziona solo la build locale del"
-    echo "    daemon headless:  ./install.sh --local  (poi scelta 2 — Headless)"
-    echo "    Il Desktop (Tauri/AppImage) non è supportato su $ARCH."
+    echo "    Il Flatpak desktop è pubblicato solo per x86_64. Su $ARCH"
+    echo "    funziona la build locale del daemon headless:"
+    echo "    ./install.sh --local  (poi scelta 2 — Headless)"
     echo ""
 fi
 
@@ -222,32 +235,40 @@ if $BUILD_LOCAL; then
     chmod +x "$INSTALL_DIR/AniDownloader"
 
     if $INSTALL_DESKTOP; then
-        APPIMAGE=$(find src-tauri/target/release -name "*.AppImage" 2>/dev/null | head -1)
-        if [ -z "$APPIMAGE" ] && [ -f "src-tauri/tauri.conf.json" ]; then
-            echo "Build Tauri (AppImage)..."
-            # tauri-cli PINNATO in package.json (root): riproducibile tra locale e CI.
-            if [ -f "package.json" ] && command -v npm &>/dev/null; then
-                (npm install --no-audit --no-fund --silent && \
-                 NO_STRIP=1 npm run tauri:build 2>&1) && \
-                    APPIMAGE=$(find src-tauri/target/release -name "*.AppImage" 2>/dev/null | head -1) || \
-                    APPIMAGE=""
-            elif command -v npx &>/dev/null; then
-                # Fallback legacy: npx scarica l'ultima versione (non riproducibile).
-                NO_STRIP=1 npx @tauri-apps/cli build 2>&1 && \
-                    APPIMAGE=$(find src-tauri/target/release -name "*.AppImage" 2>/dev/null | head -1) || \
-                    APPIMAGE=""
-            fi
-        fi
-
-        if [ -n "$APPIMAGE" ]; then
-            echo "  AppImage: $APPIMAGE"
-            cp "$APPIMAGE" "$INSTALL_DIR/$APP_NAME.AppImage"
-            chmod +x "$INSTALL_DIR/$APP_NAME.AppImage"
+        # ── Desktop via Flatpak (canale Linux unico, AppImage deprecata) ──
+        # Build dal checkout CORRENTE (manifest usa type:dir path:..), con una
+        # copia pulita del repo: evita di copiare nel sandbox target/ e
+        # node_modules multi-GB presenti nel workspace locale (nella CI il
+        # checkout di actions/checkout è già pulito, qui replichiamo lo stesso
+        # comportamento con git archive).
+        echo "Build Flatpak desktop..."
+        check_cmd flatpak-builder "build flatpak — installa con: sudo dnf install flatpak-builder / sudo apt install flatpak-builder"
+        check_cmd flatpak "distribuzione flatpak — installa con: sudo dnf install flatpak / sudo apt install flatpak"
+        if [ ! -d "flatpak" ]; then
+            echo "  ❌ cartella flatpak/ non trovata (serve il repo completo)"
+            INSTALL_DESKTOP=false
         else
-            echo "  Tauri/AppImage non disponibile, copio binario raw."
-            echo "  Per usare il desktop serve anche Tauri; intanto puoi"
-            echo "  lanciare '--web' e aprire http://localhost:8989 nel browser."
-            cp "$BUILD_DIR/$APP_NAME" "$INSTALL_DIR/"
+            FLATPAK_TMP=$(mktemp -d)
+            # Copia pulita dal commit corrente: flatpak/ è già committato nel
+            # repo, quindi git archive include manifest, cache npm/cargo e
+            # modulo aria2 (niente build/ o build-repo/ sporchi dal workspace).
+            git archive HEAD | tar -x -C "$FLATPAK_TMP"
+            pushd "$FLATPAK_TMP" >/dev/null
+            if flatpak-builder --user --force-clean --jobs="$(nproc)" --ccache \
+                --repo=flatpak/build-repo flatpak/build \
+                flatpak/com.anidownloader.desktop.yml >"$RPT/flatpak-build.log" 2>&1; then
+                flatpak build-bundle flatpak/build-repo \
+                    "$INSTALL_DIR/$APP_NAME.flatpak" com.anidownloader.desktop
+                popd >/dev/null
+                echo "  Installo Flatpak (user)..."
+                flatpak --user install -y --reinstall "$INSTALL_DIR/$APP_NAME.flatpak"
+                echo "  ✅ Desktop Flatpak installato: flatpak run com.anidownloader.desktop"
+            else
+                popd >/dev/null
+                echo "  ❌ Build flatpak fallita (vedi $RPT/flatpak-build.log)"
+                INSTALL_DESKTOP=false
+            fi
+            rm -rf "$FLATPAK_TMP"
         fi
     fi
 
@@ -265,13 +286,16 @@ else
     echo "═══ Download da GitHub ═══"
 
     if $INSTALL_DESKTOP; then
-        echo "Scarico AppImage..."
-        DESKTOP_ASSET="${APP_NAME}-${VERSION}-linux-${ARCH}.AppImage"
-        DESKTOP_DEST="$INSTALL_DIR/$APP_NAME.AppImage"
+        # ── Desktop via Flatpak (canale Linux unico, AppImage deprecata) ──
+        echo "Scarico Flatpak desktop..."
+        DESKTOP_ASSET="${APP_NAME}-${VERSION}-linux-${ARCH}.flatpak"
+        DESKTOP_DEST="$INSTALL_DIR/$APP_NAME.flatpak"
         if download_asset "$VERSION" "$DESKTOP_ASSET" "$DESKTOP_DEST"; then
-            chmod +x "$DESKTOP_DEST"
+            echo "  Installo Flatpak (user)..."
+            flatpak --user install -y --reinstall "$DESKTOP_DEST"
+            echo "  ✅ Desktop Flatpak installato: flatpak run com.anidownloader.desktop"
         else
-            echo "  AppImage non pubblicata per $ARCH. Salto il Desktop."
+            echo "  Flatpak non pubblicato per $ARCH. Salto il Desktop."
             echo "  Usa './install.sh --local' per la build da sorgente."
             INSTALL_DESKTOP=false
         fi
@@ -307,35 +331,17 @@ elif [ -f "$HEADLESS_DIR/resources/logo.png" ]; then
 fi
 
 # ──────────────────────────────────────────────
-# 7. Shortcut .desktop (3 entry)
+# 7. Shortcut .desktop
 # ──────────────────────────────────────────────
-# Pulisce vecchi file .desktop
+# NB: la GUI desktop è distribuita come Flatpak (canale Linux unico) e il
+# manifest installa già la sua desktop-entry + icona in /app — qui creiamo
+# SOLO le entry headless (CLI + WebUI), che il flatpak non fornisce.
+# Pulisce vecchi file .desktop (incluse le entry AppImage deprecate)
 rm -f "$APP_DIR/$APP_NAME.desktop" \
       "$APP_DIR/${APP_NAME}GUI.desktop" \
       "$APP_DIR/${APP_NAME}Web.desktop"
 
-# Determina il binary desktop (AppImage o raw)
-DESKTOP_BIN="$INSTALL_DIR/$APP_NAME.AppImage"
-if [ ! -f "$DESKTOP_BIN" ]; then
-    DESKTOP_BIN="$INSTALL_DIR/$APP_NAME"
-fi
-
-# 7a. GUI — App nativa
-if $INSTALL_DESKTOP; then
-    cat << EOF > "$APP_DIR/$APP_NAME.desktop"
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=AniDownloader
-Comment=Download e conversione anime — GUI nativa
-Exec=$DESKTOP_BIN
-Path=$HOME
-Icon=$ICON_FULL_PATH
-StartupWMClass=com.anidownloader.desktop
-Terminal=false
-Categories=Network;Video;AudioVideo;
-EOF
-fi
+# 7a. (rimossa) GUI — gestita dal Flatpak
 
 # 7b. CLI — terminale con dashboard burst (solo se headless installato)
 if $INSTALL_HEADLESS; then
@@ -354,8 +360,8 @@ Categories=Network;Video;AudioVideo;
 EOF
 fi
 
-# 7c. WebUI — browser + auto-avvio daemon
-if $INSTALL_DESKTOP || $INSTALL_HEADLESS; then
+# 7c. WebUI — browser + auto-avvio daemon (solo headless)
+if $INSTALL_HEADLESS; then
     # Crea script helper per WebUI
     WEBUI_HELPER="$INSTALL_DIR/anidownloader-webui.sh"
 
@@ -364,13 +370,11 @@ if $INSTALL_DESKTOP || $INSTALL_HEADLESS; then
 # Helper per aprire WebUI: avvia il daemon se non in ascolto, poi apre browser
 WEBUI_PORT=8989
 
-# Trova il binary (headless o AppImage)
+# Trova il binary headless
 find_binary() {
     local dirs=(
         "__HEADLESS_DIR__/anidownloaderd"
         "__INSTALL_DIR__/anidownloaderd"
-        "__INSTALL_DIR__/AniDownloader.AppImage"
-        "__INSTALL_DIR__/AniDownloader"
     )
     for p in "${dirs[@]}"; do
         if [ -x "$p" ]; then
@@ -520,11 +524,10 @@ echo "╚═══════════════════════�
 echo ""
 
 if $INSTALL_DESKTOP; then
-    echo "  Desktop:  $INSTALL_DIR/$APP_NAME.AppImage"
-    echo "  Launcher:"
-    echo "    - $APP_NAME        (GUI nativa)"
-    echo "    - $APP_NAME-CLI    (terminale, dashboard ANSI)"
-    echo "    - $APP_NAME-Web    (browser + daemon)"
+    echo "  Desktop (Flatpak): com.anidownloader.desktop"
+    echo "  Avvio:    flatpak run com.anidownloader.desktop"
+    echo "  Bundle:   $INSTALL_DIR/$APP_NAME.flatpak"
+    echo "  (AppImage deprecata — il canale desktop Linux è il Flatpak)"
 fi
 
 if $INSTALL_HEADLESS; then

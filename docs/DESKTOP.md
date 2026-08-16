@@ -43,10 +43,14 @@ Il binary Rust:
     "version": "2.1.0",
     "bundle": {
         "externalBin": ["binaries/anidownloaderd"],
-        "targets": ["appimage", "nsis", "dmg"]
+        "targets": ["nsis", "dmg"]
     }
 }
 ```
+
+> Su Linux il desktop è distribuito come **Flatpak** (`flatpak/com.anidownloader.desktop.yml`,
+> AppImage deprecata): `tauri build --no-bundle` produce il binario che il
+> manifest installa in `/app/bin`. `targets` esclude `appimage`.
 
 ## Sidecar
 
@@ -74,7 +78,7 @@ npm run tauri:build   # tauri-cli pinnato in package.json (riproducibile)
 ```
 
 Output:
-- Linux: `src-tauri/target/release/bundle/appimage/AniDownloader_*.AppImage`
+- Linux: **Flatpak** `AniDownloader-<ref>-linux-x86_64.flatpak` (vedi `flatpak/README.md`; AppImage deprecata)
 - macOS: `src-tauri/target/release/bundle/dmg/AniDownloader_*.dmg`
 - Windows: `src-tauri/target/release/bundle/nsis/AniDownloader_*_x64-setup.exe`
 

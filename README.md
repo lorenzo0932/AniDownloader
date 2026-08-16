@@ -43,7 +43,7 @@ AniDownloader nasce per risolvere questi problemi:
 | ⚡**Download parallelo**       | Fino a 16 connessioni per file con aria2c. Concorrenza multi-serie configurabile automaticamente in base alla CPU.                           |
 | 🎞️**HEVC automatico**        | Conversione post-download con FFmpeg. Uso intelligente di`/dev/shm` se la RAM è sufficiente. Chunking parallelo per encoding più veloce. |
 | 🌐**Web UI moderna**           | Svelte 5 SPA con dashboard live in tempo reale (SSE), gestione serie CRUD, tema dark/light, log viewer.                                      |
-| 🖥️**App nativa**             | Tauri v2: tray icon, notifiche desktop, finestra dedicata. Packaging AppImage / NSIS (.exe) / .dmg.                                       |
+| 🖥️**App nativa**             | Tauri v2: tray icon, notifiche desktop, finestra dedicata. Packaging **Flatpak** (Linux) / NSIS (.exe, Windows) / .dmg (macOS). AppImage deprecata.                 |
 | 🔄**Aggiornamenti automatici** | Check versioni via GitHub API con confronto semver.                                                                                          |
 | 🔔**Notifiche desktop**        | Completamento, errori e skip segnalati nativamente dal sistema.                                                                              |
 | 🕐**Automazione systemd**      | Timer per controllo periodico (default ogni 15 minuti). Servizio web permanente.                                                             |
@@ -68,12 +68,21 @@ curl -fsSL https://raw.githubusercontent.com/lorenzo0932/AniDownloader/main/inst
 
 Il menu ti guida nella scelta:
 
-1. **Solo Desktop** (AppImage + launcher nel menu applicazioni)
+1. **Solo Desktop** — installa il **Flatpak** `com.anidownloader.desktop`
 2. **Solo Headless** (daemon systemd per server/NAS)
 3. **Entrambi** (consigliato)
 
-In alternativa scarica l'AppImage `AniDownloader-<versione>-linux-x86_64.AppImage`
-dalle Releases, rendila eseguibile (`chmod +x`) e aprila con doppio click.
+> ℹ️ Su Linux il **Flatpak è il canale desktop ufficiale** (AppImage deprecata:
+> il WebKitGTK bundle della distro di build crashava su altre distro). Il
+> Flatpak usa il runtime GNOME con WebKitGTK testato → niente white-screen.
+
+In alternativa, installa il Flatpak manualmente (doppio click sul `.flatpak`
+scaricato dalla release, oppure):
+
+```bash
+flatpak --user install ./AniDownloader-<versione>-linux-x86_64.flatpak
+flatpak run com.anidownloader.desktop
+```
 
 **Windows** — scarica `AniDownloader_<versione>_x64-setup.exe` dalle Releases ed
 eseguilo con doppio click (installer NSIS, senza privilegi di amministratore).
@@ -84,8 +93,8 @@ Releases, aprilo e trascina l'app nella cartella Applicazioni.
 > ⚠️ **Architetture supportate**: i pacchetti precompilati sono solo **x86_64**
 > su Linux e **arm64** su macOS. Su dispositivi **ARM Linux** (Raspberry Pi, NAS)
 > non esiste download: puoi compilare da sorgente solo il daemon headless con
-> `./install.sh --local` (opzione 2). Il Desktop (Tauri/AppImage) su Linux ARM
-> e i **Mac Intel** non sono supportati.
+> `./install.sh --local` (opzione 2). Il Desktop (Flatpak) su Linux ARM e i
+> **Mac Intel** non sono supportati.
 
 ### Disinstallazione
 

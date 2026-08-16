@@ -25,7 +25,8 @@ EOF
 echo "Scegli cosa rimuovere:"
 echo ""
 echo "  1) Solo i binari e launcher"
-echo "     Rimuove AppImage, anidownloaderd, shortcut .desktop, icona e script helper."
+echo "     Rimuove AppImage (legacy), anidownloaderd, il Flatpak desktop,"
+echo "     shortcut .desktop, icona e script helper."
 echo "     Mantiene: servizi systemd e configurazione (config.json, series_data.json)."
 echo "     Utile per reinstallare senza perdere dati."
 echo ""
@@ -97,7 +98,14 @@ if $RIMUOVI_BINARIO; then
     rm -f "$INSTALL_DIR/anidownloaderd"
     rm -f "$INSTALL_DIR/anidownloader-webui.sh"
     rm -f "$INSTALL_DIR/uninstall.sh"
+    rm -f "$INSTALL_DIR/$APP_NAME.flatpak"
     rm -rf "$HEADLESS_DIR"
+
+    # Desktop Flatpak (canale Linux unico)
+    if command -v flatpak &>/dev/null; then
+        echo "Rimuovo Flatpak desktop..."
+        flatpak uninstall -y com.anidownloader.desktop 2>/dev/null || true
+    fi
 
     echo "Rimuovo icona..."
     rm -f "$ICON_DEST_DIR/$ICON_NAME"
