@@ -73,7 +73,7 @@ namespace Core {
     }
 
     std::vector<DownloadTask> AnimeUScraper::planSeriesTask(const Series& series,
-                                                            std::atomic<bool>& stopSignal,
+                                                            std::atomic<bool>&,
                                                             ScraperProgressCb progressCb) {
         std::vector<DownloadTask> results;
 
