@@ -19,6 +19,8 @@ opencode.json
 
 # Tauri (Rust)
 src-tauri/target/
+src-tauri/target-cargotest/
+src-tauri/target-lorenzo/
 src-tauri/binaries/
 
 # Tauri icons (generati, ma vogliamo versioni di default)
@@ -45,6 +47,15 @@ squashfs-root/
 .tmp-old20.AppImage
 STUDIO_WHITESCREEN_2.1.0.md
 ci-docker-verify.sh
+.flatpak-builder/
+flatpak/.flatpak-builder
+flatpak/build-repo/
+flatpak/build/
+
+# Flatpak: bundle locale non committabile
+AniDownloader.flatpak
+AniDownloader-CROSS4.AppImage
+
 
 # Build output directories
 output/
