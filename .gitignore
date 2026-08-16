@@ -66,10 +66,7 @@ output/
 REFACTOR-*.md
 TODO-*.md
 
-# Local-only (never pushed): agent instructions, plan docs
-AGENTS.md
-
-# AI artifacts — MAI su GitHub (vivono solo su local/reference)
+# AI artifacts — MAI su GitHub (solo locale; l'AGENTS.md è su dev)
 plan/
 bugs_analysis.md
 .opencode/
