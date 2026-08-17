@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "anidownloader"
-version = "2.1.2"
+version = "2.2.0-dev.1"
 dependencies = [
  "png 0.17.16",
  "serde",
