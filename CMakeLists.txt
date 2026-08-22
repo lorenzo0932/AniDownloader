@@ -195,6 +195,7 @@ add_executable(test_core
     tests/test_core.cpp
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
+    src/core/FileUtils.cpp
     src/core/InstanceLock.cpp
     src/core/ProcessUtils.cpp
     src/core/UpdateChecker.cpp

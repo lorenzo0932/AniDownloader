@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -17,6 +18,7 @@
 #endif
 #ifdef __APPLE__
 #include <stdio.h>
+#include <unistd.h>
 #endif
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -155,24 +157,69 @@ namespace Core {
         return entries;
     }
 
-    bool publishNoReplace(const std::string& tempPath, const std::string& finalPath) {
+#if defined(__linux__) || defined(__APPLE__)
+    // Fallback atomico no-replace con link()+unlink(): il file finale diventa
+    // un hard link al temporaneo (stesso inode) e il temporaneo viene rimosso.
+    // link() fallisce con EEXIST se la destinazione esiste: mai sovrascrittura.
+    PublishStatus publishNoReplaceFallback(const std::string& tempPath,
+                                           const std::string& finalPath) {
+        if (::link(tempPath.c_str(), finalPath.c_str()) != 0) {
+            if (errno == EEXIST) {
+                return PublishStatus::Exists;
+            }
+            return PublishStatus::NoAtomicSupport;
+        }
+        // Il file finale (stesso inode) esiste già: la rimozione del temporaneo
+        // è fattibile; un eventuale errore qui non compromette il risultato.
+        ::unlink(tempPath.c_str());
+        return PublishStatus::Success;
+    }
+#endif
+
+    PublishStatus publishNoReplace(const std::string& tempPath, const std::string& finalPath) {
+#if defined(__linux__) || defined(__APPLE__)
+        int result = -1;
+        int savedErrno = 0;
 #ifdef __linux__
         // renameat2 con RENAME_NOREPLACE: atomico e fallisce se la destinazione
-        // esiste. Disponibile su kernel >= 3.15; ENOSYS/EINVAL = fail-closed.
-        return ::syscall(SYS_renameat2, AT_FDCWD, tempPath.c_str(), AT_FDCWD, finalPath.c_str(),
-                         RENAME_NOREPLACE) == 0;
-#elif defined(__APPLE__)
+        // esiste. Disponibile su kernel >= 3.15; ENOSYS/EINVAL = filesystem che
+        // non supporta il flag → fallback sottostante.
+        result = ::syscall(SYS_renameat2, AT_FDCWD, tempPath.c_str(), AT_FDCWD, finalPath.c_str(),
+                           RENAME_NOREPLACE);
+        savedErrno = errno;
+#else
         // renamex_np con RENAME_EXCL: atomico no-replace (macOS 10.12+).
-        return ::renamex_np(tempPath.c_str(), finalPath.c_str(), RENAME_EXCL) == 0;
+        result = ::renamex_np(tempPath.c_str(), finalPath.c_str(), RENAME_EXCL);
+        savedErrno = errno;
+#endif
+        if (result == 0) {
+            return PublishStatus::Success;
+        }
+        if (savedErrno == EEXIST) {
+            return PublishStatus::Exists;
+        }
+        // Fallback SOLO se la primitiva non è supportata dal filesystem.
+        // Altri errori (es. EACCES) sono condizioni reali: fail-safe immediato
+        // senza cadere in un messaggio fuorviante.
+        if (savedErrno == EINVAL || savedErrno == ENOSYS || savedErrno == EOPNOTSUPP) {
+            return publishNoReplaceFallback(tempPath, finalPath);
+        }
+        return PublishStatus::NoAtomicSupport;
 #elif defined(_WIN32)
         // Senza MOVEFILE_REPLACE_EXISTING fallisce se la destinazione esiste.
-        return ::MoveFileExA(tempPath.c_str(), finalPath.c_str(), MOVEFILE_WRITE_THROUGH) != 0;
+        if (::MoveFileExA(tempPath.c_str(), finalPath.c_str(), MOVEFILE_WRITE_THROUGH) != 0) {
+            return PublishStatus::Success;
+        }
+        if (::GetLastError() == ERROR_ALREADY_EXISTS) {
+            return PublishStatus::Exists;
+        }
+        return PublishStatus::NoAtomicSupport;
 #else
         // Piattaforma sconosciuta: niente primitiva no-replace → fail-closed,
         // mai un fallback che possa sovrascrivere.
         (void)tempPath;
         (void)finalPath;
-        return false;
+        return PublishStatus::NoAtomicSupport;
 #endif
     }
 

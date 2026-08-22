@@ -177,10 +177,35 @@ namespace Core {
             }
 
             // Publish atomico no-replace: il nome finale non deve esistere.
-            // In caso di EEXIST (o primitiva non disponibile) il task fallisce
-            // e il .part resta per il run successivo (limite noto del piano).
-            if (!publishNoReplace(partFile, fullFile)) {
-                res.errorMessage = "Publish fallito: il file finale esiste già";
+            // In caso di Exists (file finale apparso nel frattempo) il lavoro è
+            // già compiuto: il .part è stato validato sano prima, quindi si
+            // puliscono i parziali e si conferma. Se il finale in conflitto è
+            // corrotto, lo si sostituisce col .part valido (mai file corrotto
+            // in media). NoAtomicSupport = errore strutturale del filesystem.
+            switch (publishNoReplace(partFile, fullFile)) {
+            case PublishStatus::Success:
+                break;
+            case PublishStatus::Exists: {
+                if (MediaProbe::isMediaFileHealthy(fullFile, m_stopSignal)) {
+                    std::error_code ec;
+                    fs::remove(partFile, ec);
+                    fs::remove(partAria2, ec);
+                    res.success = true;
+                    Logger::info(series.name + ": episodio già presente, salto il publish");
+                    return res;
+                }
+                std::error_code ec;
+                fs::remove(fullFile, ec);
+                if (publishNoReplace(partFile, fullFile) == PublishStatus::Success) {
+                    break;
+                }
+                res.errorMessage = "Publish fallito dopo risoluzione conflitto (file corrotto)";
+                Logger::error(series.name + ": " + res.errorMessage);
+                return res;
+            }
+            case PublishStatus::NoAtomicSupport:
+                res.errorMessage = "Publish fallito: il filesystem non supporta "
+                                   "il rilascio atomico no-replace (nessun hard link)";
                 Logger::error(series.name + ": " + res.errorMessage);
                 return res;
             }
