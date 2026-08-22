@@ -69,7 +69,8 @@ namespace Core {
             if (!entry.is_regular_file())
                 continue;
             auto ext = entry.path().extension().string();
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            std::transform(ext.begin(), ext.end(), ext.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             if (ext == ".mp4" || ext == ".mkv" || ext == ".webm" || ext == ".avi" || ext == ".mov")
                 count++;
         }
@@ -178,7 +179,7 @@ namespace Core {
 
     PublishStatus publishNoReplace(const std::string& tempPath, const std::string& finalPath) {
 #if defined(__linux__) || defined(__APPLE__)
-        int result = -1;
+        long result = -1;
         int savedErrno = 0;
 #ifdef __linux__
         // renameat2 con RENAME_NOREPLACE: atomico e fallisce se la destinazione
