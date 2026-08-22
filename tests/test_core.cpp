@@ -1,6 +1,7 @@
 // Unit test per le funzioni pure del core (nessuna dipendenza da processi esterni).
 // Eseguire con: ctest --test-dir build  (oppure ./build/test_core)
 #include "config/AppConfigManager.hpp"
+#include "core/FileUtils.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/ProcessUtils.hpp"
 #include "core/Series.hpp"
@@ -255,6 +256,68 @@ static void testConfigMigration() {
     std::filesystem::remove_all(dir);
 }
 
+static void testPublishNoReplace() {
+    using Core::PublishStatus;
+
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_publish";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    // 1) Success: il temporaneo viene pubblicato col nome finale
+    {
+        auto tmp = dir / "ep.part";
+        auto fin = dir / "ep.mp4";
+        createSizedFile(tmp, 1'000);
+        CHECK(Core::publishNoReplace(tmp.string(), fin.string()) == PublishStatus::Success);
+        CHECK(std::filesystem::exists(fin));
+        CHECK(!std::filesystem::exists(tmp));
+        std::filesystem::remove(fin);
+    }
+
+    // 2) Exists: destinazione già presente → il temporaneo resta, finale intatto
+    {
+        auto tmp = dir / "ep2.part";
+        auto fin = dir / "ep2.mp4";
+        createSizedFile(tmp, 2'000);
+        createSizedFile(fin, 3'000);
+        CHECK(Core::publishNoReplace(tmp.string(), fin.string()) == PublishStatus::Exists);
+        CHECK(std::filesystem::exists(tmp)); // mai cancellato su conflitto
+        CHECK(std::filesystem::file_size(fin) == 3'000);
+        std::filesystem::remove_all(dir);
+        std::filesystem::create_directories(dir);
+    }
+
+// 3) Fallback link+unlink (testata direttamente): esercita la funzione reale
+//    che in produzione va in azione quando il fs non supporta la primitiva
+//    rename no-replace (es. FUSE). Su un fs POSIX locale il comportamento è
+//    deterministico: successo senza sovrascritture, EEXIST preservato.
+#if defined(__linux__) || defined(__APPLE__)
+    {
+        auto tmp = dir / "ep3.part";
+        auto fin = dir / "ep3.mp4";
+        createSizedFile(tmp, 4'000);
+        CHECK(Core::publishNoReplaceFallback(tmp.string(), fin.string()) ==
+              Core::PublishStatus::Success);
+        CHECK(std::filesystem::exists(fin));
+        CHECK(!std::filesystem::exists(tmp));
+        std::filesystem::remove(fin);
+
+        // EEXIST nel fallback: il finale già presente non viene toccato
+        createSizedFile(tmp, 5'000);
+        createSizedFile(fin, 6'000);
+        CHECK(Core::publishNoReplaceFallback(tmp.string(), fin.string()) ==
+              Core::PublishStatus::Exists);
+        CHECK(std::filesystem::file_size(fin) == 6'000);
+        CHECK(std::filesystem::exists(tmp));
+
+        std::filesystem::remove_all(dir);
+        std::filesystem::create_directories(dir);
+    }
+#endif
+
+    std::filesystem::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -267,6 +330,7 @@ int main(int argc, char** argv) {
     testSeriesRepository();
     testConfigMigration();
     testInstanceLock(argv[0]);
+    testPublishNoReplace();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";
