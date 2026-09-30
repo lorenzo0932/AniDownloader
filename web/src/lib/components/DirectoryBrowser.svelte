@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte';
   import { api } from '../api.js';
   import ConfirmModal from './ConfirmModal.svelte';
 
@@ -60,13 +61,20 @@
   async function load(pathToLoad) {
     loading = true;
     error = '';
+    // untrack: load() e' chiamata anche da $effect; leggere path qui dentro
+    // lo renderebbe dipendenza dell'effect (che a sua volta lo scrive) con
+    // doppia chiamata e loop al seguito.
+    const prevPath = untrack(() => path);
     try {
       const data = await api.browse.list(pathToLoad, true);
       entries = data.entries || [];
       path = data.path || pathToLoad;
-      // Il campo manuale segue la navigazione: mostra sempre il path reale
-      // (normalizzato dal server), non l'ultimo valore digitato.
-      manualInput = path;
+      // Lettura DOPO l'await: fuori dal tracking dell'effect (niente loop),
+      // e vede il testo digitato DURANTE il fetch. Il campo manuale segue la
+      // navigazione (path normalizzato dal server), ma non ruba la tastiera:
+      // se l'utente ha digitato altro nel frattempo, il suo testo resta.
+      const manualNow = manualInput;
+      if (manualNow === pathToLoad || manualNow === prevPath) manualInput = path;
       parent = data.parent ?? null;
     } catch (e) {
       entries = [];
@@ -419,15 +427,21 @@
   .browser-modal {
     background: var(--bg-secondary); border: 1px solid var(--border-color);
     border-radius: 12px; padding: 1.25rem;
-    min-width: 480px; max-width: 90vw;
-    max-height: 80vh; display: flex; flex-direction: column;
+    /* Dimensioni fisse: la finestra non si ridimensiona mai col contenuto.
+       Testi lunghi/corti cambiano solo il troncamento (ellipsis), non il
+       layout. Su viewport piccole i max cede il passo. */
+    width: 680px; max-width: 94vw;
+    height: 560px; max-height: 88vh;
+    display: flex; flex-direction: column;
     animation: scaleIn 0.2s ease-out;
     box-shadow: 0 12px 40px rgba(0,0,0,0.5);
   }
   .browser-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
   .browser-header h3 { font-size: 1rem; font-weight: 700; color: var(--text-primary); }
-  /* Toggle drawer: solo mobile, su desktop la sidebar e' sempre visibile. */
-  .side-toggle { display: none; }
+  /* Toggle drawer: solo mobile, su desktop la sidebar e' sempre visibile.
+     Specificita' alta per vincere su .btn-icon-sm (stesso scope Svelte:
+     a parita' di specificita' vincerebbe la regola definita dopo). */
+  .browser-header .side-toggle { display: none; }
   .browser-path-bar {
     display: flex; align-items: center; gap: 0.5rem;
     background: var(--bg-tertiary); border-radius: 6px;
@@ -453,6 +467,8 @@
     border-radius: 6px; color: var(--text-primary); outline: none;
   }
   .browser-manual-row input:focus { border-color: var(--accent); }
+  /* Gli input non devono mai forzare la larghezza della modale. */
+  .browser-manual-row input, .browser-search-row input, .browser-create-row input { min-width: 0; }
   .browser-search-row {
     display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem;
     background: var(--bg-tertiary); border: 1px solid var(--border-color);
@@ -477,7 +493,7 @@
   }
   .btn-cancel-sm:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .browser-sort-bar {
-    display: flex; align-items: center; gap: 0.4rem;
+    display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
     margin-bottom: 0.4rem; font-size: 0.78rem;
   }
   .sort-label { color: var(--text-muted); }
@@ -500,8 +516,8 @@
   .browser-create-row input:focus { border-color: var(--accent); }
   .create-error { font-size: 0.75rem; color: var(--danger); }
   .browser-list {
-    flex: 1; overflow-y: auto; border: 1px solid var(--border-color);
-    border-radius: 8px; min-height: 200px; max-height: 40vh;
+    flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--border-color);
+    border-radius: 8px;
     margin-bottom: 0.75rem;
   }
   .browser-center { display: flex; align-items: center; justify-content: center; height: 200px; }
@@ -511,9 +527,9 @@
      Posizioni/Preferiti/Dischi + area principale col contenuto. */
   .browser-body { display: flex; flex: 1; min-height: 0; align-items: stretch; }
   .browser-sidebar {
-    width: 215px; flex-shrink: 0;
+    width: 215px; flex-shrink: 0; min-height: 0;
     border: 1px solid var(--border-color); border-radius: 8px;
-    overflow-y: auto; max-height: 40vh;
+    overflow-y: auto;
     margin-right: 0.75rem; margin-bottom: 0.75rem;
   }
   .browser-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -552,8 +568,11 @@
   .entry-del { color: var(--text-muted); }
   .entry-del:hover { color: var(--danger); background: none; }
   .browser-footer {
-    display: flex; gap: 0.5rem; justify-content: flex-end;
-    padding-bottom: 96px;
+    display: flex; gap: 0.5rem; justify-content: flex-end; flex-shrink: 0;
+    /* Safe-area (notch, gesture bar): vale solo dove esiste, altrove 0.
+       Sostituisce il vecchio padding fisso da 96px che mangiava spazio
+       ovunque, anche su desktop. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .btn-cancel {
     padding: 0.55rem 1.1rem; background: none; border: 1px solid var(--btn-cancel-border);
@@ -572,22 +591,35 @@
   @media (max-width: 768px) {
     .browser-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      border-radius: 0; min-width: auto;
+      border-radius: 0; width: auto; height: auto;
       max-width: 100vw; max-height: 100dvh;
-      padding-bottom: 96px;
+      padding: 0.75rem;
+      padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
     }
-    .browser-list { max-height: none; flex: 1; }
-    .browser-footer { padding-bottom: 96px; }
+    /* Target touch comodi: righe e pulsanti alti almeno ~40px. */
+    .browser-entry { padding: 0.7rem 0.75rem; }
+    .btn-icon-sm { padding: 0.5rem; }
+    .btn-small { padding: 0.6rem 1rem; }
     /* Su mobile la sidebar diventa un drawer a scomparsa: niente piu'
        muro di sezioni dentro la lista. */
-    .side-toggle { display: flex; }
+    .browser-header .side-toggle { display: flex; }
     .browser-body { position: relative; }
     .browser-sidebar {
       display: none; position: absolute; top: 0; bottom: 0; left: 0; z-index: 5;
-      width: 240px; max-width: 75vw; max-height: none; margin: 0;
+      width: 240px; max-width: 75vw; margin: 0;
       background: var(--bg-secondary); border: 1px solid var(--border-color);
       border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,0.5);
     }
     .browser-sidebar.open { display: block; }
+  }
+
+  /* Orizzontale con poca altezza (telefono ruotato): ritmo verticale
+     compresso, ma tutto resta visibile e la lista riempie lo spazio. */
+  @media (max-height: 520px) {
+    .browser-modal { padding: 0.5rem; }
+    .browser-header { margin-bottom: 0.25rem; }
+    .browser-path-bar, .browser-manual-row, .browser-search-row { margin-bottom: 0.3rem; }
+    .browser-sort-bar { margin-bottom: 0.25rem; }
+    .browser-list { margin-bottom: 0.4rem; }
   }
 </style>

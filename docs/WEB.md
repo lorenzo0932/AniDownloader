@@ -127,6 +127,11 @@ Layout a due colonne, stile file manager nativo:
   mentre il picker è aperto.
 - **Area principale**: solo il contenuto della cartella corrente (niente più
   muro di sezioni inline).
+- **Dimensioni fisse** (680×560 su desktop): la finestra non si ridimensiona
+  mai col contenuto; i testi lunghi si troncano con ellipsis. Su mobile va
+  fullscreen in flex (la lista riempie lo spazio), con touch target ~40px,
+  safe-area al posto di padding fissi e ritmo verticale compresso in
+  orizzontale.
 
 - **Ricerca**: filtro locale sui nomi della cartella corrente, senza roundtrip.
 - **Preferiti**: la stella nel path bar pinna il path corrente in

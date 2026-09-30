@@ -314,9 +314,30 @@ describe('DirectoryBrowser', () => {
   it('campo manuale: dopo la navigazione mostra il path normalizzato dal server', async () => {
     vi.spyOn(api.browse, 'list').mockResolvedValue(browseOk({ path: '/media' }));
     vi.spyOn(api.browse, 'mounts').mockResolvedValue({ success: true, mounts: [] });
+    vi.spyOn(api.browse, 'places').mockResolvedValue({ success: true, places: [] });
     vi.spyOn(api.config, 'get').mockResolvedValue({ success: true, config: {} });
     render(DirectoryBrowser, { ...props, currentPath: '/media/' });
     await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
     expect(screen.getByPlaceholderText('Inserisci percorso manualmente...').value).toBe('/media');
+  });
+
+  it('campo manuale: testo digitato durante il fetch non viene sovrascritto', async () => {
+    stubBrowser();
+    let resolveList;
+    vi.spyOn(api.browse, 'list').mockImplementation(
+      () => new Promise((r) => { resolveList = r; })
+    );
+    render(DirectoryBrowser, props);
+    // Aspetta che il caricamento iniziale sia partito (fetch in volo).
+    await waitFor(() => {
+      if (!resolveList) throw new Error('fetch non partito');
+    });
+    // L'utente digita mentre il caricamento e' ancora in volo.
+    await fireEvent.input(screen.getByPlaceholderText('Inserisci percorso manualmente...'), {
+      target: { value: '/tmp/bozza' },
+    });
+    resolveList(browseOk());
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+    expect(screen.getByPlaceholderText('Inserisci percorso manualmente...').value).toBe('/tmp/bozza');
   });
 });
