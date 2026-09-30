@@ -423,7 +423,6 @@ namespace Web {
 
     // ---- BROWSE ----
     void WebServer::setupBrowseRoutes() {
-        // ---- BROWSE ----
         m_svr.Get("/api/browse", [this](const httplib::Request& req, httplib::Response& res) {
             try {
                 std::string path = req.has_param("path") ? req.get_param_value("path") : "/";
@@ -447,15 +446,13 @@ namespace Web {
                     entries.push_back(obj);
                 }
 
-                // parent: usato dal frontend per "su" senza splitting del path
-                // (corretto anche su Windows, dove il separatore e' '\').
+                // parent: calcolato dal server (Core::browseParentPath), mai
+                // splittando il path nel frontend. "" = root ("/" su POSIX,
+                // "C:\" su Windows) -> null nel JSON, "su" disabilitato.
+                std::string parentStr = Core::browseParentPath(expanded.string());
                 nlohmann::json parent = nullptr;
-                std::string normalized = expanded.string();
-                if (normalized != "/" && !normalized.empty()) {
-                    std::filesystem::path up = expanded.parent_path();
-                    if (!up.empty())
-                        parent = up.string();
-                }
+                if (!parentStr.empty())
+                    parent = parentStr;
 
                 sendJson(res, successJson({
                                   {"entries", entries},

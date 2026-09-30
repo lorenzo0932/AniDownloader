@@ -355,8 +355,70 @@ static void testParseMountTable() {
     CHECK(!has("/var/lib/docker/overlay2/x")); // overlay escluso
     CHECK(!has("/proc/sys/fs/binfmt_misc"));   // sotto /proc, escluso
 
+    // Bind mount duplicato: stesso path da due device -> una sola voce.
+    // Escape non valido (\0X7: 'X' non e' octal): passa invariato.
+    std::string table2 = std::string(table) + "/dev/sda2 / ext4 rw,relatime 0 0\n"
+                                              "/dev/sdd1 /mnt/Bad\\0X7Escape ext4 rw 0 0\n"
+                                              "riga malformata\n";
+
+    auto mounts2 = Core::parseMountTable(table2);
+    int rootCount = 0;
+    bool hasBad = false;
+    for (const auto& m : mounts2) {
+        if (m.path == "/")
+            ++rootCount;
+        if (m.path == "/mnt/Bad\\0X7Escape")
+            hasBad = true;
+    }
+    CHECK(rootCount == 1); // niente duplicati
+    CHECK(hasBad);         // escape invalido: letterale, niente garbage
+
     // Tabella vuota: nessun mount, nessun crash.
     CHECK(Core::parseMountTable("").empty());
+}
+
+static void testParseAllMountPoints() {
+    // Senza filtri: pseudo-fs e tmpfs/overlay sono comunque punti di mount
+    // e il guardrail di removePath deve conoscerli tutti.
+    std::string table = "proc /proc proc rw,nosuid,relatime 0 0\n"
+                        "tmpfs /run/user/1000 tmpfs rw 0 0\n"
+                        "overlay / overlay rw 0 0\n"
+                        "/dev/sda2 / ext4 rw,relatime 0 0\n"
+                        "/dev/sdb1 /mnt/My\\040Backup ext4 rw,relatime 0 0\n";
+    auto points = Core::parseAllMountPoints(table);
+    auto has = [&](const std::string& p) {
+        return std::find(points.begin(), points.end(), p) != points.end();
+    };
+    CHECK(has("/proc"));
+    CHECK(has("/run/user/1000"));
+    CHECK(has("/"));
+    CHECK(has("/mnt/My Backup")); // escape octal condiviso col parse filtrato
+    CHECK(points.size() == 4);
+    CHECK(Core::parseAllMountPoints("").empty());
+
+    // listAllMountPoints() della macchina: include almeno "/" su Linux.
+    auto live = Core::listAllMountPoints();
+    CHECK(!live.empty());
+    CHECK(std::find(live.begin(), live.end(), "/") != live.end());
+}
+
+static void testBrowseParentPath() {
+    CHECK(Core::browseParentPath("") == "");
+    CHECK(Core::browseParentPath("/") == "");   // root: nessun parent
+    CHECK(Core::browseParentPath("/a") == "/"); // "su" da /a
+    CHECK(Core::browseParentPath("/a/b") == "/a");
+    CHECK(Core::browseParentPath("relativa") == ""); // niente root: niente parent
+}
+
+static void testIsWindowsDriveRoot() {
+    CHECK(Core::isWindowsDriveRoot("C:"));
+    CHECK(Core::isWindowsDriveRoot("C:\\"));
+    CHECK(Core::isWindowsDriveRoot("c:/"));
+    CHECK(!Core::isWindowsDriveRoot("C:\\foo")); // non e' una radice
+    CHECK(!Core::isWindowsDriveRoot("C:foo"));   // drive-relative: non e' una radice
+    CHECK(!Core::isWindowsDriveRoot("/"));
+    CHECK(!Core::isWindowsDriveRoot(""));
+    CHECK(!Core::isWindowsDriveRoot("CC:"));
 }
 
 static void testListMounts() {
@@ -439,6 +501,29 @@ static void testFileOps() {
     CHECK(Core::removePath(nested, true) == FsOpStatus::Ok);
     CHECK(!std::filesystem::exists(nested));
 
+#ifndef _WIN32
+    // --- Symlink: si rimuove il link, mai il bersaglio ---
+    // (su Windows la creazione richiede privilegi: test solo POSIX)
+    std::filesystem::path real = dir / "reale";
+    std::filesystem::create_directories(real);
+    Core::createEmptyFile(real.string(), "dentro.mkv");
+    std::filesystem::path linkDir = dir / "linkdir";
+    std::filesystem::create_directory_symlink(real, linkDir);
+    // Senza recursive: il link si rimuove comunque (non e' una directory),
+    // e il bersaglio con il suo contenuto resta intatto.
+    CHECK(Core::removePath(linkDir.string(), false) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(linkDir));
+    CHECK(std::filesystem::exists(real / "dentro.mkv"));
+
+    Core::createEmptyFile(parent, "reale.mkv");
+    std::filesystem::path linkFile = dir / "linkfile.mkv";
+    std::filesystem::create_symlink(dir / "reale.mkv", linkFile);
+    CHECK(Core::removePath(linkFile.string(), false) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(linkFile));
+    CHECK(std::filesystem::exists(dir / "reale.mkv"));
+    Core::removePath((dir / "reale.mkv").string(), false);
+#endif
+
     // --- Guardrail: la root non è mai rimovibile ---
     CHECK(Core::removePath("/", true) == FsOpStatus::NotPermitted);
     CHECK(Core::removePath("", true) == FsOpStatus::InvalidName);
@@ -447,6 +532,13 @@ static void testFileOps() {
         if (m.path == "/")
             continue;
         CHECK(Core::removePath(m.path, true) == FsOpStatus::NotPermitted);
+    }
+    // ... e nemmeno quelli filtrati dalla UI (pseudo-fs, tmpfs, overlay):
+    // sono comunque punti di mount, mai rimovibili.
+    for (const auto& mp : Core::listAllMountPoints()) {
+        if (mp == "/")
+            continue;
+        CHECK(Core::removePath(mp, true) == FsOpStatus::NotPermitted);
     }
 
     // --- espansione ~ (solo se HOME è impostato) ---
@@ -473,6 +565,9 @@ int main(int argc, char** argv) {
     testInstanceLock(argv[0]);
     testPublishNoReplace();
     testParseMountTable();
+    testParseAllMountPoints();
+    testBrowseParentPath();
+    testIsWindowsDriveRoot();
     testListMounts();
     testFileOps();
 

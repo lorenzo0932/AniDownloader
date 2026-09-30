@@ -25,7 +25,8 @@ namespace Core {
     // prima, poi file, ognun gruppo in ordine alfabetico.
     std::vector<DirEntry> listDirectories(const std::string& dirPath, bool includeFiles = false);
 
-    // Espande "~" e "~/..." usando $HOME (nessun espansione oltre "~").
+    // Espande "~" e "~/..." usando $HOME (su Windows anche %USERPROFILE%
+    // se $HOME manca). Nessuna espansione oltre "~".
     std::string expandUserPath(const std::string& path);
 
     struct MountEntry {
@@ -42,7 +43,25 @@ namespace Core {
 
     // Versione testabile e senza I/O di listMounts(): interpreta il contenuto
     // di un file /proc/self/mounts. Esposta in header per i test.
+    // I punti di mount duplicati (bind mount) compaiono una sola volta.
     std::vector<MountEntry> parseMountTable(const std::string& content);
+
+    // Tutti i punti di mount, SENZA filtri (uso interno: guardrail di
+    // removePath). A differenza di listMounts(), include anche pseudo-fs e
+    // tmpfs/overlay: un punto di mount non e' mai rimovibile, anche quando
+    // non lo mostriamo nel picker.
+    std::vector<std::string> parseAllMountPoints(const std::string& content);
+    std::vector<std::string> listAllMountPoints();
+
+    // "C:", "C:\" e "C:/" sono radici di drive: mai rimovibili.
+    // Funzione pura su stringa (testabile su ogni piattaforma), usata solo
+    // su _WIN32.
+    bool isWindowsDriveRoot(const std::string& path);
+
+    // Parent per GET /api/browse: "" (= null nel JSON) se il path e' una
+    // root ("/" su POSIX, "C:\" su Windows) o non ha parent calcolabile.
+    // Il frontend usa questo valore per "su", senza splittare il path.
+    std::string browseParentPath(const std::string& normalizedPath);
 
     enum class FsOpStatus {
         Ok,
@@ -64,7 +83,10 @@ namespace Core {
     // Rimuove path. Se recursive=false e path e' una directory non vuota
     // restituisce NotEmpty senza toccare nulla (in quel caso outCount, se
     // fornito, riceve il numero di elementi contenuti, con tetto a 10k).
-    // Rifiuta sempre la root e i punti di mount (difesa rm -rf accidentale).
+    // Rifiuta sempre la root, le radici dei drive, e TUTTI i punti di mount
+    // (anche quelli filtrati dalla UI: vedi listAllMountPoints).
+    // I symlink non vengono mai seguiti: viene eliminato il link, e il
+    // pre-walk (conteggio, clear read-only) non tocca mai il bersaglio.
     FsOpStatus removePath(const std::string& path, bool recursive, uint64_t* outCount = nullptr);
 
     enum class PublishStatus { Success, Exists, NoAtomicSupport };

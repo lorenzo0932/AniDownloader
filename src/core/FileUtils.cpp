@@ -18,12 +18,16 @@
 #include <unistd.h>
 #endif
 #ifdef __APPLE__
+#include <fcntl.h>
 #include <stdio.h>
 #include <unistd.h>
 #endif
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+// _open/_close per la creazione esclusiva (O_EXCL) di createEmptyFile.
+#include <io.h>
+#include <sys/stat.h>
 #endif
 
 namespace Core {
@@ -120,6 +124,11 @@ namespace Core {
     std::string expandUserPath(const std::string& dirPath) {
         if (dirPath == "~" || dirPath.rfind("~/", 0) == 0) {
             const char* home = std::getenv("HOME");
+#ifdef _WIN32
+            // Su Windows HOME spesso non esiste: fallback su %USERPROFILE%.
+            if (!home)
+                home = std::getenv("USERPROFILE");
+#endif
             if (!home)
                 return dirPath;
             return dirPath == "~" ? std::string(home) : std::string(home) + dirPath.substr(1);
@@ -201,6 +210,26 @@ namespace Core {
         bool isVolatileOrOverlay(const std::string& fsType) {
             return fsType == "tmpfs" || fsType == "overlay";
         }
+
+        bool isOctalDigit(char c) { return c >= '0' && c <= '7'; }
+
+        // Decodifica le sequenze octal di /proc/self/mounts (\040 = spazio).
+        // Solo sequenze valide (backslash + 3 cifre octal, prima 0-3):
+        // escape troncati o non octal passano invariati, niente garbage.
+        std::string decodeMountEscapes(const std::string& s) {
+            std::string out;
+            for (size_t i = 0; i < s.size();) {
+                if (s[i] == '\\' && i + 3 < s.size() && s[i + 1] >= '0' && s[i + 1] <= '3' &&
+                    isOctalDigit(s[i + 2]) && isOctalDigit(s[i + 3])) {
+                    int v = (s[i + 1] - '0') * 64 + (s[i + 2] - '0') * 8 + (s[i + 3] - '0');
+                    out += static_cast<char>(v);
+                    i += 4;
+                } else {
+                    out += s[i++];
+                }
+            }
+            return out;
+        }
     } // namespace
 
     std::vector<MountEntry> parseMountTable(const std::string& content) {
@@ -223,22 +252,90 @@ namespace Core {
                 mountpoint.rfind("/dev/", 0) == 0 || mountpoint.rfind("/run/", 0) == 0 ||
                 mountpoint.rfind("/snap/", 0) == 0)
                 continue;
-            // Escapi le sequenze octal usate in /proc/self/mounts (\040 = spazio).
-            std::string decoded;
-            for (size_t i = 0; i < mountpoint.size();) {
-                if (mountpoint[i] == '\\' && i + 3 < mountpoint.size() &&
-                    mountpoint[i + 1] >= '0' && mountpoint[i + 1] <= '3') {
-                    int v = (mountpoint[i + 1] - '0') * 64 + (mountpoint[i + 2] - '0') * 8 +
-                            (mountpoint[i + 3] - '0');
-                    decoded += static_cast<char>(v);
-                    i += 4;
-                } else {
-                    decoded += mountpoint[i++];
+            std::string decoded = decodeMountEscapes(mountpoint);
+            // Bind mount: stesso path da device diversi -> una sola voce.
+            bool dup = false;
+            for (const auto& m : mounts)
+                if (m.path == decoded) {
+                    dup = true;
+                    break;
                 }
-            }
-            mounts.push_back({decoded, decoded});
+            if (!dup)
+                mounts.push_back({decoded, decoded});
         }
         return mounts;
+    }
+
+    std::vector<std::string> parseAllMountPoints(const std::string& content) {
+        std::vector<std::string> points;
+        std::istringstream in(content);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line.empty())
+                continue;
+            std::istringstream ls(line);
+            std::string device, mountpoint, fstype;
+            if (!(ls >> device >> mountpoint >> fstype))
+                continue;
+            std::string decoded = decodeMountEscapes(mountpoint);
+            if (std::find(points.begin(), points.end(), decoded) == points.end())
+                points.push_back(decoded);
+        }
+        return points;
+    }
+
+    std::vector<std::string> listAllMountPoints() {
+        std::vector<std::string> points;
+#if defined(_WIN32)
+        // Tutte le lettere presenti, anche di tipo UNKNOWN: una radice di
+        // drive esistente e' comunque un punto di mount da proteggere.
+        DWORD mask = ::GetLogicalDrives();
+        for (int i = 0; i < 26; ++i) {
+            if (mask & (1u << i))
+                points.push_back(std::string(1, static_cast<char>('A' + i)) + ":\\");
+        }
+#elif defined(__APPLE__)
+        points.push_back("/");
+        std::error_code ec;
+        std::filesystem::directory_iterator it("/Volumes", ec);
+        if (!ec) {
+            for (const auto& entry : it) {
+                std::error_code dirEc;
+                if (std::filesystem::is_directory(entry.path(), dirEc))
+                    points.push_back(entry.path().string());
+            }
+        }
+#else
+        std::ifstream mountsFile("/proc/self/mounts");
+        if (mountsFile) {
+            std::string content((std::istreambuf_iterator<char>(mountsFile)), {});
+            points = parseAllMountPoints(content);
+        }
+        if (std::find(points.begin(), points.end(), "/") == points.end())
+            points.insert(points.begin(), "/");
+#endif
+        return points;
+    }
+
+    bool isWindowsDriveRoot(const std::string& path) {
+        if (path.size() < 2 || path.size() > 3)
+            return false;
+        if (!std::isalpha(static_cast<unsigned char>(path[0])) || path[1] != ':')
+            return false;
+        return path.size() == 2 || path[2] == '\\' || path[2] == '/';
+    }
+
+    std::string browseParentPath(const std::string& normalizedPath) {
+        if (normalizedPath.empty())
+            return {};
+        std::filesystem::path p(normalizedPath);
+        // Root ("/" su POSIX, "C:\" su Windows): nessun parent.
+        if (p.has_root_path() && p.relative_path().empty())
+            return {};
+        std::filesystem::path up = p.parent_path();
+        if (up.empty() || up == p)
+            return {};
+        return up.string();
     }
 
     std::vector<MountEntry> listMounts() {
@@ -293,7 +390,9 @@ namespace Core {
         if (mounts.empty())
             mounts.push_back({"Macintosh HD", "/"});
         else
-            mounts.push_back({"/", "/"});
+            // La root resta in cima come su Linux: serve per uscire da un
+            // mount nidificato senza doverla cercare in fondo.
+            mounts.insert(mounts.begin(), {"/", "/"});
         return mounts;
 #else
         std::ifstream mountsFile("/proc/self/mounts");
@@ -370,7 +469,9 @@ namespace Core {
 #endif
         }
 
-        // Conta gli elementi (non vuota = >0). Tetto a COUNT_LIMIT.
+        // Conta gli elementi (non vuota = >0). Tetto a COUNT_LIMIT, con uscita
+        // anticipata: su alberi enormi non serve camminare tutto, il 409 dice
+        // comunque "10k+ elementi".
         bool dirHasChildren(const std::filesystem::path& p, uint64_t* outCount) {
             std::error_code ec;
             uint64_t count = 0;
@@ -381,12 +482,38 @@ namespace Core {
                 (void)entry;
                 if (ec)
                     break;
-                if (count < COUNT_LIMIT)
-                    ++count;
+                if (count >= COUNT_LIMIT)
+                    break;
+                ++count;
             }
             if (outCount)
                 *outCount = count;
             return count > 0;
+        }
+    } // namespace
+
+    namespace {
+        // Crea un file vuoto in modo esclusivo: fallisce (senza toccare
+        // nulla) se il path esiste gia'. Equivalente cross-platform di
+        // open(O_CREAT | O_EXCL).
+        bool createExclusiveEmpty(const std::filesystem::path& target, std::error_code& ec) {
+#ifdef _WIN32
+            int fd = ::_open(target.string().c_str(), _O_CREAT | _O_EXCL | _O_WRONLY,
+                             _S_IREAD | _S_IWRITE);
+            if (fd == -1) {
+                ec.assign(errno, std::generic_category());
+                return false;
+            }
+            ::_close(fd);
+#else
+            int fd = ::open(target.string().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666);
+            if (fd == -1) {
+                ec.assign(errno, std::generic_category());
+                return false;
+            }
+            ::close(fd);
+#endif
+            return true;
         }
     } // namespace
 
@@ -422,13 +549,15 @@ namespace Core {
         std::filesystem::path target = base / name;
         if (std::filesystem::exists(target, ec))
             return FsOpStatus::Exists;
-        // ofstream in append: non tronca nulla e segnala l'errore via stream state.
-        std::ofstream f(target, std::ios::app);
-        if (!f)
-            return FsOpStatus::IoError;
-        f.close();
-        if (f.fail())
-            return FsOpStatus::IoError;
+        // Creazione esclusiva (O_EXCL): se un altro processo crea il file
+        // nel frattempo, fallisce con EEXIST invece di "riuscire" su un file
+        // preesistente. Niente truncate, niente clobber.
+        std::error_code crEc;
+        if (!createExclusiveEmpty(target, crEc)) {
+            if (crEc == std::errc::file_exists)
+                return FsOpStatus::Exists;
+            return classifyError(crEc);
+        }
         if (outPath)
             *outPath = target.string();
         return FsOpStatus::Ok;
@@ -439,26 +568,47 @@ namespace Core {
             *outCount = 0;
         if (path.empty())
             return FsOpStatus::InvalidName;
-
         std::filesystem::path target(expandUserPath(path));
+
+        // --- Guardrail: mai rimuovere la root o un punto di mount ---
+        // PRIMA del check di esistenza: un mount point resta protetto anche
+        // se stat fallisce (permessi, namespace altrui) o la voce e' stantia.
+        // In tutti questi casi la risposta e' comunque un rifiuto.
+        std::string normalized = target.lexically_normal().string();
+        if (normalized == "/" || normalized == "\\" || normalized == "." || normalized.empty())
+            return FsOpStatus::NotPermitted;
+#ifdef _WIN32
+        // Radice di un drive ("C:", "C:\", "C:/"): vale per qualunque
+        // lettera, anche se GetDriveTypeA la riporta UNKNOWN.
+        if (isWindowsDriveRoot(normalized))
+            return FsOpStatus::NotPermitted;
+#endif
+        // TUTTI i punti di mount, non solo quelli mostrati nel picker:
+        // listAllMountPoints() include anche pseudo-fs e tmpfs/overlay.
+        for (const auto& mp : listAllMountPoints()) {
+            if (normalized == std::filesystem::path(mp).lexically_normal().string())
+                return FsOpStatus::NotPermitted;
+        }
+
         std::error_code ec;
         if (!std::filesystem::exists(target, ec))
             return FsOpStatus::NotFound;
 
-        // --- Guardrail: mai rimuovere la root o un punto di mount ---
-        std::string normalized = target.lexically_normal().string();
-        if (normalized == "/" || normalized == "\\" || normalized == "." || normalized.empty())
-            return FsOpStatus::NotPermitted;
-        // Root di un drive Windows ("C:\") o root di un mount point.
-        for (const auto& m : listMounts()) {
-            std::string mp = std::filesystem::path(m.path).lexically_normal().string();
-            if (normalized == mp)
-                return FsOpStatus::NotPermitted;
-        }
-
-        bool isDir = std::filesystem::is_directory(target, ec);
-        if (ec)
+        // symlink_status NON segue il link: un symlink (anche a directory)
+        // si rimuove come file. Senza questo, il pre-walk qui sotto
+        // (conteggio, clear read-only) attraverserebbe il bersaglio e
+        // toccherebbe dati esterni al link.
+        std::error_code linkEc;
+        bool isLink = std::filesystem::is_symlink(std::filesystem::symlink_status(target, linkEc));
+        if (linkEc)
             return FsOpStatus::IoError;
+
+        bool isDir = false;
+        if (!isLink) {
+            isDir = std::filesystem::is_directory(target, ec);
+            if (ec)
+                return FsOpStatus::IoError;
+        }
 
         if (isDir) {
             uint64_t count = 0;
@@ -469,8 +619,10 @@ namespace Core {
                 return FsOpStatus::NotEmpty;
         }
 
-        clearReadOnlyRecursive(target);
-        // remove_all non segue i symlink: elimina il link, non il bersaglio.
+        if (!isLink)
+            clearReadOnlyRecursive(target);
+        // remove/remove_all non seguono i symlink: sul link eliminano il
+        // link, non il bersaglio.
         std::error_code rmEc;
         if (isDir) {
             std::filesystem::remove_all(target, rmEc);
