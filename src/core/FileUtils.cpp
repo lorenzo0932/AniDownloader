@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <regex>
+#include <sstream>
 #ifdef __linux__
 #include <fcntl.h>
 #include <linux/fs.h>
@@ -116,30 +117,39 @@ namespace Core {
         return {};
     }
 
-    std::vector<DirEntry> listDirectories(const std::string& dirPath) {
-        std::vector<DirEntry> entries;
-        std::filesystem::path dp;
-
+    std::string expandUserPath(const std::string& dirPath) {
         if (dirPath == "~" || dirPath.rfind("~/", 0) == 0) {
             const char* home = std::getenv("HOME");
-            if (!home) {
-                dp = std::filesystem::path(dirPath);
-            } else {
-                dp = dirPath == "~" ? std::filesystem::path(home)
-                                    : std::filesystem::path(home) / dirPath.substr(2);
-            }
-        } else {
-            dp = std::filesystem::path(dirPath);
+            if (!home)
+                return dirPath;
+            return dirPath == "~" ? std::string(home) : std::string(home) + dirPath.substr(1);
         }
+        return dirPath;
+    }
 
-        if (!std::filesystem::exists(dp) || !std::filesystem::is_directory(dp))
+    std::vector<DirEntry> listDirectories(const std::string& dirPath, bool includeFiles) {
+        std::vector<DirEntry> entries;
+        std::filesystem::path dp(expandUserPath(dirPath));
+
+        std::error_code ec;
+        if (!std::filesystem::exists(dp, ec) || !std::filesystem::is_directory(dp, ec))
             return entries;
 
-        for (const auto& entry : std::filesystem::directory_iterator(dp)) {
-            if (!entry.is_directory())
+        for (const auto& entry : std::filesystem::directory_iterator(dp, ec)) {
+            if (ec)
+                break;
+            std::error_code fileEc;
+            bool isDir = entry.is_directory(fileEc);
+            if (fileEc)
+                continue;
+            if (!isDir && !includeFiles)
+                continue;
+            if (!isDir && !entry.is_regular_file(fileEc))
+                continue;
+            if (fileEc)
                 continue;
             auto filename = entry.path().filename().string();
-            if (filename[0] == '.')
+            if (filename.empty() || filename[0] == '.')
                 continue;
             auto ftime = std::filesystem::last_write_time(entry);
             // Conversione portatile file_clock -> system_clock: l'epoch di file_time_type
@@ -149,13 +159,327 @@ namespace Core {
                 std::chrono::system_clock::now());
             auto mtime =
                 std::chrono::duration_cast<std::chrono::seconds>(sctp.time_since_epoch()).count();
-            entries.push_back({filename, entry.path().string(), mtime});
+            DirEntry de;
+            de.name = filename;
+            de.path = entry.path().string();
+            de.mtime = mtime;
+            de.isDir = isDir;
+            if (!isDir) {
+                std::error_code sizeEc;
+                auto sz = std::filesystem::file_size(entry.path(), sizeEc);
+                de.size = sizeEc ? 0 : static_cast<int64_t>(sz);
+            }
+            entries.push_back(de);
         }
 
-        std::sort(entries.begin(), entries.end(),
-                  [](const DirEntry& a, const DirEntry& b) { return a.name < b.name; });
+        std::sort(entries.begin(), entries.end(), [](const DirEntry& a, const DirEntry& b) {
+            if (a.isDir != b.isDir)
+                return a.isDir; // directory prima dei file
+            return a.name < b.name;
+        });
 
         return entries;
+    }
+
+    // ---- Mount points ----
+    namespace {
+        // Pseudo-filesystem da escludere: non sono dischi navigabili dall'utente.
+        bool isPseudoFs(const std::string& fsType) {
+            static const char* pseudo[] = {
+                "proc",       "sysfs",     "devtmpfs",    "devpts",  "cgroup",     "cgroup2",
+                "securityfs", "pstore",    "debugfs",     "tracefs", "configfs",   "fusectl",
+                "mqueue",     "hugetlbfs", "binfmt_misc", "autofs",  "rpc_pipefs", "nsfs",
+                "bpf",        "selinuxfs", "efivarfs"};
+            for (const char* p : pseudo)
+                if (fsType == p)
+                    return true;
+            return false;
+        }
+
+        // Anche tmpfs/overlay vanno esclusi come mount "utili": tmpfs e' memoria
+        // volatile, overlay e' il filesystem della macchina container.
+        bool isVolatileOrOverlay(const std::string& fsType) {
+            return fsType == "tmpfs" || fsType == "overlay";
+        }
+    } // namespace
+
+    std::vector<MountEntry> parseMountTable(const std::string& content) {
+        std::vector<MountEntry> mounts;
+        std::istringstream in(content);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line.empty())
+                continue;
+            // Formato: device mountpoint fstype options dump pass
+            std::istringstream ls(line);
+            std::string device, mountpoint, fstype;
+            if (!(ls >> device >> mountpoint >> fstype))
+                continue;
+            if (isPseudoFs(fstype) || isVolatileOrOverlay(fstype))
+                continue;
+            // Esclude anche i mount point dentro /proc, /sys, /dev, /run e /snap:
+            // sono namespace di pseudo-fs, non dischi.
+            if (mountpoint.rfind("/proc/", 0) == 0 || mountpoint.rfind("/sys/", 0) == 0 ||
+                mountpoint.rfind("/dev/", 0) == 0 || mountpoint.rfind("/run/", 0) == 0 ||
+                mountpoint.rfind("/snap/", 0) == 0)
+                continue;
+            // Escapi le sequenze octal usate in /proc/self/mounts (\040 = spazio).
+            std::string decoded;
+            for (size_t i = 0; i < mountpoint.size();) {
+                if (mountpoint[i] == '\\' && i + 3 < mountpoint.size() &&
+                    mountpoint[i + 1] >= '0' && mountpoint[i + 1] <= '3') {
+                    int v = (mountpoint[i + 1] - '0') * 64 + (mountpoint[i + 2] - '0') * 8 +
+                            (mountpoint[i + 3] - '0');
+                    decoded += static_cast<char>(v);
+                    i += 4;
+                } else {
+                    decoded += mountpoint[i++];
+                }
+            }
+            mounts.push_back({decoded, decoded});
+        }
+        return mounts;
+    }
+
+    std::vector<MountEntry> listMounts() {
+        std::vector<MountEntry> mounts;
+
+#if defined(_WIN32)
+        DWORD mask = ::GetLogicalDrives();
+        for (int i = 0; i < 26; ++i) {
+            if (!(mask & (1u << i)))
+                continue;
+            std::string root = std::string(1, static_cast<char>('A' + i)) + ":\\";
+            UINT type = ::GetDriveTypeA(root.c_str());
+            std::string label;
+            switch (type) {
+            case DRIVE_FIXED:
+                label = "Disco locale (" + std::string(1, static_cast<char>('A' + i)) + ":)";
+                break;
+            case DRIVE_REMOVABLE:
+                label = "Rimovibile (" + std::string(1, static_cast<char>('A' + i)) + ":)";
+                break;
+            case DRIVE_REMOTE:
+                label = "Rete (" + std::string(1, static_cast<char>('A' + i)) + ":)";
+                break;
+            case DRIVE_CDROM:
+                label = "CD/DVD (" + std::string(1, static_cast<char>('A' + i)) + ":)";
+                break;
+            default:
+                continue; // DRIVE_NO_ROOT_DIR, DRIVE_UNKNOWN: navigabile solo se
+                          // esiste, ma non e' un volume utile da offrire
+            }
+            mounts.push_back({label, root});
+        }
+        if (mounts.empty())
+            mounts.push_back({"File system", "/"});
+        return mounts;
+#elif defined(__APPLE__)
+        std::error_code ec;
+        std::filesystem::directory_iterator it("/Volumes", ec);
+        if (!ec) {
+            for (const auto& entry : it) {
+                // is_directory segue i symlink: alcune voci di /Volumes lo sono
+                // (dischi montati via link), e vanno comunque offerte.
+                std::error_code dirEc;
+                if (!std::filesystem::is_directory(entry.path(), dirEc))
+                    continue;
+                std::string name = entry.path().filename().string();
+                if (name.empty() || name[0] == '.')
+                    continue;
+                mounts.push_back({name, entry.path().string()});
+            }
+        }
+        if (mounts.empty())
+            mounts.push_back({"Macintosh HD", "/"});
+        else
+            mounts.push_back({"/", "/"});
+        return mounts;
+#else
+        std::ifstream mountsFile("/proc/self/mounts");
+        if (mountsFile) {
+            std::string content((std::istreambuf_iterator<char>(mountsFile)), {});
+            mounts = parseMountTable(content);
+        }
+        // La root e' sempre disponibile: senza di lei il picker non potrebbe
+        // uscire da un mount nidificato.
+        bool hasRoot = false;
+        for (auto& m : mounts)
+            if (m.path == "/")
+                hasRoot = true;
+        if (!hasRoot)
+            mounts.insert(mounts.begin(), {"/", "/"});
+        return mounts;
+#endif
+    }
+
+    // ---- Operazioni filesystem (file picker) ----
+    namespace {
+        constexpr size_t MAX_NAME_LEN = 255;
+        constexpr uint64_t COUNT_LIMIT = 10000;
+
+        FsOpStatus classifyError(const std::error_code& ec) {
+            if (ec == std::errc::permission_denied)
+                return FsOpStatus::NotPermitted;
+            if (ec == std::errc::no_such_file_or_directory || ec == std::errc::not_a_directory)
+                return FsOpStatus::NotFound;
+            if (ec == std::errc::file_exists)
+                return FsOpStatus::Exists;
+            return FsOpStatus::IoError;
+        }
+
+        // Un nome singolo: niente separatori, niente "." / "..", niente NUL.
+        bool isValidEntryName(const std::string& name) {
+            if (name.empty() || name.size() > MAX_NAME_LEN)
+                return false;
+            if (name == "." || name == "..")
+                return false;
+            if (name.find('\0') != std::string::npos)
+                return false;
+            if (name.find('/') != std::string::npos)
+                return false;
+            if (name.find('\\') != std::string::npos)
+                return false;
+            return true;
+        }
+
+        // Su Windows l'attributo read-only blocca sia remove() sia remove_all():
+        // va azzerato prima. Esiste solo su _WIN32 (su POSIX i permessi bastano).
+#ifdef _WIN32
+        void clearReadOnlyEntry(const std::filesystem::path& p) {
+            auto attrs = ::GetFileAttributesA(p.string().c_str());
+            if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_READONLY))
+                ::SetFileAttributesA(p.string().c_str(), attrs & ~FILE_ATTRIBUTE_READONLY);
+        }
+#endif
+
+        void clearReadOnlyRecursive(const std::filesystem::path& p) {
+#ifdef _WIN32
+            std::error_code ec;
+            if (std::filesystem::is_directory(p, ec)) {
+                for (const auto& entry : std::filesystem::recursive_directory_iterator(p, ec)) {
+                    if (ec)
+                        break;
+                    clearReadOnlyEntry(entry.path());
+                }
+            } else {
+                clearReadOnlyEntry(p);
+            }
+#else
+            (void)p;
+#endif
+        }
+
+        // Conta gli elementi (non vuota = >0). Tetto a COUNT_LIMIT.
+        bool dirHasChildren(const std::filesystem::path& p, uint64_t* outCount) {
+            std::error_code ec;
+            uint64_t count = 0;
+            std::filesystem::recursive_directory_iterator it(p, ec);
+            if (ec)
+                return false;
+            for (const auto& entry : it) {
+                (void)entry;
+                if (ec)
+                    break;
+                if (count < COUNT_LIMIT)
+                    ++count;
+            }
+            if (outCount)
+                *outCount = count;
+            return count > 0;
+        }
+    } // namespace
+
+    FsOpStatus createDirectory(const std::string& parent, const std::string& name,
+                               std::string* outPath) {
+        if (!isValidEntryName(name))
+            return FsOpStatus::InvalidName;
+        std::filesystem::path base(expandUserPath(parent));
+        std::error_code ec;
+        if (!std::filesystem::is_directory(base, ec))
+            return FsOpStatus::NotFound;
+        std::filesystem::path target = base / name;
+        if (std::filesystem::exists(target, ec))
+            return FsOpStatus::Exists;
+        if (!std::filesystem::create_directory(target, ec)) {
+            if (ec)
+                return classifyError(ec);
+            return FsOpStatus::Exists;
+        }
+        if (outPath)
+            *outPath = target.string();
+        return FsOpStatus::Ok;
+    }
+
+    FsOpStatus createEmptyFile(const std::string& parent, const std::string& name,
+                               std::string* outPath) {
+        if (!isValidEntryName(name))
+            return FsOpStatus::InvalidName;
+        std::filesystem::path base(expandUserPath(parent));
+        std::error_code ec;
+        if (!std::filesystem::is_directory(base, ec))
+            return FsOpStatus::NotFound;
+        std::filesystem::path target = base / name;
+        if (std::filesystem::exists(target, ec))
+            return FsOpStatus::Exists;
+        // ofstream in append: non tronca nulla e segnala l'errore via stream state.
+        std::ofstream f(target, std::ios::app);
+        if (!f)
+            return FsOpStatus::IoError;
+        f.close();
+        if (f.fail())
+            return FsOpStatus::IoError;
+        if (outPath)
+            *outPath = target.string();
+        return FsOpStatus::Ok;
+    }
+
+    FsOpStatus removePath(const std::string& path, bool recursive, uint64_t* outCount) {
+        if (outCount)
+            *outCount = 0;
+        if (path.empty())
+            return FsOpStatus::InvalidName;
+
+        std::filesystem::path target(expandUserPath(path));
+        std::error_code ec;
+        if (!std::filesystem::exists(target, ec))
+            return FsOpStatus::NotFound;
+
+        // --- Guardrail: mai rimuovere la root o un punto di mount ---
+        std::string normalized = target.lexically_normal().string();
+        if (normalized == "/" || normalized == "\\" || normalized == "." || normalized.empty())
+            return FsOpStatus::NotPermitted;
+        // Root di un drive Windows ("C:\") o root di un mount point.
+        for (const auto& m : listMounts()) {
+            std::string mp = std::filesystem::path(m.path).lexically_normal().string();
+            if (normalized == mp)
+                return FsOpStatus::NotPermitted;
+        }
+
+        bool isDir = std::filesystem::is_directory(target, ec);
+        if (ec)
+            return FsOpStatus::IoError;
+
+        if (isDir) {
+            uint64_t count = 0;
+            bool nonEmpty = dirHasChildren(target, &count);
+            if (outCount)
+                *outCount = count;
+            if (nonEmpty && !recursive)
+                return FsOpStatus::NotEmpty;
+        }
+
+        clearReadOnlyRecursive(target);
+        // remove_all non segue i symlink: elimina il link, non il bersaglio.
+        std::error_code rmEc;
+        if (isDir) {
+            std::filesystem::remove_all(target, rmEc);
+        } else {
+            std::filesystem::remove(target, rmEc);
+        }
+        if (rmEc)
+            return classifyError(rmEc);
+        return FsOpStatus::Ok;
     }
 
 #if defined(__linux__) || defined(__APPLE__)

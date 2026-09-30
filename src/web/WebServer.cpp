@@ -427,99 +427,196 @@ namespace Web {
         m_svr.Get("/api/browse", [this](const httplib::Request& req, httplib::Response& res) {
             try {
                 std::string path = req.has_param("path") ? req.get_param_value("path") : "/";
-                auto dirs = Core::listDirectories(path);
+                // files=1 elenca anche i file (file picker: serve a vederli e cancellarli).
+                bool includeFiles = req.has_param("files") && req.get_param_value("files") == "1";
+
+                std::filesystem::path expanded(Core::expandUserPath(path));
+                // Normalizzazione lessicale: NON canonical(), che risolverebbe i
+                // symlink e renderebbe irriconoscibili i punti di mount.
+                expanded = expanded.lexically_normal();
+
+                auto dirs = Core::listDirectories(expanded.string(), includeFiles);
                 nlohmann::json entries = nlohmann::json::array();
                 for (auto& de : dirs) {
                     nlohmann::json obj;
                     obj["name"] = de.name;
                     obj["path"] = de.path;
                     obj["mtime"] = de.mtime;
+                    obj["type"] = de.isDir ? "dir" : "file";
+                    obj["size"] = de.size;
                     entries.push_back(obj);
                 }
-                sendJson(res, successJson({{"entries", entries}}));
+
+                // parent: usato dal frontend per "su" senza splitting del path
+                // (corretto anche su Windows, dove il separatore e' '\').
+                nlohmann::json parent = nullptr;
+                std::string normalized = expanded.string();
+                if (normalized != "/" && !normalized.empty()) {
+                    std::filesystem::path up = expanded.parent_path();
+                    if (!up.empty())
+                        parent = up.string();
+                }
+
+                sendJson(res, successJson({
+                                  {"entries", entries},
+                                  {"path", expanded.string()},
+                                  {"parent", parent},
+                              }));
             } catch (const std::exception& e) {
                 sendJson(res, errorJson("Browse error: " + std::string(e.what())), 400);
             }
         });
 
-        // ---- NATIVE DIRECTORY PICKER ----
-        m_svr.Post("/api/browse/pick", [this](const httplib::Request& req, httplib::Response& res) {
-            std::string path;
-            std::string currentPath;
+        // ---- MOUNTS (dischi montati) ----
+        m_svr.Get("/api/browse/mounts", [this](const httplib::Request&, httplib::Response& res) {
             try {
-                auto body = nlohmann::json::parse(req.body);
-                auto it = body.find("current_path");
-                if (it != body.end() && it->is_string()) {
-                    std::string candidate = it->get<std::string>();
-                    if (!candidate.empty() && std::filesystem::is_directory(candidate))
-                        currentPath = candidate;
+                nlohmann::json mounts = nlohmann::json::array();
+                for (const auto& m : Core::listMounts()) {
+                    nlohmann::json obj;
+                    obj["name"] = m.name;
+                    obj["path"] = m.path;
+                    mounts.push_back(obj);
                 }
+                sendJson(res, successJson({{"mounts", mounts}}));
             } catch (const std::exception& e) {
-                Core::Logger::warn("/api/browse/pick: body non valido ignorato: " +
-                                   std::string(e.what()));
+                sendJson(res, errorJson("Mounts error: " + std::string(e.what())), 500);
             }
-#ifdef _WIN32
-            // Windows: not implemented via cross-compilation, rely on frontend fallback
-            sendJson(res, errorJson("Not available on this platform"), 501);
-            return;
-#elif defined(__APPLE__)
-        std::string cmd = "osascript -e 'POSIX path of (choose folder";
-        if (!currentPath.empty())
-            cmd += " default location \"" + currentPath + "\"";
-        cmd += ")' 2>/dev/null";
-        FILE* fp = popen(cmd.c_str(), "r");
-        if (!fp) {
-            sendJson(res, errorJson("No dialog tool available"), 501);
-            return;
-        }
-        std::array<char, 4096> buf{};
-        if (fgets(buf.data(), static_cast<int>(buf.size()), fp)) {
-            path = buf.data();
-            path.erase(std::find_if(path.rbegin(), path.rend(),
-                [](int c) { return c != '\n' && c != '\r'; }).base(), path.end());
-        }
-        int status = pclose(fp);
-        if (path.empty() || status != 0) {
-            sendJson(res, errorJson("No directory selected"), 400);
-            return;
-        }
-        sendJson(res, successJson({{"path", path}}));
-#else
-        std::string cmd;
-        if (system("which zenity >/dev/null 2>&1") == 0) {
-            cmd = "zenity --file-selection --directory";
-            if (!currentPath.empty())
-                cmd += " --filename=\"" + currentPath + "/\"";
-            cmd += " 2>/dev/null";
-        } else if (system("which kdialog >/dev/null 2>&1") == 0) {
-            cmd = "kdialog --getexistingdirectory";
-            if (!currentPath.empty())
-                cmd += " \"" + currentPath + "\"";
-            else
-                cmd += " .";
-            cmd += " 2>/dev/null";
-        } else {
-            sendJson(res, errorJson("No dialog tool available (install zenity or kdialog)"), 501);
-            return;
-        }
-        FILE* fp = popen(cmd.c_str(), "r");
-        if (!fp) {
-            sendJson(res, errorJson("No dialog tool available (install zenity or kdialog)"), 501);
-            return;
-        }
-        std::array<char, 4096> buf{};
-        if (fgets(buf.data(), static_cast<int>(buf.size()), fp)) {
-            path = buf.data();
-            path.erase(std::find_if(path.rbegin(), path.rend(),
-                [](int c) { return c != '\n' && c != '\r'; }).base(), path.end());
-        }
-        int status = pclose(fp);
-        if (path.empty() || status != 0) {
-            sendJson(res, errorJson("No directory selected"), 400);
-            return;
-        }
-        sendJson(res, successJson({{"path", path}}));
-#endif
+        });
+
+        // ---- MKDIR ----
+        m_svr.Post("/api/browse/mkdir",
+                   [this](const httplib::Request& req, httplib::Response& res) {
+                       try {
+                           auto body = nlohmann::json::parse(req.body);
+                           std::string parent = body.value("parent", "");
+                           std::string name = body.value("name", "");
+                           std::string outPath;
+                           auto st = Core::createDirectory(parent, name, &outPath);
+                           if (st != Core::FsOpStatus::Ok) {
+                               auto [msg, code] = std::pair<const char*, int>{"", 400};
+                               switch (st) {
+                               case Core::FsOpStatus::InvalidName:
+                                   msg = "Nome cartella non valido";
+                                   code = 400;
+                                   break;
+                               case Core::FsOpStatus::Exists:
+                                   msg = "La cartella esiste gia'";
+                                   code = 409;
+                                   break;
+                               case Core::FsOpStatus::NotFound:
+                                   msg = "Cartella padre non trovata";
+                                   code = 404;
+                                   break;
+                               case Core::FsOpStatus::NotPermitted:
+                                   msg = "Permessi insufficienti";
+                                   code = 403;
+                                   break;
+                               default:
+                                   msg = "Impossibile creare la cartella";
+                                   code = 500;
+                                   break;
+                               }
+                               sendJson(res, errorJson(msg), code);
+                               return;
+                           }
+                           sendJson(res, successJson({{"path", outPath}}));
+                       } catch (const std::exception& e) {
+                           sendJson(res, errorJson("Mkdir error: " + std::string(e.what())), 400);
+                       }
+                   });
+
+        // ---- TOUCH (crea file vuoto) ----
+        m_svr.Post("/api/browse/touch",
+                   [this](const httplib::Request& req, httplib::Response& res) {
+                       try {
+                           auto body = nlohmann::json::parse(req.body);
+                           std::string parent = body.value("parent", "");
+                           std::string name = body.value("name", "");
+                           std::string outPath;
+                           auto st = Core::createEmptyFile(parent, name, &outPath);
+                           if (st != Core::FsOpStatus::Ok) {
+                               const char* msg = "Impossibile creare il file";
+                               int code = 500;
+                               switch (st) {
+                               case Core::FsOpStatus::InvalidName:
+                                   msg = "Nome file non valido";
+                                   code = 400;
+                                   break;
+                               case Core::FsOpStatus::Exists:
+                                   msg = "Il file esiste gia'";
+                                   code = 409;
+                                   break;
+                               case Core::FsOpStatus::NotFound:
+                                   msg = "Cartella padre non trovata";
+                                   code = 404;
+                                   break;
+                               case Core::FsOpStatus::NotPermitted:
+                                   msg = "Permessi insufficienti";
+                                   code = 403;
+                                   break;
+                               default:
+                                   break;
+                               }
+                               sendJson(res, errorJson(msg), code);
+                               return;
+                           }
+                           sendJson(res, successJson({{"path", outPath}}));
+                       } catch (const std::exception& e) {
+                           sendJson(res, errorJson("Touch error: " + std::string(e.what())), 400);
+                       }
+                   });
+
+        // ---- DELETE (file/cartella; ricorsiva solo con conferma esplicita) ----
+        m_svr.Delete("/api/browse", [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                std::string path;
+                bool recursive = false;
+                if (!req.body.empty()) {
+                    auto body = nlohmann::json::parse(req.body);
+                    path = body.value("path", "");
+                    recursive = body.value("recursive", false);
+                } else if (req.has_param("path")) {
+                    path = req.get_param_value("path");
+                }
+                if (path.empty()) {
+                    sendJson(res, errorJson("Missing path"), 400);
+                    return;
+                }
+                uint64_t count = 0;
+                auto st = Core::removePath(path, recursive, &count);
+                if (st != Core::FsOpStatus::Ok) {
+                    const char* msg = "Impossibile rimuovere";
+                    int code = 500;
+                    switch (st) {
+                    case Core::FsOpStatus::InvalidName:
+                        msg = "Percorso non valido";
+                        code = 400;
+                        break;
+                    case Core::FsOpStatus::NotFound:
+                        msg = "Percorso non trovato";
+                        code = 404;
+                        break;
+                    case Core::FsOpStatus::NotEmpty:
+                        msg = "La cartella non e' vuota";
+                        code = 409;
+                        break;
+                    case Core::FsOpStatus::NotPermitted:
+                        msg = "Rimozione non consentita";
+                        code = 403;
+                        break;
+                    default:
+                        break;
+                    }
+                    nlohmann::json body = errorJson(msg, code);
+                    body["count"] = count;
+                    body["recursive"] = recursive;
+                    sendJson(res, body, code);
+                    return;
+                }
+                sendJson(res, successJson());
+            } catch (const std::exception& e) {
+                sendJson(res, errorJson("Delete error: " + std::string(e.what())), 400);
+            }
         });
 
         // ---- POSTER (path-based, stabile con ordinamento) ----

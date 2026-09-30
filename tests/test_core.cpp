@@ -11,12 +11,15 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <string>
+#include <vector>
 
 static int g_failures = 0;
 
@@ -318,6 +321,144 @@ static void testPublishNoReplace() {
     std::filesystem::remove_all(dir);
 }
 
+// ---- File picker: mount, creazione, rimozione ----
+
+static void testParseMountTable() {
+    // Fixture sintetica: i pseudo-fs vanno esclusi, FUSE/NFS vanno tenuti
+    // (sono dischi veri navigabili), il path con spazio va decodificato.
+    std::string table = "proc /proc proc rw,nosuid,relatime 0 0\n"
+                        "sysfs /sys sysfs rw,relatime 0 0\n"
+                        "tmpfs /run/user/1000 tmpfs rw 0 0\n"
+                        "overlay /var/lib/docker/overlay2/x overlay rw 0 0\n"
+                        "/dev/sda2 / ext4 rw,relatime 0 0\n"
+                        "/dev/sdb1 /mnt/My\\040Backup ext4 rw,relatime 0 0\n"
+                        "sshfs:/nas /mnt/nas fuse.sshfs rw 0 0\n"
+                        "/dev/sdc1 /media/usb ntfs3 rw 0 0\n"
+                        "binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc rw 0 0\n";
+
+    auto mounts = Core::parseMountTable(table);
+    std::vector<std::string> paths;
+    for (const auto& m : mounts)
+        paths.push_back(m.path);
+
+    auto has = [&](const std::string& p) {
+        return std::find(paths.begin(), paths.end(), p) != paths.end();
+    };
+
+    CHECK(has("/"));              // disco reale
+    CHECK(has("/mnt/My Backup")); // escape octal \040 → spazio
+    CHECK(has("/mnt/nas"));       // FUSE: disco navigabile
+    CHECK(has("/media/usb"));     // rimovibile
+    CHECK(!has("/proc"));         // pseudo-fs escluso
+    CHECK(!has("/sys"));
+    CHECK(!has("/run/user/1000"));             // tmpfs escluso
+    CHECK(!has("/var/lib/docker/overlay2/x")); // overlay escluso
+    CHECK(!has("/proc/sys/fs/binfmt_misc"));   // sotto /proc, escluso
+
+    // Tabella vuota: nessun mount, nessun crash.
+    CHECK(Core::parseMountTable("").empty());
+}
+
+static void testListMounts() {
+    auto mounts = Core::listMounts();
+    // Deve esserci almeno la root, o il picker non potrebbe uscire dai mount.
+    bool hasRoot = false;
+    for (const auto& m : mounts)
+        if (m.path == "/")
+            hasRoot = true;
+    CHECK(hasRoot);
+    for (const auto& m : mounts)
+        CHECK(!m.path.empty());
+}
+
+static void testFileOps() {
+    using Core::FsOpStatus;
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_fileops";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    std::string parent = dir.string();
+
+    // --- Creazione directory ---
+    std::string created;
+    CHECK(Core::createDirectory(parent, "Nuova Serie", &created) == FsOpStatus::Ok);
+    CHECK(std::filesystem::is_directory(created));
+    // Nome duplicato → Exists
+    CHECK(Core::createDirectory(parent, "Nuova Serie") == FsOpStatus::Exists);
+    // Nomi invalidi (separatore, punto, vuoto, troppo lungo)
+    CHECK(Core::createDirectory(parent, "a/b") == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, "..") == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, ".") == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, "") == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, std::string(300, 'x')) == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, "bad\\name") == FsOpStatus::InvalidName);
+    // Padre inesistente → NotFound
+    CHECK(Core::createDirectory((dir / "ghost").string(), "X") == FsOpStatus::NotFound);
+
+    // --- Creazione file vuoto ---
+    std::string fileCreated;
+    CHECK(Core::createEmptyFile(parent, "vuoto.mkv", &fileCreated) == FsOpStatus::Ok);
+    CHECK(std::filesystem::is_regular_file(fileCreated));
+    CHECK(std::filesystem::file_size(fileCreated) == 0);
+    CHECK(Core::createEmptyFile(parent, "vuoto.mkv") == FsOpStatus::Exists);
+    CHECK(Core::createEmptyFile(parent, "a/b.mkv") == FsOpStatus::InvalidName);
+
+    // --- Listing con file ---
+    auto dirsOnly = Core::listDirectories(parent);
+    CHECK(dirsOnly.size() == 1);
+    CHECK(dirsOnly[0].name == "Nuova Serie");
+    CHECK(dirsOnly[0].isDir);
+
+    auto withFiles = Core::listDirectories(parent, true);
+    CHECK(withFiles.size() == 2);
+    // Le directory vengono prima dei file, poi in ordine alfabetico.
+    CHECK(withFiles[0].isDir);
+    CHECK(withFiles[1].isDir == false);
+    CHECK(withFiles[1].name == "vuoto.mkv");
+    CHECK(withFiles[1].size == 0);
+
+    // --- Rimozione: file e cartella vuota ---
+    CHECK(Core::removePath(fileCreated, false) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(fileCreated));
+    CHECK(Core::removePath(fileCreated, false) == FsOpStatus::NotFound);
+    CHECK(Core::removePath(created, false) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(created));
+
+    // --- Rimozione: cartella non vuota, prima e dopo recursive ---
+    std::string nested;
+    CHECK(Core::createDirectory(parent, "Con Contenuto", &nested) == FsOpStatus::Ok);
+    Core::createEmptyFile(nested, "ep1.mkv");
+    Core::createEmptyFile(nested, "ep2.mkv");
+    std::filesystem::create_directories(std::filesystem::path(nested) / "sub");
+    Core::createEmptyFile((std::filesystem::path(nested) / "sub").string(), "ep3.mkv");
+
+    uint64_t count = 0;
+    CHECK(Core::removePath(nested, false, &count) == FsOpStatus::NotEmpty);
+    CHECK(count == 4);                      // 2 file + 1 subdir + 1 file dentro sub
+    CHECK(std::filesystem::exists(nested)); // non vuota: intatta
+
+    CHECK(Core::removePath(nested, true) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(nested));
+
+    // --- Guardrail: la root non è mai rimovibile ---
+    CHECK(Core::removePath("/", true) == FsOpStatus::NotPermitted);
+    CHECK(Core::removePath("", true) == FsOpStatus::InvalidName);
+    // ... né il punto di mount della macchina (su Linux qualcuno esiste)
+    for (const auto& m : Core::listMounts()) {
+        if (m.path == "/")
+            continue;
+        CHECK(Core::removePath(m.path, true) == FsOpStatus::NotPermitted);
+    }
+
+    // --- espansione ~ (solo se HOME è impostato) ---
+    if (const char* home = std::getenv("HOME")) {
+        std::string expanded = Core::expandUserPath("~");
+        CHECK(expanded == std::string(home));
+        CHECK(Core::expandUserPath("/tmp") == "/tmp");
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -331,6 +472,9 @@ int main(int argc, char** argv) {
     testConfigMigration();
     testInstanceLock(argv[0]);
     testPublishNoReplace();
+    testParseMountTable();
+    testListMounts();
+    testFileOps();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";
