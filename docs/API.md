@@ -208,7 +208,8 @@ comando "su" funziona anche su Windows, dove il separatore è `\`.
 }
 ```
 
-`parent` è `null` alla root. Un path inesistente (o non directory) restituisce
+`parent` è `null` alla root (`/` su POSIX, radice del drive su Windows).
+Un path inesistente (o non directory) restituisce
 `entries` vuota, non un errore.
 
 ---
@@ -290,8 +291,11 @@ elementi, così il client può chiedere una seconda conferma.
 | `La cartella non e' vuota` | 409 | directory con contenuto e `recursive` assente; body: `{"error": ..., "code": 409, "count": 12}` |
 | `Rimozione non consentita` | 403 | root, radice di un drive o punto di mount |
 
-La protezione di root e mount point è voluta: il server è open-access e non
-deve poter diventare un `rm -rf` su `/`.
+La protezione di root, radici dei drive e punti di mount è voluta: il server
+è open-access e non deve poter diventare un `rm -rf` su `/`. Il guardrail
+conosce TUTTI i punti di mount (anche pseudo-fs e tmpfs, che il picker non
+mostra) e scatta prima ancora del check di esistenza, così resta attivo anche
+se `stat` fallisce per permessi o voci stantie.
 
 ---
 

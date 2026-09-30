@@ -223,4 +223,62 @@ describe('DirectoryBrowser', () => {
     render(DirectoryBrowser, props);
     await waitFor(() => expect(screen.getByText('Path inesistente')).toBeTruthy());
   });
+
+  it('preferiti: se il salvataggio fallisce, rollback allo stato precedente', async () => {
+    stubBrowser({ pinned: [] });
+    const setSpy = vi.spyOn(api.config, 'set').mockRejectedValue(new Error('Disco pieno'));
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+
+    const star = screen.getByLabelText('Preferito');
+    await fireEvent.click(star);
+    await waitFor(() => expect(screen.getByText(/Salvataggio preferiti fallito/)).toBeTruthy());
+    expect(setSpy).toHaveBeenCalledWith({ pinned_paths: ['/media'] });
+
+    // Senza rollback il pin ottimistico resterebbe: il secondo click
+    // toglierebbe invece di ri-aggiungere. Con rollback, riprova ad aggiungere.
+    await fireEvent.click(star);
+    await waitFor(() => expect(setSpy).toHaveBeenCalledTimes(2));
+    expect(setSpy).toHaveBeenNthCalledWith(2, { pinned_paths: ['/media'] });
+  });
+
+  it('preferiti: se la rimozione fallisce, il pin resta', async () => {
+    stubBrowser({ pinned: ['/media'] });
+    const setSpy = vi.spyOn(api.config, 'set').mockRejectedValue(new Error('Disco pieno'));
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('/media')).toBeTruthy());
+
+    const star = screen.getByLabelText('Preferito');
+    await fireEvent.click(star);
+    await waitFor(() => expect(screen.getByText(/Salvataggio preferiti fallito/)).toBeTruthy());
+    expect(setSpy).toHaveBeenCalledWith({ pinned_paths: [] });
+
+    // Con rollback il pin e' ancora li': il secondo click riprova a toglierlo.
+    await fireEvent.click(star);
+    await waitFor(() => expect(setSpy).toHaveBeenCalledTimes(2));
+    expect(setSpy).toHaveBeenNthCalledWith(2, { pinned_paths: [] });
+  });
+
+  it('dischi: Aggiorna rilegge i mount (volumi inseriti a caldo)', async () => {
+    const mountsSpy = vi
+      .spyOn(api.browse, 'mounts')
+      .mockResolvedValue({ success: true, mounts: [{ name: 'usb', path: '/media/usb' }] });
+    vi.spyOn(api.browse, 'list').mockResolvedValue(browseOk());
+    vi.spyOn(api.config, 'get').mockResolvedValue({ success: true, config: {} });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('usb')).toBeTruthy());
+    expect(mountsSpy).toHaveBeenCalledTimes(1);
+
+    await fireEvent.click(screen.getByText('Aggiorna'));
+    await waitFor(() => expect(mountsSpy).toHaveBeenCalledTimes(2));
+  });
+
+  it('campo manuale: dopo la navigazione mostra il path normalizzato dal server', async () => {
+    vi.spyOn(api.browse, 'list').mockResolvedValue(browseOk({ path: '/media' }));
+    vi.spyOn(api.browse, 'mounts').mockResolvedValue({ success: true, mounts: [] });
+    vi.spyOn(api.config, 'get').mockResolvedValue({ success: true, config: {} });
+    render(DirectoryBrowser, { ...props, currentPath: '/media/' });
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+    expect(screen.getByPlaceholderText('Inserisci percorso manualmente...').value).toBe('/media');
+  });
 });

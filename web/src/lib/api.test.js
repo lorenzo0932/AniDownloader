@@ -180,6 +180,72 @@ describe('api.config / download / logs / status', () => {
   });
 });
 
+describe('api.browse', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('list: GET /api/browse con path encoded, default senza file', async () => {
+    fetch.mockResolvedValue(jsonResponse({ entries: [] }));
+    await api.browse.list('/home/u/Video Anime');
+    expect(fetch).toHaveBeenCalledWith(
+      BASE + '/api/browse?path=' + encodeURIComponent('/home/u/Video Anime'),
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('list: files=true aggiunge files=1', async () => {
+    fetch.mockResolvedValue(jsonResponse({ entries: [] }));
+    await api.browse.list('/media', true);
+    expect(fetch).toHaveBeenCalledWith(
+      BASE + '/api/browse?path=' + encodeURIComponent('/media') + '&files=1',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it('mounts: GET /api/browse/mounts', async () => {
+    fetch.mockResolvedValue(jsonResponse({ mounts: [] }));
+    await api.browse.mounts();
+    expect(fetch).toHaveBeenCalledWith(BASE + '/api/browse/mounts', expect.objectContaining({ method: 'GET' }));
+  });
+
+  it('mkdir/touch: POST con parent+name nel body', async () => {
+    fetch.mockResolvedValue(jsonResponse({ path: '/media/Nuova' }));
+    await api.browse.mkdir('/media', 'Nuova');
+    expect(fetch).toHaveBeenCalledWith(
+      BASE + '/api/browse/mkdir',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ parent: '/media', name: 'Nuova' }) }),
+    );
+    await api.browse.touch('/media', 'ep01.mkv');
+    expect(fetch).toHaveBeenCalledWith(
+      BASE + '/api/browse/touch',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ parent: '/media', name: 'ep01.mkv' }) }),
+    );
+  });
+
+  it('remove: DELETE con path+recursive nel body', async () => {
+    fetch.mockResolvedValue(jsonResponse({ success: true }));
+    await api.browse.remove('/media/Alpha', true);
+    expect(fetch).toHaveBeenCalledWith(
+      BASE + '/api/browse',
+      expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ path: '/media/Alpha', recursive: true }) }),
+    );
+  });
+
+  it('remove 409: ApiError con status e count del server', async () => {
+    fetch.mockResolvedValue(
+      jsonResponse({ success: false, error: "La cartella non e' vuota", code: 409, count: 12 }, 409),
+    );
+    const err = await api.browse.remove('/media/Alpha', false).catch((e) => e);
+    expect(err.status).toBe(409);
+    expect(err.count).toBe(12);
+  });
+});
+
 describe('posterUrl', () => {
   it('path vuoto: ritorna stringa vuota', () => {
     expect(posterUrl('')).toBe('');

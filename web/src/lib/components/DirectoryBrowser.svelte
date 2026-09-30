@@ -1,5 +1,5 @@
 <script>
-  import { api, BASE } from '../api.js';
+  import { api } from '../api.js';
   import ConfirmModal from './ConfirmModal.svelte';
 
   let { show = false, currentPath = '~/Video', title = 'Sfoglia Directory', onselect, oncancel } = $props();
@@ -61,6 +61,9 @@
       const data = await api.browse.list(pathToLoad, true);
       entries = data.entries || [];
       path = data.path || pathToLoad;
+      // Il campo manuale segue la navigazione: mostra sempre il path reale
+      // (normalizzato dal server), non l'ultimo valore digitato.
+      manualInput = path;
       parent = data.parent ?? null;
     } catch (e) {
       entries = [];
@@ -71,7 +74,8 @@
   }
 
   // Dischi e preferiti sono indipendenti dalla cartella corrente: si caricano
-  // una volta all'apertura (e su refresh esplicito).
+  // all'apertura e su refresh esplicito (pulsante "Aggiorna" sui Dischi,
+  // utile per volumi inseriti a caldo mentre il picker e' aperto).
   async function loadSidebars() {
     try {
       const data = await api.browse.mounts();
@@ -87,15 +91,10 @@
     }
   }
 
-  // Il parent arriva dal server: niente splitting del path, quindi funziona
-  // anche su Windows (separatore '\') e con path che contengono spazi.
+  // Il parent arriva dal server (null alla root): niente splitting del path,
+  // quindi funziona anche su Windows (separatore '\').
   function goUp() {
-    if (parent) {
-      load(parent);
-      return;
-    }
-    if (!parent && path === '/') return;
-    // Fallback: nessun parent dal server (root), resta fermo.
+    if (parent) load(parent);
   }
 
   function handleKeydown(e) {
@@ -116,12 +115,15 @@
 
   async function togglePin() {
     if (!path) return;
+    // Ottimistico con rollback vero: in caso di errore si ripristina lo
+    // stato precedente, non lo si ricalcola da quello gia' mutato.
+    const prev = pinned;
     const next = isPinned(path) ? pinned.filter((p) => p !== path) : [path, ...pinned].slice(0, MAX_PINS);
     pinned = next;
     try {
       await api.config.set({ pinned_paths: next });
     } catch (e) {
-      pinned = pinned.includes(path) ? pinned.filter((p) => p !== path) : [path, ...pinned].slice(0, MAX_PINS);
+      pinned = prev;
       error = 'Salvataggio preferiti fallito: ' + e.message;
     }
   }
@@ -296,7 +298,10 @@
           {/if}
 
           {#if mounts.length > 0}
-            <div class="browser-section">Dischi</div>
+            <div class="browser-section section-row">
+              <span>Dischi</span>
+              <button type="button" class="btn-mini" onclick={loadSidebars} title="Rileggi i dischi montati">Aggiorna</button>
+            </div>
             {#each mounts as m (m.path)}
               <div class="browser-entry side-entry" onclick={() => load(m.path)} role="button" tabindex="0"
                    onkeydown={(e) => e.key === 'Enter' && load(m.path)}>
@@ -468,6 +473,14 @@
     color: var(--text-muted); background: var(--bg-tertiary);
     border-bottom: 1px solid var(--border-color);
   }
+  .section-row { display: flex; align-items: center; justify-content: space-between; }
+  .btn-mini {
+    padding: 0.15rem 0.5rem; font-size: 0.7rem; font-weight: 600;
+    text-transform: none; letter-spacing: normal;
+    background: none; border: 1px solid var(--border-color); border-radius: 4px;
+    color: var(--text-secondary); cursor: pointer;
+  }
+  .btn-mini:hover { border-color: var(--accent); color: var(--text-primary); }
   .browser-entry {
     display: flex; align-items: center; gap: 0.7rem;
     padding: 0.55rem 0.75rem; cursor: pointer; font-size: 0.85rem;

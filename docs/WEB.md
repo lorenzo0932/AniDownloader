@@ -119,9 +119,11 @@ accesso al filesystem dal JavaScript).
 
 - **Ricerca**: filtro locale sui nomi della cartella corrente, senza roundtrip.
 - **Dischi**: sezione con i volumi montati (`/api/browse/mounts`), per non
-  dover risalire a mano a `/`.
+  dover risalire a mano a `/`. Il pulsante "Aggiorna" rilegge i mount, utile
+  per volumi inseriti a caldo mentre il picker è aperto.
 - **Preferiti**: la stella nel path bar pinna il path corrente in
-  `config.pinned_paths` (max 20, più recenti in cima). I pin su dischi non più
+  `config.pinned_paths` (max 20, più recenti in cima, con rollback se il
+  salvataggio fallisce). I pin su dischi non più
   montati restano visibili e riportano l'errore al clic.
 - **Creazione**: `+ Cartella` / `+ File` aprono una riga inline. La validazione
   del nome è duplicata lato client per evitare un roundtrip inutile.
