@@ -94,7 +94,7 @@ if (it != files.end()) {
 | `theme.svelte.js` | Tema dark/light/system con localStorage |
 | `Dropdown.svelte` | Componente dropdown riutilizzabile |
 | `ConfirmModal.svelte` | Modale conferma |
-| `DirectoryBrowser.svelte` | Browser directory per selezionare path |
+| `DirectoryBrowser.svelte` | File picker: ricerca, dischi, preferiti, creazione, rimozione |
 
 ### api.js
 
@@ -105,9 +105,31 @@ export const api = {
     download: { start, stop, status },
     logs: (lines) => ...,
     status: () => ...,
+    browse: { list, mounts, mkdir, touch, remove },
     sse: () => new EventSource('/api/download/events'),
 };
 ```
+
+### DirectoryBrowser
+
+Il file picker è un componente singolo, usato sia dalla pagina Serie sia dalle
+Impostazioni. Funziona identico in browser (`--web`) e nel sidecar Tauri,
+perché ogni operazione passa dagli endpoint HTTP del backend C++ (nessun
+accesso al filesystem dal JavaScript).
+
+- **Ricerca**: filtro locale sui nomi della cartella corrente, senza roundtrip.
+- **Dischi**: sezione con i volumi montati (`/api/browse/mounts`), per non
+  dover risalire a mano a `/`.
+- **Preferiti**: la stella nel path bar pinna il path corrente in
+  `config.pinned_paths` (max 20, più recenti in cima). I pin su dischi non più
+  montati restano visibili e riportano l'errore al clic.
+- **Creazione**: `+ Cartella` / `+ File` aprono una riga inline. La validazione
+  del nome è duplicata lato client per evitare un roundtrip inutile.
+- **Rimozione**: l'icona cestino su ogni riga chiede conferma. Se il server
+  risponde `409` (cartella non vuota) parte una **seconda** conferma con il
+  conteggio degli elementi e,in quel caso, la rimozione è ricorsiva.
+- **"Su"**: usa il `parent` restituito dal server invece di splittare il path,
+  così funziona anche su Windows (separatore `\`).
 
 ### Tema
 

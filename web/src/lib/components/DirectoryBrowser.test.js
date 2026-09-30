@@ -1,0 +1,226 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
+import DirectoryBrowser from './DirectoryBrowser.svelte';
+import { api } from '../api.js';
+
+const ENTRIES = [
+  { name: 'Alpha', path: '/media/Alpha', type: 'dir', mtime: 1000, size: 0 },
+  { name: 'Beta', path: '/media/Beta', type: 'dir', mtime: 2000, size: 0 },
+  { name: 'ep01.mkv', path: '/media/ep01.mkv', type: 'file', mtime: 3000, size: 900 },
+];
+
+function browseOk(overrides = {}) {
+  return {
+    success: true,
+    entries: ENTRIES,
+    path: '/media',
+    parent: '/',
+    ...overrides,
+  };
+}
+
+function stubBrowser({ list = browseOk(), mounts = [], pinned = [] } = {}) {
+  vi.spyOn(api.browse, 'list').mockResolvedValue(list);
+  vi.spyOn(api.browse, 'mounts').mockResolvedValue({ success: true, mounts });
+  vi.spyOn(api.config, 'get').mockResolvedValue({ success: true, config: { pinned_paths: pinned } });
+}
+
+const props = { show: true, currentPath: '/media', onselect: vi.fn(), oncancel: vi.fn() };
+
+describe('DirectoryBrowser', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('show=false: non renderizza nulla', () => {
+    stubBrowser();
+    render(DirectoryBrowser, { ...props, show: false });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('show=true: elenca dir e file con il path corrente', async () => {
+    stubBrowser();
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.getByText('ep01.mkv')).toBeTruthy();
+    expect(api.browse.list).toHaveBeenCalledWith('/media', true);
+  });
+
+  it('ricerca: filtra in locale per nome, case-insensitive', async () => {
+    stubBrowser();
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+
+    await fireEvent.input(screen.getByLabelText('Cerca'), { target: { value: 'bet' } });
+    await waitFor(() => expect(screen.queryByText('Alpha')).toBeNull());
+    expect(screen.getByText('Beta')).toBeTruthy();
+    // Anche i file sono filtrati: ep01.mkv non contiene "bet".
+    expect(screen.queryByText('ep01.mkv')).toBeNull();
+    // Nessuna chiamata di rete: il filtro è puramente client-side.
+    expect(api.browse.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('ricerca senza risultati: messaggio esplicito', async () => {
+    stubBrowser();
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+    await fireEvent.input(screen.getByLabelText('Cerca'), { target: { value: 'zzz' } });
+    await waitFor(() => expect(screen.getByText(/Nessun elemento corrisponde/)).toBeTruthy());
+  });
+
+  it('dischi: elenca i mount e naviga al click', async () => {
+    stubBrowser({ mounts: [{ name: 'Disco locale (C:)', path: 'C:\\' }] });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Dischi')).toBeTruthy());
+    expect(screen.getByText('Disco locale (C:)')).toBeTruthy();
+
+    await fireEvent.click(screen.getByText('Disco locale (C:)'));
+    await waitFor(() => expect(api.browse.list).toHaveBeenCalledWith('C:\\', true));
+  });
+
+  it('preferiti: carica da config e la stella pinna il path corrente', async () => {
+    stubBrowser({ pinned: ['/media/Vecchia'] });
+    const setSpy = vi.spyOn(api.config, 'set').mockResolvedValue({ success: true });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('/media/Vecchia')).toBeTruthy());
+
+    await fireEvent.click(screen.getByLabelText('Preferito'));
+    await waitFor(() =>
+      expect(setSpy).toHaveBeenCalledWith({ pinned_paths: ['/media', '/media/Vecchia'] })
+    );
+  });
+
+  it('preferiti: la stella toglie un path gia pinnato', async () => {
+    stubBrowser({ pinned: ['/media'] });
+    const setSpy = vi.spyOn(api.config, 'set').mockResolvedValue({ success: true });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('/media')).toBeTruthy());
+
+    await fireEvent.click(screen.getByLabelText('Preferito'));
+    await waitFor(() => expect(setSpy).toHaveBeenCalledWith({ pinned_paths: [] }));
+  });
+
+  it('su: usa il parent del server, senza splittare il path', async () => {
+    stubBrowser();
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+
+    await fireEvent.click(screen.getByText('.. (su)'));
+    await waitFor(() => expect(api.browse.list).toHaveBeenCalledWith('/', true));
+  });
+
+  it('su disabilitato alla root (parent null)', async () => {
+    stubBrowser({ list: browseOk({ path: '/', parent: null }) });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+    expect(screen.queryByText('.. (su)')).toBeNull();
+  });
+
+  it('creazione cartella: crea e ricarica', async () => {
+    stubBrowser();
+    const mkdir = vi.spyOn(api.browse, 'mkdir').mockResolvedValue({ success: true, path: '/media/Nuova' });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+
+    await fireEvent.click(screen.getByText('+ Cartella'));
+    await fireEvent.input(screen.getByLabelText('Nuovo nome'), { target: { value: 'Nuova' } });
+    await fireEvent.click(screen.getByText('Crea'));
+
+    await waitFor(() => expect(mkdir).toHaveBeenCalledWith('/media', 'Nuova'));
+    await waitFor(() => expect(api.browse.list).toHaveBeenCalledTimes(2));
+  });
+
+  it('creazione: nome con separatore rifiutata client-side', async () => {
+    stubBrowser();
+    const mkdir = vi.spyOn(api.browse, 'mkdir').mockResolvedValue({ success: true });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+
+    await fireEvent.click(screen.getByText('+ Cartella'));
+    await fireEvent.input(screen.getByLabelText('Nuovo nome'), { target: { value: 'a/b' } });
+    await fireEvent.click(screen.getByText('Crea'));
+
+    await waitFor(() => expect(screen.getByText('Nome non valido')).toBeTruthy());
+    expect(mkdir).not.toHaveBeenCalled();
+  });
+
+  it('creazione file: usa touch', async () => {
+    stubBrowser();
+    const touch = vi.spyOn(api.browse, 'touch').mockResolvedValue({ success: true });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+
+    await fireEvent.click(screen.getByText('+ File'));
+    await fireEvent.input(screen.getByLabelText('Nuovo nome'), { target: { value: 'nuovo.mkv' } });
+    await fireEvent.click(screen.getByText('Crea'));
+    await waitFor(() => expect(touch).toHaveBeenCalledWith('/media', 'nuovo.mkv'));
+  });
+
+  it('elimina file: prima conferma poi remove non ricorsivo', async () => {
+    stubBrowser();
+    const remove = vi.spyOn(api.browse, 'remove').mockResolvedValue({ success: true });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('ep01.mkv')).toBeTruthy());
+
+    await fireEvent.click(screen.getByLabelText('Elimina ep01.mkv'));
+    await waitFor(() => expect(screen.getByText('Eliminare?')).toBeTruthy());
+    await fireEvent.click(screen.getByText('Elimina'));
+
+    await waitFor(() => expect(remove).toHaveBeenCalledWith('/media/ep01.mkv', false));
+  });
+
+  it('elimina cartella non vuota: 409 poi seconda conferma ricorsiva', async () => {
+    stubBrowser();
+    const remove = vi
+      .spyOn(api.browse, 'remove')
+      .mockRejectedValueOnce(Object.assign(new Error('La cartella non è vuota'), { status: 409, count: 3 }))
+      .mockResolvedValueOnce({ success: true });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeTruthy());
+
+    await fireEvent.click(screen.getByLabelText('Elimina Alpha'));
+    await waitFor(() => expect(screen.getByText('Eliminare?')).toBeTruthy());
+    await fireEvent.click(screen.getByText('Elimina'));
+
+    // Dopo il 409 compare il secondo dialogo, con il conteggio elementi.
+    await waitFor(() => expect(screen.getByText('Eliminare tutto il contenuto?')).toBeTruthy());
+    expect(screen.getByText(/3 elementi/)).toBeTruthy();
+
+    await fireEvent.click(screen.getByText('Elimina tutto'));
+    await waitFor(() => expect(remove).toHaveBeenLastCalledWith('/media/Alpha', true));
+  });
+
+  it('elimina: annulla il primo dialogo senza chiamare remove', async () => {
+    stubBrowser();
+    const remove = vi.spyOn(api.browse, 'remove').mockResolvedValue({ success: true });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Alpha')).toBeTruthy());
+
+    await fireEvent.click(screen.getByLabelText('Elimina Alpha'));
+    await waitFor(() => expect(screen.getByText('Eliminare?')).toBeTruthy());
+    // "Annulla" del dialogo di conferma, non quello del footer del picker.
+    const confirmDialog = screen.getAllByRole('dialog').at(-1);
+    await fireEvent.click(within(confirmDialog).getByText('Annulla'));
+
+    await waitFor(() => expect(screen.queryByText('Eliminare?')).toBeNull());
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('seleziona: ritorna il path corrente', async () => {
+    stubBrowser();
+    const onselect = vi.fn();
+    render(DirectoryBrowser, { ...props, onselect });
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+    await fireEvent.click(screen.getByText('Seleziona questa cartella'));
+    expect(onselect).toHaveBeenCalledWith('/media');
+  });
+
+  it('errore di caricamento: mostrato all utente', async () => {
+    vi.spyOn(api.browse, 'list').mockRejectedValue(new Error('Path inesistente'));
+    vi.spyOn(api.browse, 'mounts').mockResolvedValue({ success: true, mounts: [] });
+    vi.spyOn(api.config, 'get').mockResolvedValue({ success: true, config: {} });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Path inesistente')).toBeTruthy());
+  });
+});

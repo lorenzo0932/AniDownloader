@@ -14,7 +14,11 @@ async function request(method, path, body) {
   const text = await res.text();
   try {
     const data = JSON.parse(text);
-    if (!res.ok) throw new ApiError(data.error || data.code || res.statusText, res.status);
+    if (!res.ok) {
+      // count: presente nel 409 di DELETE /api/browse (cartella non vuota),
+      // usato dal file picker per la seconda conferma.
+      throw new ApiError(data.error || data.code || res.statusText, res.status, data.count);
+    }
     return data;
   } catch (e) {
     if (e instanceof ApiError) throw e;
@@ -23,9 +27,10 @@ async function request(method, path, body) {
 }
 
 class ApiError extends Error {
-  constructor(msg, status) {
+  constructor(msg, status, count) {
     super(msg);
     this.status = status;
+    this.count = count;
   }
 }
 
@@ -59,6 +64,19 @@ export const api = {
   logs: (lines = 100) => request('GET', `/api/log?lines=${lines}`),
 
   status: () => request('GET', '/api/status'),
+
+  // File picker: navigazione, dischi montati, creazione e rimozione.
+  browse: {
+    list: (path, files = false) => {
+      let p = '/api/browse?path=' + encodeURIComponent(path);
+      if (files) p += '&files=1';
+      return request('GET', p);
+    },
+    mounts: () => request('GET', '/api/browse/mounts'),
+    mkdir: (parent, name) => request('POST', '/api/browse/mkdir', { parent, name }),
+    touch: (parent, name) => request('POST', '/api/browse/touch', { parent, name }),
+    remove: (path, recursive = false) => request('DELETE', '/api/browse', { path, recursive }),
+  },
 
   sse: () => new EventSource(BASE + '/api/download/events'),
 };
