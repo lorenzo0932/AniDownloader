@@ -180,32 +180,37 @@ namespace Core {
             // In caso di Exists (file finale apparso nel frattempo) il lavoro è
             // già compiuto: il .part è stato validato sano prima, quindi si
             // puliscono i parziali e si conferma. Se il finale in conflitto è
-            // corrotto, lo si sostituisce col .part valido (mai file corrotto
-            // in media). NoAtomicSupport = errore strutturale del filesystem.
-            switch (publishNoReplace(partFile, fullFile)) {
-            case PublishStatus::Success:
-                break;
-            case PublishStatus::Exists: {
+            // corrotto NON lo si cancella: si segnala il path, il .part resta per
+            // il run successivo (mai distruggere l'unica copia su disco).
+            int publishErrno = 0;
+            auto publishStatus = publishNoReplace(partFile, fullFile, &publishErrno);
+            if (publishStatus == PublishStatus::Exists) {
                 if (MediaProbe::isMediaFileHealthy(fullFile, m_stopSignal)) {
                     std::error_code ec;
                     fs::remove(partFile, ec);
                     fs::remove(partAria2, ec);
+                    res.downloadTime =
+                        std::chrono::duration<double>(std::chrono::steady_clock::now() - startDl)
+                            .count();
                     res.success = true;
                     Logger::info(series.name + ": episodio già presente, salto il publish");
                     return res;
                 }
-                std::error_code ec;
-                fs::remove(fullFile, ec);
-                if (publishNoReplace(partFile, fullFile) == PublishStatus::Success) {
-                    break;
-                }
-                res.errorMessage = "Publish fallito dopo risoluzione conflitto (file corrotto)";
+                res.errorMessage = "Il file esistente è corrotto: rimuovilo manualmente (" +
+                                   fullFile + ") per completare il publish";
                 Logger::error(series.name + ": " + res.errorMessage);
                 return res;
             }
-            case PublishStatus::NoAtomicSupport:
+            if (publishStatus == PublishStatus::NoAtomicSupport) {
                 res.errorMessage = "Publish fallito: il filesystem non supporta "
                                    "il rilascio atomico no-replace (nessun hard link)";
+                Logger::error(series.name + ": " + res.errorMessage);
+                return res;
+            }
+            if (publishStatus == PublishStatus::Error) {
+                res.errorMessage = "Publish fallito: errore filesystem";
+                if (publishErrno != 0)
+                    res.errorMessage += " (errno " + std::to_string(publishErrno) + ")";
                 Logger::error(series.name + ": " + res.errorMessage);
                 return res;
             }

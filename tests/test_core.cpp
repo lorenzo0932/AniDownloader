@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -287,14 +288,30 @@ static void testPublishNoReplace() {
         std::filesystem::create_directories(dir);
     }
 
-// 3) Fallback link+unlink (testata direttamente): esercita la funzione reale
-//    che in produzione va in azione quando il fs non supporta la primitiva
-//    rename no-replace (es. FUSE). Su un fs POSIX locale il comportamento è
-//    deterministico: successo senza sovrascritture, EEXIST preservato.
+    // 3) Error: condizione reale (ENOENT, temporaneo sparito) distinta da
+    //    NoAtomicSupport. Il finale non deve essere toccato.
+    {
+        auto tmp = dir / "ep3.part"; // non creato
+        auto fin = dir / "ep3.mp4";
+        createSizedFile(fin, 3'500);
+        int publishErrno = 0;
+        CHECK(Core::publishNoReplace(tmp.string(), fin.string(), &publishErrno) ==
+              PublishStatus::Error);
+#if defined(__linux__) || defined(__APPLE__)
+        CHECK(publishErrno == ENOENT);
+#endif
+        CHECK(std::filesystem::file_size(fin) == 3'500);
+        std::filesystem::remove(fin);
+    }
+
+    // 4) Fallback link+unlink (testata direttamente): esercita la funzione reale
+    //    che in produzione va in azione quando il fs non supporta la primitiva
+    //    rename no-replace (es. FUSE). Su un fs POSIX locale il comportamento è
+    //    deterministico: successo senza sovrascritture, EEXIST preservato.
 #if defined(__linux__) || defined(__APPLE__)
     {
-        auto tmp = dir / "ep3.part";
-        auto fin = dir / "ep3.mp4";
+        auto tmp = dir / "ep4.part";
+        auto fin = dir / "ep4.mp4";
         createSizedFile(tmp, 4'000);
         CHECK(Core::publishNoReplaceFallback(tmp.string(), fin.string()) ==
               Core::PublishStatus::Success);
