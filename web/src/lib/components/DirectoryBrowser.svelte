@@ -17,6 +17,9 @@
 
   let mounts = $state([]);
   let pinned = $state([]);
+  let places = $state([]);
+  // Drawer mobile: su desktop la sidebar e' sempre visibile (CSS).
+  let sidebarOpen = $state(false);
 
   // Creazione: null | 'dir' | 'file'
   let creating = $state(null);
@@ -73,9 +76,9 @@
     }
   }
 
-  // Dischi e preferiti sono indipendenti dalla cartella corrente: si caricano
-  // all'apertura e su refresh esplicito (pulsante "Aggiorna" sui Dischi,
-  // utile per volumi inseriti a caldo mentre il picker e' aperto).
+  // Posizioni, dischi e preferiti sono indipendenti dalla cartella corrente:
+  // si caricano all'apertura e su refresh esplicito (pulsante "Aggiorna" sui
+  // Dischi, utile per volumi inseriti a caldo mentre il picker e' aperto).
   async function loadSidebars() {
     try {
       const data = await api.browse.mounts();
@@ -84,11 +87,23 @@
       mounts = [];
     }
     try {
+      const data = await api.browse.places();
+      places = data.places || [];
+    } catch {
+      places = [];
+    }
+    try {
       const data = await api.config.get();
       pinned = Array.isArray(data.config?.pinned_paths) ? data.config.pinned_paths : [];
     } catch {
       pinned = [];
     }
+  }
+
+  // Navigazione dalla sidebar: carica e (su mobile) chiude il drawer.
+  function nav(p) {
+    sidebarOpen = false;
+    load(p);
   }
 
   // Il parent arriva dal server (null alla root): niente splitting del path,
@@ -204,6 +219,7 @@
       path = currentPath;
       manualInput = currentPath;
       search = '';
+      sidebarOpen = false;
       cancelCreate();
       cancelDelete();
       error = '';
@@ -217,6 +233,10 @@
   <div class="browser-overlay" onclick={oncancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
     <div class="browser-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
       <div class="browser-header">
+        <button type="button" class="btn-icon-sm side-toggle" onclick={() => sidebarOpen = !sidebarOpen}
+                title="Posizioni e dischi" aria-label="Posizioni e dischi" aria-expanded={sidebarOpen}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
         <h3>{title}</h3>
       </div>
 
@@ -250,6 +270,50 @@
         {/if}
       </div>
 
+      <div class="browser-body">
+        <aside class="browser-sidebar" class:open={sidebarOpen} aria-label="Posizioni, preferiti e dischi">
+          {#if places.length > 0}
+            <div class="browser-section">Posizioni</div>
+            {#each places as pl (pl.path)}
+              <div class="browser-entry side-entry" onclick={() => nav(pl.path)} role="button" tabindex="0"
+                   onkeydown={(e) => e.key === 'Enter' && nav(pl.path)} title={pl.path}>
+                {#if pl.id === 'home'}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"/></svg>
+                {:else}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                {/if}
+                <span class="entry-name">{pl.name}</span>
+              </div>
+            {/each}
+          {/if}
+
+          {#if pinned.length > 0}
+            <div class="browser-section">Preferiti</div>
+            {#each pinned as p (p)}
+              <div class="browser-entry side-entry" onclick={() => nav(p)} role="button" tabindex="0"
+                   onkeydown={(e) => e.key === 'Enter' && nav(p)} title={p}>
+                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" class="pin-icon"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>
+                <span class="entry-name">{p}</span>
+              </div>
+            {/each}
+          {/if}
+
+          <div class="browser-section section-row">
+            <span>Dischi</span>
+            <button type="button" class="btn-mini" onclick={loadSidebars} title="Rileggi i dischi montati">Aggiorna</button>
+          </div>
+          {#each mounts as m (m.path)}
+            <div class="browser-entry side-entry" onclick={() => nav(m.path)} role="button" tabindex="0"
+                 onkeydown={(e) => e.key === 'Enter' && nav(m.path)} title={m.path}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" class="mount-icon">
+                <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>
+              </svg>
+              <span class="entry-name">{m.name}</span>
+            </div>
+          {/each}
+        </aside>
+
+        <div class="browser-main">
       <div class="browser-sort-bar">
         <span class="sort-label">Ordina:</span>
         <button type="button" class="btn-sort" class:active={sortMode === 'name'} onclick={() => sortMode = 'name'}>Nome</button>
@@ -276,7 +340,7 @@
           <div class="browser-center"><div class="spinner-sm"></div></div>
         {:else if error}
           <div class="browser-error">{error}</div>
-        {:else if sorted.length === 0 && mounts.length === 0 && pinned.length === 0 && !search.trim()}
+        {:else if sorted.length === 0 && !search.trim()}
           <div class="browser-empty">Nessuna sottodirectory</div>
         {:else}
           {#if parent}
@@ -284,34 +348,6 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M5 12h14M12 5l-7 7 7 7"/></svg>
               <span class="entry-name">.. (su)</span>
             </div>
-          {/if}
-
-          {#if pinned.length > 0}
-            <div class="browser-section">Preferiti</div>
-            {#each pinned as p (p)}
-              <div class="browser-entry side-entry" onclick={() => load(p)} role="button" tabindex="0"
-                   onkeydown={(e) => e.key === 'Enter' && load(p)}>
-                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20" class="pin-icon"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.3 5.9 20.6l1.4-6.8L2.2 9.1l6.9-.8z"/></svg>
-                <span class="entry-name">{p}</span>
-              </div>
-            {/each}
-          {/if}
-
-          {#if mounts.length > 0}
-            <div class="browser-section section-row">
-              <span>Dischi</span>
-              <button type="button" class="btn-mini" onclick={loadSidebars} title="Rileggi i dischi montati">Aggiorna</button>
-            </div>
-            {#each mounts as m (m.path)}
-              <div class="browser-entry side-entry" onclick={() => load(m.path)} role="button" tabindex="0"
-                   onkeydown={(e) => e.key === 'Enter' && load(m.path)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" class="mount-icon">
-                  <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>
-                </svg>
-                <span class="entry-name">{m.name}</span>
-                <span class="entry-path">{m.path}</span>
-              </div>
-            {/each}
           {/if}
 
           <div class="browser-section">Contenuto</div>
@@ -340,6 +376,8 @@
             {/each}
           {/if}
         {/if}
+      </div>
+        </div>
       </div>
 
       <div class="browser-footer">
@@ -386,8 +424,10 @@
     animation: scaleIn 0.2s ease-out;
     box-shadow: 0 12px 40px rgba(0,0,0,0.5);
   }
-  .browser-header { margin-bottom: 0.5rem; }
+  .browser-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
   .browser-header h3 { font-size: 1rem; font-weight: 700; color: var(--text-primary); }
+  /* Toggle drawer: solo mobile, su desktop la sidebar e' sempre visibile. */
+  .side-toggle { display: none; }
   .browser-path-bar {
     display: flex; align-items: center; gap: 0.5rem;
     background: var(--bg-tertiary); border-radius: 6px;
@@ -467,6 +507,17 @@
   .browser-center { display: flex; align-items: center; justify-content: center; height: 200px; }
   .browser-error { padding: 1rem; color: var(--danger); font-size: 0.85rem; text-align: center; }
   .browser-empty { padding: 1rem; color: var(--text-muted); font-size: 0.85rem; text-align: center; }
+  /* Layout a due colonne (stile file manager nativo): sidebar con
+     Posizioni/Preferiti/Dischi + area principale col contenuto. */
+  .browser-body { display: flex; flex: 1; min-height: 0; align-items: stretch; }
+  .browser-sidebar {
+    width: 215px; flex-shrink: 0;
+    border: 1px solid var(--border-color); border-radius: 8px;
+    overflow-y: auto; max-height: 40vh;
+    margin-right: 0.75rem; margin-bottom: 0.75rem;
+  }
+  .browser-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .side-entry { font-size: 0.8rem; padding: 0.45rem 0.75rem; }
   .browser-section {
     padding: 0.4rem 0.75rem; font-size: 0.7rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.04em;
@@ -527,5 +578,16 @@
     }
     .browser-list { max-height: none; flex: 1; }
     .browser-footer { padding-bottom: 96px; }
+    /* Su mobile la sidebar diventa un drawer a scomparsa: niente piu'
+       muro di sezioni dentro la lista. */
+    .side-toggle { display: flex; }
+    .browser-body { position: relative; }
+    .browser-sidebar {
+      display: none; position: absolute; top: 0; bottom: 0; left: 0; z-index: 5;
+      width: 240px; max-width: 75vw; max-height: none; margin: 0;
+      background: var(--bg-secondary); border: 1px solid var(--border-color);
+      border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    }
+    .browser-sidebar.open { display: block; }
   }
 </style>

@@ -216,10 +216,14 @@ Un path inesistente (o non directory) restituisce
 
 ### `GET /api/browse/mounts`
 
-Dischi e volumi montati, senza pseudo-filesystem (niente `/proc`, `/sys`,
-`/dev`, `tmpfs`, `overlay`). La root `/` è sempre presente, così il picker può
-sempre uscire da un mount annidato. Serve a non dover risalire a mano a `/`
-per cambiare disco.
+Dischi e volumi montati, ma solo quelli utili all'utente: niente
+pseudo-filesystem (`/proc`, `/sys`, `/dev`, `tmpfs`, `overlay`, `squashfs`),
+niente path di sistema (`/snap`, `/boot`, `/var/lib/{docker,containers,snapd}`,
+`/var/snap`, `/run` tranne `/run/media`) e niente `/home` (coperta dalla
+voce "Home" della sidebar). Restano `/` (sempre presente, per uscire da un
+mount annidato), i volumi rimovibili (`/media`, `/mnt`, `/run/media`) e i
+dischi di rete (FUSE, NFS, CIFS/SMB). Le etichette sono basename leggibili
+(`"SSD Sata"`, non `"/run/media/user/SSD Sata"`).
 
 - Linux: `/proc/self/mounts` filtrato (FUSE e NFS restano, sono dischi navigabili)
 - macOS: contenuto di `/Volumes`
@@ -231,6 +235,30 @@ per cambiare disco.
     "mounts": [
         {"name": "/", "path": "/"},
         {"name": "Backup", "path": "/mnt/Backup"}
+    ]
+}
+```
+
+---
+
+### `GET /api/browse/places`
+
+Posizioni principali dell'utente per la sidebar del picker (stile file
+manager nativo): home per prima, poi le cartelle standard esistenti.
+Solo directory esistenti, senza duplicati.
+
+- Linux: legge `~/.config/user-dirs.dirs` (`XDG_*_DIR`); se manca, prova i
+  candidati convenzionali (`Desktop`/`Scrivania`, `Documents`/`Documenti`, …)
+- macOS: `Desktop`, `Documents`, `Downloads`, `Movies`, `Music`, `Pictures`
+- Windows: `Desktop`, `Documents`, `Downloads`, `Music`, `Pictures`, `Videos`
+  sotto `%USERPROFILE%`
+
+```json
+{
+    "success": true,
+    "places": [
+        {"id": "home", "name": "Home", "path": "/home/user"},
+        {"id": "documents", "name": "Documenti", "path": "/home/user/Documenti"}
     ]
 }
 ```

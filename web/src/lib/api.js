@@ -73,6 +73,7 @@ export const api = {
       return request('GET', p);
     },
     mounts: () => request('GET', '/api/browse/mounts'),
+    places: () => request('GET', '/api/browse/places'),
     mkdir: (parent, name) => request('POST', '/api/browse/mkdir', { parent, name }),
     touch: (parent, name) => request('POST', '/api/browse/touch', { parent, name }),
     remove: (path, recursive = false) => request('DELETE', '/api/browse', { path, recursive }),

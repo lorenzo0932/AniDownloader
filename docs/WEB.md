@@ -105,7 +105,7 @@ export const api = {
     download: { start, stop, status },
     logs: (lines) => ...,
     status: () => ...,
-    browse: { list, mounts, mkdir, touch, remove },
+    browse: { list, mounts, places, mkdir, touch, remove },
     sse: () => new EventSource('/api/download/events'),
 };
 ```
@@ -117,10 +117,18 @@ Impostazioni. Funziona identico in browser (`--web`) e nel sidecar Tauri,
 perché ogni operazione passa dagli endpoint HTTP del backend C++ (nessun
 accesso al filesystem dal JavaScript).
 
+Layout a due colonne, stile file manager nativo:
+
+- **Sidebar** (fissa a sinistra su desktop, drawer a scomparsa su mobile
+  dietro il pulsante in alto): **Posizioni** (`/api/browse/places`: Home,
+  Documenti, Scaricati…), **Preferiti** (stelle), **Dischi**
+  (`/api/browse/mounts`, solo volumi utili: niente snap, boot o pseudo-fs).
+  Il pulsante "Aggiorna" rilegge i mount, utile per volumi inseriti a caldo
+  mentre il picker è aperto.
+- **Area principale**: solo il contenuto della cartella corrente (niente più
+  muro di sezioni inline).
+
 - **Ricerca**: filtro locale sui nomi della cartella corrente, senza roundtrip.
-- **Dischi**: sezione con i volumi montati (`/api/browse/mounts`), per non
-  dover risalire a mano a `/`. Il pulsante "Aggiorna" rilegge i mount, utile
-  per volumi inseriti a caldo mentre il picker è aperto.
 - **Preferiti**: la stella nel path bar pinna il path corrente in
   `config.pinned_paths` (max 20, più recenti in cima, con rollback se il
   salvataggio fallisce). I pin su dischi non più

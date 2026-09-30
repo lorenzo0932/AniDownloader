@@ -19,9 +19,10 @@ function browseOk(overrides = {}) {
   };
 }
 
-function stubBrowser({ list = browseOk(), mounts = [], pinned = [] } = {}) {
+function stubBrowser({ list = browseOk(), mounts = [], pinned = [], places = [] } = {}) {
   vi.spyOn(api.browse, 'list').mockResolvedValue(list);
   vi.spyOn(api.browse, 'mounts').mockResolvedValue({ success: true, mounts });
+  vi.spyOn(api.browse, 'places').mockResolvedValue({ success: true, places });
   vi.spyOn(api.config, 'get').mockResolvedValue({ success: true, config: { pinned_paths: pinned } });
 }
 
@@ -79,6 +80,41 @@ describe('DirectoryBrowser', () => {
     await waitFor(() => expect(api.browse.list).toHaveBeenCalledWith('C:\\', true));
   });
 
+  it('dischi: stanno in sidebar, non nel contenuto della cartella', async () => {
+    stubBrowser({ mounts: [{ name: 'usb', path: '/media/usb' }] });
+    const { container } = render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('usb')).toBeTruthy());
+    // Il contenuto mostra solo le voci della cartella, non i dischi.
+    const main = container.querySelector('.browser-main');
+    expect(main.textContent).not.toContain('usb');
+    expect(main.textContent).toContain('Contenuto');
+  });
+
+  it('posizioni: elencate in sidebar e navigabili', async () => {
+    stubBrowser({ places: [{ id: 'home', name: 'Home', path: '/home/user' }] });
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Posizioni')).toBeTruthy());
+    expect(screen.getByText('Home')).toBeTruthy();
+
+    await fireEvent.click(screen.getByText('Home'));
+    await waitFor(() => expect(api.browse.list).toHaveBeenCalledWith('/home/user', true));
+  });
+
+  it('drawer: toggle apre/chiude, navigare dalla sidebar chiude', async () => {
+    stubBrowser({ places: [{ id: 'home', name: 'Home', path: '/home/user' }] });
+    const { container } = render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+
+    const sidebar = container.querySelector('.browser-sidebar');
+    expect(sidebar.classList.contains('open')).toBe(false);
+
+    await fireEvent.click(screen.getByLabelText('Posizioni e dischi'));
+    expect(sidebar.classList.contains('open')).toBe(true);
+
+    await fireEvent.click(screen.getByText('Home'));
+    await waitFor(() => expect(sidebar.classList.contains('open')).toBe(false));
+  });
+
   it('preferiti: carica da config e la stella pinna il path corrente', async () => {
     stubBrowser({ pinned: ['/media/Vecchia'] });
     const setSpy = vi.spyOn(api.config, 'set').mockResolvedValue({ success: true });
@@ -95,7 +131,8 @@ describe('DirectoryBrowser', () => {
     stubBrowser({ pinned: ['/media'] });
     const setSpy = vi.spyOn(api.config, 'set').mockResolvedValue({ success: true });
     render(DirectoryBrowser, props);
-    await waitFor(() => expect(screen.getByText('/media')).toBeTruthy());
+    // 'Preferiti' in sidebar = i pin sono stati caricati dalla config.
+    await waitFor(() => expect(screen.getByText('Preferiti')).toBeTruthy());
 
     await fireEvent.click(screen.getByLabelText('Preferito'));
     await waitFor(() => expect(setSpy).toHaveBeenCalledWith({ pinned_paths: [] }));
@@ -246,7 +283,8 @@ describe('DirectoryBrowser', () => {
     stubBrowser({ pinned: ['/media'] });
     const setSpy = vi.spyOn(api.config, 'set').mockRejectedValue(new Error('Disco pieno'));
     render(DirectoryBrowser, props);
-    await waitFor(() => expect(screen.getByText('/media')).toBeTruthy());
+    // 'Preferiti' in sidebar = i pin sono stati caricati dalla config.
+    await waitFor(() => expect(screen.getByText('Preferiti')).toBeTruthy());
 
     const star = screen.getByLabelText('Preferito');
     await fireEvent.click(star);

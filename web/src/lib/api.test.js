@@ -213,6 +213,12 @@ describe('api.browse', () => {
     expect(fetch).toHaveBeenCalledWith(BASE + '/api/browse/mounts', expect.objectContaining({ method: 'GET' }));
   });
 
+  it('places: GET /api/browse/places', async () => {
+    fetch.mockResolvedValue(jsonResponse({ places: [] }));
+    await api.browse.places();
+    expect(fetch).toHaveBeenCalledWith(BASE + '/api/browse/places', expect.objectContaining({ method: 'GET' }));
+  });
+
   it('mkdir/touch: POST con parent+name nel body', async () => {
     fetch.mockResolvedValue(jsonResponse({ path: '/media/Nuova' }));
     await api.browse.mkdir('/media', 'Nuova');
