@@ -771,6 +771,28 @@ if jq -e '[.mounts[].path] | any(startswith("/proc") or startswith("/sys") or st
 else
     pass "mounts: niente pseudo-fs"
 fi
+# Niente rumore da snap/boot: non sono dischi da picker.
+if jq -e '[.mounts[].path] | any(startswith("/snap") or startswith("/boot") or startswith("/var/lib/snapd") or startswith("/var/snap"))' \
+    "$RPT/mounts.json" >/dev/null; then
+    fail "mounts: voci snap/boot esposte: $(cat "$RPT/mounts.json")"
+else
+    pass "mounts: niente snap/boot"
+fi
+
+echo "[9b2/14] /api/browse/places"
+curl -s -m 10 "$BASE/api/browse/places" > "$RPT/places.json"
+if jq -e '.places | length >= 1 and (.[0].id == "home")' "$RPT/places.json" >/dev/null; then
+    pass "places: home per prima"
+else
+    fail "places senza home: $(cat "$RPT/places.json")"
+fi
+# Ogni place deve essere una directory esistente con id/nome valorizzati.
+if jq -e '[.places[] | select(.id == "" or .name == "" or .path == "")] | length == 0' \
+    "$RPT/places.json" >/dev/null; then
+    pass "places: voci ben formate"
+else
+    fail "places malformate: $(cat "$RPT/places.json")"
+fi
 
 echo "[9c/14] mkdir / touch / DELETE"
 curl -s -m 10 -X POST "$BASE/api/browse/mkdir" \

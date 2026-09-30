@@ -193,12 +193,14 @@ namespace Core {
     // ---- Mount points ----
     namespace {
         // Pseudo-filesystem da escludere: non sono dischi navigabili dall'utente.
+        // squashfs/nsfs in lista: gli snap (squashfs) e i namespace non sono
+        // volumi che l'utente voglia sfogliare nel picker.
         bool isPseudoFs(const std::string& fsType) {
             static const char* pseudo[] = {
                 "proc",       "sysfs",     "devtmpfs",    "devpts",  "cgroup",     "cgroup2",
                 "securityfs", "pstore",    "debugfs",     "tracefs", "configfs",   "fusectl",
                 "mqueue",     "hugetlbfs", "binfmt_misc", "autofs",  "rpc_pipefs", "nsfs",
-                "bpf",        "selinuxfs", "efivarfs"};
+                "bpf",        "selinuxfs", "efivarfs",    "squashfs"};
             for (const char* p : pseudo)
                 if (fsType == p)
                     return true;
@@ -212,6 +214,33 @@ namespace Core {
         }
 
         bool isOctalDigit(char c) { return c >= '0' && c <= '7'; }
+
+        bool underPrefix(const std::string& p, const std::string& prefix) {
+            return p == prefix || p.rfind(prefix + "/", 0) == 0;
+        }
+
+        // Path di sistema: mai offerti come "dischi" nel picker, anche se il
+        // fstype e' reale (es. /boot in ext4, snap in squashfs sotto
+        // /var/lib/snapd). /run fa eccezione per /run/media (chiavette
+        // montate dall'utente). /home esatta e' coperta dalla voce "Home"
+        // della sidebar: come volume sarebbe solo rumore.
+        bool isSystemMountPath(const std::string& mp) {
+            if (underPrefix(mp, "/run") && !underPrefix(mp, "/run/media"))
+                return true;
+            static const char* sys[] = {"/proc",
+                                        "/sys",
+                                        "/dev",
+                                        "/snap",
+                                        "/boot",
+                                        "/var/lib/docker",
+                                        "/var/lib/containers",
+                                        "/var/lib/snapd",
+                                        "/var/snap"};
+            for (const char* prefix : sys)
+                if (underPrefix(mp, prefix))
+                    return true;
+            return mp == "/home";
+        }
 
         // Decodifica le sequenze octal di /proc/self/mounts (\040 = spazio).
         // Solo sequenze valide (backslash + 3 cifre octal, prima 0-3):
@@ -246,13 +275,19 @@ namespace Core {
                 continue;
             if (isPseudoFs(fstype) || isVolatileOrOverlay(fstype))
                 continue;
-            // Esclude anche i mount point dentro /proc, /sys, /dev, /run e /snap:
-            // sono namespace di pseudo-fs, non dischi.
-            if (mountpoint.rfind("/proc/", 0) == 0 || mountpoint.rfind("/sys/", 0) == 0 ||
-                mountpoint.rfind("/dev/", 0) == 0 || mountpoint.rfind("/run/", 0) == 0 ||
-                mountpoint.rfind("/snap/", 0) == 0)
+            // Path di sistema (snap, boot, docker, /run non-media, ...):
+            // volumi reali ma non navigabili dall'utente, fuori dalla sidebar.
+            if (isSystemMountPath(mountpoint))
                 continue;
             std::string decoded = decodeMountEscapes(mountpoint);
+            // Etichetta = basename ("ipool00002", non "/mnt/ipool00002"):
+            // il path completo resta comunque nel campo path.
+            std::string label = decoded;
+            if (decoded != "/") {
+                std::string base = std::filesystem::path(decoded).filename().string();
+                if (!base.empty())
+                    label = base;
+            }
             // Bind mount: stesso path da device diversi -> una sola voce.
             bool dup = false;
             for (const auto& m : mounts)
@@ -261,7 +296,7 @@ namespace Core {
                     break;
                 }
             if (!dup)
-                mounts.push_back({decoded, decoded});
+                mounts.push_back({label, decoded});
         }
         return mounts;
     }
@@ -315,6 +350,126 @@ namespace Core {
             points.insert(points.begin(), "/");
 #endif
         return points;
+    }
+
+    // ---- Posizioni principali (sidebar del picker) ----
+    std::vector<PlaceEntry> parseUserDirsFile(const std::string& content, const std::string& home) {
+        struct KeyMap {
+            const char* key;
+            const char* id;
+        };
+        static const KeyMap keys[] = {
+            {"XDG_DESKTOP_DIR", "desktop"},    {"XDG_DOCUMENTS_DIR", "documents"},
+            {"XDG_DOWNLOAD_DIR", "downloads"}, {"XDG_MUSIC_DIR", "music"},
+            {"XDG_PICTURES_DIR", "pictures"},  {"XDG_VIDEOS_DIR", "videos"}};
+        std::vector<PlaceEntry> out;
+        std::istringstream in(content);
+        std::string line;
+        while (std::getline(in, line)) {
+            size_t s = line.find_first_not_of(" \t");
+            if (s == std::string::npos || line[s] == '#')
+                continue;
+            for (const auto& k : keys) {
+                std::string key = k.key;
+                if (line.compare(s, key.size(), key) != 0)
+                    continue;
+                size_t eq = line.find('=', s + key.size());
+                if (eq == std::string::npos)
+                    continue;
+                std::string val = line.substr(eq + 1);
+                // trim spazi e virgolette
+                size_t a = val.find_first_not_of(" \t\"'");
+                if (a == std::string::npos)
+                    continue;
+                size_t b = val.find_last_not_of(" \t\"'");
+                val = val.substr(a, b - a + 1);
+                if (val.rfind("$HOME/", 0) == 0)
+                    val = home + val.substr(5);
+                else if (val == "$HOME")
+                    val = home;
+                else if (!val.empty() && val[0] != '/')
+                    val = home + "/" + val; // relativo: da spec e' sotto $HOME
+                if (val.empty() || val[0] != '/')
+                    continue;
+                std::string name = std::filesystem::path(val).filename().string();
+                if (name.empty())
+                    name = val;
+                out.push_back({k.id, name, val});
+            }
+        }
+        return out;
+    }
+
+    std::vector<PlaceEntry> listPlaces() {
+        std::vector<PlaceEntry> places;
+        const char* homeEnv = std::getenv("HOME");
+#ifdef _WIN32
+        if (!homeEnv)
+            homeEnv = std::getenv("USERPROFILE");
+#endif
+        std::string home = homeEnv ? homeEnv : "";
+        auto addIfDir = [&](const std::string& id, const std::string& name, const std::string& p) {
+            if (p.empty())
+                return;
+            std::error_code ec;
+            if (!std::filesystem::is_directory(p, ec))
+                return;
+            for (const auto& pl : places)
+                if (pl.path == p)
+                    return;
+            places.push_back({id, name, p});
+        };
+        if (!home.empty())
+            addIfDir("home", "Home", home);
+#if defined(_WIN32)
+        const std::string sep = "\\";
+        addIfDir("desktop", "Desktop", home + sep + "Desktop");
+        addIfDir("documents", "Documents", home + sep + "Documents");
+        addIfDir("downloads", "Downloads", home + sep + "Downloads");
+        addIfDir("music", "Music", home + sep + "Music");
+        addIfDir("pictures", "Pictures", home + sep + "Pictures");
+        addIfDir("videos", "Videos", home + sep + "Videos");
+#elif defined(__APPLE__)
+        addIfDir("desktop", "Desktop", home + "/Desktop");
+        addIfDir("documents", "Documents", home + "/Documents");
+        addIfDir("downloads", "Downloads", home + "/Downloads");
+        addIfDir("movies", "Movies", home + "/Movies");
+        addIfDir("music", "Music", home + "/Music");
+        addIfDir("pictures", "Pictures", home + "/Pictures");
+#else
+        std::vector<PlaceEntry> xdg;
+        std::string cfgFile;
+        if (const char* xdgHome = std::getenv("XDG_CONFIG_HOME"))
+            cfgFile = std::string(xdgHome) + "/user-dirs.dirs";
+        else if (!home.empty())
+            cfgFile = home + "/.config/user-dirs.dirs";
+        if (!cfgFile.empty()) {
+            std::ifstream f(cfgFile);
+            if (f) {
+                std::string content((std::istreambuf_iterator<char>(f)), {});
+                xdg = parseUserDirsFile(content, home);
+            }
+        }
+        for (const auto& pl : xdg)
+            addIfDir(pl.id, pl.name, pl.path);
+        // Fallback se user-dirs.dirs manca: candidati convenzionali EN/IT.
+        // Solo quelli esistenti, quindi innocui su qualunque distro/lingua.
+        if (xdg.empty() && !home.empty()) {
+            addIfDir("desktop", "Desktop", home + "/Desktop");
+            addIfDir("desktop", "Scrivania", home + "/Scrivania");
+            addIfDir("documents", "Documents", home + "/Documents");
+            addIfDir("documents", "Documenti", home + "/Documenti");
+            addIfDir("downloads", "Downloads", home + "/Downloads");
+            addIfDir("downloads", "Scaricati", home + "/Scaricati");
+            addIfDir("music", "Music", home + "/Music");
+            addIfDir("music", "Musica", home + "/Musica");
+            addIfDir("pictures", "Pictures", home + "/Pictures");
+            addIfDir("pictures", "Immagini", home + "/Immagini");
+            addIfDir("videos", "Videos", home + "/Videos");
+            addIfDir("videos", "Video", home + "/Video");
+        }
+#endif
+        return places;
     }
 
     bool isWindowsDriveRoot(const std::string& path) {

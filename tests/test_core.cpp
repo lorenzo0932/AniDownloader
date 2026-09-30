@@ -334,7 +334,13 @@ static void testParseMountTable() {
                         "/dev/sdb1 /mnt/My\\040Backup ext4 rw,relatime 0 0\n"
                         "sshfs:/nas /mnt/nas fuse.sshfs rw 0 0\n"
                         "/dev/sdc1 /media/usb ntfs3 rw 0 0\n"
-                        "binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc rw 0 0\n";
+                        "binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc rw 0 0\n"
+                        // Snap, boot e /home: volumi reali ma non da picker.
+                        "/dev/loop1 /var/lib/snapd/snap/core22/2411 squashfs ro 0 0\n"
+                        "/dev/loop2 /snap/bare/5 squashfs ro 0 0\n"
+                        "/dev/sda1 /boot ext4 rw 0 0\n"
+                        "/dev/sda3 /boot/efi vfat rw 0 0\n"
+                        "/dev/sda4 /home ext4 rw 0 0\n";
 
     auto mounts = Core::parseMountTable(table);
     std::vector<std::string> paths;
@@ -344,6 +350,12 @@ static void testParseMountTable() {
     auto has = [&](const std::string& p) {
         return std::find(paths.begin(), paths.end(), p) != paths.end();
     };
+    auto nameOf = [&](const std::string& p) {
+        for (const auto& m : mounts)
+            if (m.path == p)
+                return m.name;
+        return std::string();
+    };
 
     CHECK(has("/"));              // disco reale
     CHECK(has("/mnt/My Backup")); // escape octal \040 → spazio
@@ -351,9 +363,19 @@ static void testParseMountTable() {
     CHECK(has("/media/usb"));     // rimovibile
     CHECK(!has("/proc"));         // pseudo-fs escluso
     CHECK(!has("/sys"));
-    CHECK(!has("/run/user/1000"));             // tmpfs escluso
-    CHECK(!has("/var/lib/docker/overlay2/x")); // overlay escluso
-    CHECK(!has("/proc/sys/fs/binfmt_misc"));   // sotto /proc, escluso
+    CHECK(!has("/run/user/1000"));                  // tmpfs escluso
+    CHECK(!has("/var/lib/docker/overlay2/x"));      // overlay escluso
+    CHECK(!has("/proc/sys/fs/binfmt_misc"));        // sotto /proc, escluso
+    CHECK(!has("/var/lib/snapd/snap/core22/2411")); // snap: non e' un disco
+    CHECK(!has("/snap/bare/5"));                    // snap: non e' un disco
+    CHECK(!has("/boot"));                           // sistema, non da picker
+    CHECK(!has("/boot/efi"));                       // sistema, non da picker
+    CHECK(!has("/home")); // partizione coperta dalla voce "Home" della sidebar
+
+    // Etichette leggibili: basename, non il path intero.
+    CHECK(nameOf("/") == "/");
+    CHECK(nameOf("/mnt/My Backup") == "My Backup");
+    CHECK(nameOf("/media/usb") == "usb");
 
     // Bind mount duplicato: stesso path da due device -> una sola voce.
     // Escape non valido (\0X7: 'X' non e' octal): passa invariato.
@@ -400,6 +422,51 @@ static void testParseAllMountPoints() {
     auto live = Core::listAllMountPoints();
     CHECK(!live.empty());
     CHECK(std::find(live.begin(), live.end(), "/") != live.end());
+}
+
+static void testParseUserDirsFile() {
+    std::string content = "# commento\n"
+                          "XDG_DESKTOP_DIR=\"$HOME/Desktop\"\n"
+                          "XDG_DOCUMENTS_DIR=\"$HOME/Documenti\"\n"
+                          "XDG_DOWNLOAD_DIR=\"$HOME/Scaricati\"\n"
+                          "XDG_MUSIC_DIR=\"$HOME/Musica\"\n"
+                          "XDG_PICTURES_DIR=\"$HOME/Immagini\"\n"
+                          "XDG_VIDEOS_DIR=\"$HOME/Video\"\n"
+                          "XDG_TEMPLATES_DIR=\"$HOME/Modelli\"\n";
+    auto places = Core::parseUserDirsFile(content, "/home/user");
+    CHECK(places.size() == 6); // Modelli non e' una posizione del picker
+    CHECK(places[0].id == "desktop");
+    CHECK(places[0].path == "/home/user/Desktop");
+    CHECK(places[0].name == "Desktop");
+    CHECK(places[1].id == "documents");
+    CHECK(places[1].path == "/home/user/Documenti");
+    CHECK(places[1].name == "Documenti");
+    // Relativo senza $HOME: da spec e' sotto $HOME.
+    auto rel = Core::parseUserDirsFile("XDG_DOCUMENTS_DIR=\"Documenti\"\n", "/home/user");
+    CHECK(rel.size() == 1);
+    CHECK(rel[0].path == "/home/user/Documenti");
+    // Righe malformate: ignorate senza crash.
+    CHECK(Core::parseUserDirsFile("XDG_DOCUMENTS_DIR=\n", "/home/user").empty());
+    CHECK(Core::parseUserDirsFile("", "/home/user").empty());
+}
+
+static void testListPlaces() {
+    auto places = Core::listPlaces();
+    // La home c'e' sempre (se $HOME esiste): prima voce, niente duplicati.
+    if (const char* home = std::getenv("HOME")) {
+        if (std::filesystem::is_directory(home)) {
+            CHECK(!places.empty());
+            CHECK(places[0].id == "home");
+            CHECK(places[0].path == std::string(home));
+            for (size_t i = 1; i < places.size(); ++i)
+                CHECK(places[i].path != places[0].path);
+        }
+    }
+    for (const auto& p : places) {
+        CHECK(!p.id.empty());
+        CHECK(!p.name.empty());
+        CHECK(std::filesystem::is_directory(p.path));
+    }
 }
 
 static void testBrowseParentPath() {
@@ -566,6 +633,8 @@ int main(int argc, char** argv) {
     testPublishNoReplace();
     testParseMountTable();
     testParseAllMountPoints();
+    testParseUserDirsFile();
+    testListPlaces();
     testBrowseParentPath();
     testIsWindowsDriveRoot();
     testListMounts();

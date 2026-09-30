@@ -480,6 +480,23 @@ namespace Web {
             }
         });
 
+        // ---- PLACES (posizioni principali per la sidebar) ----
+        m_svr.Get("/api/browse/places", [this](const httplib::Request&, httplib::Response& res) {
+            try {
+                nlohmann::json places = nlohmann::json::array();
+                for (const auto& p : Core::listPlaces()) {
+                    nlohmann::json obj;
+                    obj["id"] = p.id;
+                    obj["name"] = p.name;
+                    obj["path"] = p.path;
+                    places.push_back(obj);
+                }
+                sendJson(res, successJson({{"places", places}}));
+            } catch (const std::exception& e) {
+                sendJson(res, errorJson("Places error: " + std::string(e.what())), 500);
+            }
+        });
+
         // ---- MKDIR ----
         m_svr.Post("/api/browse/mkdir",
                    [this](const httplib::Request& req, httplib::Response& res) {

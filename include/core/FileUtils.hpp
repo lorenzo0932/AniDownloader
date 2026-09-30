@@ -35,8 +35,12 @@ namespace Core {
     };
 
     // Dischi/volumi attualmente montati, senza pseudo-filesystem.
-    // Linux: /proc/self/mounts filtrato (niente proc/sys/dev/tmpfs/overlay...,
-    // ma FUSE/NFS restano perche sono dischi veri). macOS: /Volumes.
+    // Linux: /proc/self/mounts filtrato. Restano solo volumi utili
+    // all'utente: niente pseudo-fs, tmpfs/overlay, squashfs (snap),
+    // niente path di sistema (/proc, /sys, /dev, /snap, /boot,
+    // /var/lib/{docker,containers,snapd}, /var/snap, /run tranne
+    // /run/media) e niente /home (partizione coperta dalla voce "Home").
+    // FUSE/NFS restano perche sono dischi veri. macOS: /Volumes.
     // Windows: GetLogicalDrives filtrato per tipo. In caso di errore
     // restituisce almeno la root "/" (il picker resta comunque utilizzabile).
     std::vector<MountEntry> listMounts();
@@ -52,6 +56,23 @@ namespace Core {
     // non lo mostriamo nel picker.
     std::vector<std::string> parseAllMountPoints(const std::string& content);
     std::vector<std::string> listAllMountPoints();
+
+    struct PlaceEntry {
+        std::string id;   // "home", "desktop", "documents", ...
+        std::string name; // etichetta ("Home", "Documenti", ...)
+        std::string path;
+    };
+
+    // Posizioni principali dell'utente per la sidebar del picker (stile file
+    // manager nativo): home + cartelle standard esistenti. Linux legge
+    // ~/.config/user-dirs.dirs (con fallback ai candidati convenzionali);
+    // macOS e Windows usano i percorsi convenzionali della home.
+    // Solo directory esistenti, senza duplicati.
+    std::vector<PlaceEntry> listPlaces();
+
+    // Parsing puro di user-dirs.dirs (righe XDG_*_DIR="$HOME/..."), senza
+    // I/O: esposta in header per i test.
+    std::vector<PlaceEntry> parseUserDirsFile(const std::string& content, const std::string& home);
 
     // "C:", "C:\" e "C:/" sono radici di drive: mai rimovibili.
     // Funzione pura su stringa (testabile su ogni piattaforma), usata solo
