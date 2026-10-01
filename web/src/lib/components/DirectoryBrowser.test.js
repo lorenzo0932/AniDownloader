@@ -127,6 +127,11 @@ describe('DirectoryBrowser', () => {
     await fireEvent.click(screen.getByLabelText('Posizioni e dischi'));
     expect(sidebar.classList.contains('open')).toBe(true);
 
+    // Chiusura esplicita (il drawer copre anche l'header col toggle).
+    await fireEvent.click(screen.getByLabelText('Chiudi menu'));
+    expect(sidebar.classList.contains('open')).toBe(false);
+
+    await fireEvent.click(screen.getByLabelText('Posizioni e dischi'));
     await fireEvent.click(screen.getByText('Home'));
     await waitFor(() => expect(sidebar.classList.contains('open')).toBe(false));
   });

@@ -284,6 +284,10 @@
 
       <div class="browser-body">
         <aside class="browser-sidebar" class:open={sidebarOpen} aria-label="Posizioni, preferiti e dischi">
+          <button type="button" class="drawer-close" onclick={() => sidebarOpen = false} aria-label="Chiudi menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            <span>Chiudi</span>
+          </button>
           {#if places.length > 0}
             <div class="browser-section">Posizioni</div>
             {#each places as pl (pl.path)}
@@ -538,6 +542,13 @@
   }
   .browser-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   .side-entry { font-size: 0.8rem; padding: 0.45rem 0.75rem; }
+  /* Chiusura drawer: solo mobile (su desktop la sidebar e' fissa). */
+  .drawer-close {
+    display: none; align-items: center; gap: 0.5rem; width: 100%;
+    padding: 0.6rem 0.75rem; font-size: 0.8rem; font-weight: 700;
+    background: none; border: none; border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary); cursor: pointer; text-align: left;
+  }
   .browser-section {
     padding: 0.4rem 0.75rem; font-size: 0.7rem; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.04em;
@@ -604,15 +615,18 @@
     .browser-entry { padding: 0.7rem 0.75rem; }
     .btn-icon-sm { padding: 0.5rem; }
     .btn-small { padding: 0.6rem 1rem; }
-    /* Su mobile la sidebar diventa un drawer a scomparsa: niente piu'
-       muro di sezioni dentro la lista. */
+    /* Drawer a tutta altezza ancorato alla modale (fullscreen su mobile):
+       copre anche l'header, quindi ha una propria chiusura. Senza
+       position:relative sul body, il blocco di contenimento e' la modale
+       fixed: niente piu' riquadro flottante a mezza altezza. */
     .browser-header .side-toggle { display: flex; }
-    .browser-body { position: relative; }
+    .drawer-close { display: flex; }
     .browser-sidebar {
-      display: none; position: absolute; top: 0; bottom: 0; left: 0; z-index: 5;
-      width: 240px; max-width: 75vw; margin: 0;
-      background: var(--bg-secondary); border: 1px solid var(--border-color);
-      border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+      display: none; position: absolute; top: 0; left: 0; bottom: 0; z-index: 10;
+      width: min(280px, 85vw); margin: 0; border-radius: 0;
+      border-top: none; border-bottom: none; border-left: none;
+      background: var(--bg-secondary);
+      box-shadow: 8px 0 30px rgba(0,0,0,0.5);
     }
     .browser-sidebar.open { display: block; }
   }

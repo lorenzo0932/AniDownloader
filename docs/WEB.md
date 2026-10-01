@@ -119,12 +119,12 @@ accesso al filesystem dal JavaScript).
 
 Layout a due colonne, stile file manager nativo:
 
-- **Sidebar** (fissa a sinistra su desktop, drawer a scomparsa su mobile
-  dietro il pulsante in alto): **Posizioni** (`/api/browse/places`: Home,
-  Documenti, Scaricati…), **Preferiti** (stelle), **Dischi**
-  (`/api/browse/mounts`, solo volumi utili: niente snap, boot o pseudo-fs).
-  Il pulsante "Aggiorna" rilegge i mount, utile per volumi inseriti a caldo
-  mentre il picker è aperto.
+- **Sidebar** (fissa a sinistra su desktop, drawer a tutta altezza su mobile
+  dietro il pulsante in alto, con chiusura propria): **Posizioni**
+  (`/api/browse/places`: Home, Documenti, Scaricati…), **Preferiti** (stelle),
+  **Dischi** (`/api/browse/mounts`, solo volumi utili: niente snap, boot o
+  pseudo-fs). Il pulsante "Aggiorna" rilegge i mount, utile per volumi
+  inseriti a caldo mentre il picker è aperto.
 - **Area principale**: solo il contenuto della cartella corrente (niente più
   muro di sezioni inline).
 - **Dimensioni fisse** (680×560 su desktop): la finestra non si ridimensiona

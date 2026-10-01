@@ -248,7 +248,9 @@ manager nativo): home per prima, poi le cartelle standard esistenti.
 Solo directory esistenti, senza duplicati.
 
 - Linux: legge `~/.config/user-dirs.dirs` (`XDG_*_DIR`); se manca, prova i
-  candidati convenzionali (`Desktop`/`Scrivania`, `Documents`/`Documenti`, …)
+  candidati convenzionali (`Desktop`/`Scrivania`, `Documents`/`Documenti`, …).
+  Le voci puntate alla home stessa (`XDG_DESKTOP_DIR="$HOME/"`) sono
+  disabilitate da spec e vengono saltate, non mostrate come doppione di Home.
 - macOS: `Desktop`, `Documents`, `Downloads`, `Movies`, `Music`, `Pictures`
 - Windows: `Desktop`, `Documents`, `Downloads`, `Music`, `Pictures`, `Videos`
   sotto `%USERPROFILE%`
