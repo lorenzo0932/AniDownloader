@@ -70,6 +70,22 @@ describe('DirectoryBrowser', () => {
     await waitFor(() => expect(screen.getByText(/Nessun elemento corrisponde/)).toBeTruthy());
   });
 
+  it('ricerca: cambiando cartella si azzera (e' + ' per-cartella)', async () => {
+    stubBrowser();
+    render(DirectoryBrowser, props);
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+
+    await fireEvent.input(screen.getByLabelText('Cerca'), { target: { value: 'zzz' } });
+    await waitFor(() => expect(screen.getByText(/Nessun elemento corrisponde/)).toBeTruthy());
+
+    // Entra in un'altra cartella ("su", sempre visibile): la ricerca non
+    // deve filtrare anche la nuova.
+    await fireEvent.click(screen.getByText('.. (su)'));
+    await waitFor(() => expect(api.browse.list).toHaveBeenCalledWith('/', true));
+    expect(screen.getByLabelText('Cerca').value).toBe('');
+    await waitFor(() => expect(screen.getByText('Beta')).toBeTruthy());
+  });
+
   it('dischi: elenca i mount e naviga al click', async () => {
     stubBrowser({ mounts: [{ name: 'Disco locale (C:)', path: 'C:\\' }] });
     render(DirectoryBrowser, props);

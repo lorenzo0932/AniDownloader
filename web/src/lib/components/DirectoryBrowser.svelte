@@ -61,6 +61,10 @@
   async function load(pathToLoad) {
     loading = true;
     error = '';
+    // La ricerca e' per-cartella ("Cerca in questa cartella"): cambiando
+    // cartella si azzera, altrimenti continuerebbe a filtrare (e svuotare)
+    // anche le cartelle successive senza un motivo visibile.
+    search = '';
     // untrack: load() e' chiamata anche da $effect; leggere path qui dentro
     // lo renderebbe dipendenza dell'effect (che a sua volta lo scrive) con
     // doppia chiamata e loop al seguito.

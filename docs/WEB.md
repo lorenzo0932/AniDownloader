@@ -134,6 +134,8 @@ Layout a due colonne, stile file manager nativo:
   orizzontale.
 
 - **Ricerca**: filtro locale sui nomi della cartella corrente, senza roundtrip.
+  È per-cartella: cambiando cartella si azzera da sola, così non filtra (e
+  svuota) anche le cartelle successive.
 - **Preferiti**: la stella nel path bar pinna il path corrente in
   `config.pinned_paths` (max 20, più recenti in cima, con rollback se il
   salvataggio fallisce). I pin su dischi non più
