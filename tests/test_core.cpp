@@ -445,6 +445,10 @@ static void testParseUserDirsFile() {
     auto rel = Core::parseUserDirsFile("XDG_DOCUMENTS_DIR=\"Documenti\"\n", "/home/user");
     CHECK(rel.size() == 1);
     CHECK(rel[0].path == "/home/user/Documenti");
+    // Directory disabilitata (puntata alla home stessa): saltata, non
+    // mostrata come doppione della home (caso reale: XDG_DESKTOP_DIR="$HOME/").
+    CHECK(Core::parseUserDirsFile("XDG_DESKTOP_DIR=\"$HOME/\"\n", "/home/user").empty());
+    CHECK(Core::parseUserDirsFile("XDG_DESKTOP_DIR=\"$HOME\"\n", "/home/user").empty());
     // Righe malformate: ignorate senza crash.
     CHECK(Core::parseUserDirsFile("XDG_DOCUMENTS_DIR=\n", "/home/user").empty());
     CHECK(Core::parseUserDirsFile("", "/home/user").empty());

@@ -391,6 +391,18 @@ namespace Core {
                     val = home + "/" + val; // relativo: da spec e' sotto $HOME
                 if (val.empty() || val[0] != '/')
                     continue;
+                // Directory DISABILITATA: da spec xdg-user-dirs, puntare alla
+                // home stessa ($HOME o $HOME/) significa "non usare questa
+                // voce" (es. XDG_DESKTOP_DIR="$HOME/"). Senza questo check il
+                // picker mostrerebbe una "Scrivania" uguale alla home.
+                std::string noSlash = val;
+                while (noSlash.size() > 1 && noSlash.back() == '/')
+                    noSlash.pop_back();
+                std::string homeNoSlash = home;
+                while (homeNoSlash.size() > 1 && homeNoSlash.back() == '/')
+                    homeNoSlash.pop_back();
+                if (!homeNoSlash.empty() && noSlash == homeNoSlash)
+                    continue;
                 std::string name = std::filesystem::path(val).filename().string();
                 if (name.empty())
                     name = val;
