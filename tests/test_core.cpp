@@ -6,6 +6,7 @@
 #include "core/ProcessUtils.hpp"
 #include "core/Series.hpp"
 #include "core/SeriesRepository.hpp"
+#include "core/ThumbCache.hpp"
 #include "core/UpdateChecker.hpp"
 #include "scrapers/ScraperUtils.hpp"
 
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -639,6 +641,59 @@ static void testFileOps() {
     std::filesystem::remove_all(dir);
 }
 
+static void testThumbCache() {
+    // --- selectThumbWidth: arrotonda al tier superiore, mai upscale oltre il max ---
+    CHECK(Core::selectThumbWidth(-5) == 480);
+    CHECK(Core::selectThumbWidth(0) == 480);
+    CHECK(Core::selectThumbWidth(1) == 32);
+    CHECK(Core::selectThumbWidth(32) == 32);
+    CHECK(Core::selectThumbWidth(33) == 96);
+    CHECK(Core::selectThumbWidth(96) == 96);
+    CHECK(Core::selectThumbWidth(100) == 480);
+    CHECK(Core::selectThumbWidth(480) == 480);
+    CHECK(Core::selectThumbWidth(500) == 720);
+    CHECK(Core::selectThumbWidth(720) == 720);
+    CHECK(Core::selectThumbWidth(721) == 1080);
+    CHECK(Core::selectThumbWidth(5000) == 1080);
+    // --- clampThumbQuality: 1..100, fuori range -> default ---
+    CHECK(Core::clampThumbQuality(0) == 80);
+    CHECK(Core::clampThumbQuality(-3) == 80);
+    CHECK(Core::clampThumbQuality(1) == 1);
+    CHECK(Core::clampThumbQuality(100) == 100);
+    CHECK(Core::clampThumbQuality(101) == 80);
+    // --- chiave: deterministica e sensibile a ogni input ---
+    const std::string k1 = Core::thumbCacheKey("/s/poster.jpg", 1000, 5000, 480, 80);
+    CHECK(k1 == Core::thumbCacheKey("/s/poster.jpg", 1000, 5000, 480, 80));
+    CHECK(!k1.empty());
+    CHECK(k1 != Core::thumbCacheKey("/s/poster.jpg", 1001, 5000, 480, 80)); // mtime
+    CHECK(k1 != Core::thumbCacheKey("/s/poster.jpg", 1000, 5001, 480, 80)); // size
+    CHECK(k1 != Core::thumbCacheKey("/s/poster.jpg", 1000, 5000, 96, 80));  // w
+    CHECK(k1 != Core::thumbCacheKey("/s/poster.jpg", 1000, 5000, 480, 90)); // q
+    CHECK(k1 != Core::thumbCacheKey("/s/altro.jpg", 1000, 5000, 480, 80));  // path
+    // --- eviction LRU: con tetto 250B su 3x100B cade solo il piu' vecchio ---
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_thumbcap";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const auto now = std::filesystem::file_time_type::clock::now();
+    const char* names[3] = {"vecchio.webp", "medio.webp", "nuovo.webp"};
+    for (int i = 0; i < 3; ++i) {
+        std::ofstream f(dir / names[i], std::ios::binary);
+        f << std::string(100, static_cast<char>('a' + i));
+        f.close();
+        std::filesystem::last_write_time(dir / names[i], now - std::chrono::seconds(300 - 100 * i));
+    }
+    const auto removed = Core::enforceThumbCacheCap(dir.string(), 250);
+    CHECK(removed.files == 1);
+    CHECK(removed.bytes == 100);
+    CHECK(!std::filesystem::exists(dir / "vecchio.webp"));
+    CHECK(std::filesystem::exists(dir / "medio.webp"));
+    CHECK(std::filesystem::exists(dir / "nuovo.webp"));
+    // dir inesistente -> zero, mai eccezioni
+    const auto empty = Core::enforceThumbCacheCap((dir / "ghost").string(), 10);
+    CHECK(empty.files == 0 && empty.bytes == 0);
+    std::filesystem::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -660,6 +715,7 @@ int main(int argc, char** argv) {
     testIsWindowsDriveRoot();
     testListMounts();
     testFileOps();
+    testThumbCache();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";

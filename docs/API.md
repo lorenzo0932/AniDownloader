@@ -158,12 +158,40 @@ URL del poster della serie.
 
 ### `GET /api/poster`
 
-Restituisce l'immagine del poster.
+Restituisce la miniatura WebP del poster (generata con Lanczos via ffmpeg,
+cache su disco), oppure l'originale come fallback.
 
 **Parametri query:**
-- `path` — percorso assoluto del file poster
+- `path` — percorso della cartella serie
+- `w` — tier di larghezza px, arrotondato al superiore tra
+  `32/96/480/720/1080` (default `480`; mai upscale oltre il sorgente)
+- `q` — qualità WebP 1..100 (default `80`; fuori range → default)
 
-Risposta: binary image con Content-Type appropriato.
+Risposta: binary image (`image/webp`, oppure `image/jpeg` in fallback) con
+`Cache-Control: public, max-age=31536000, immutable`. La chiave cache
+contiene mtime+size del sorgente: se il poster cambia, cambia la chiave —
+mai miniature stantii. Se il poster manca: placeholder SVG 220×320.
+
+### `GET /api/cache/thumbs`
+
+Info sulla cache miniature su disco.
+
+Risposta:
+
+```json
+{ "success": true, "files": 12, "bytes": 412030 }
+```
+
+### `DELETE /api/cache/thumbs`
+
+Svuota la cache miniature (si autoriduce oltre i 500 MB con eviction LRU;
+le voci rimosse vengono rigenerate al bisogno).
+
+Risposta:
+
+```json
+{ "success": true, "removedFiles": 12, "freedBytes": 412030 }
+```
 
 ---
 

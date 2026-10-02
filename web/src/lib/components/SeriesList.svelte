@@ -2,7 +2,7 @@
   // Griglia delle carte serie (con stato vuoto). Il caricamento/ordinamento
   // resta nel parent (DashboardPage): qui solo presentazione.
   import SeriesCard from './SeriesCard.svelte';
-  import { posterUrl } from '../api.js';
+  import { posterUrl, posterSrcSet } from '../api.js';
 
   let { items = [], viewMode = 'normal', totalCount = 0, descriptions = {}, onopen, onedit, onremove } = $props();
 </script>
@@ -17,6 +17,7 @@
         index={idx}
         description={descriptions[item._file_index]}
         poster={posterUrl(item.path)}
+        srcset={posterSrcSet(item.path)}
         compact={viewMode === 'compact'}
         onopen={() => onopen(item._file_index)}
         onedit={() => onedit(item._file_index)}

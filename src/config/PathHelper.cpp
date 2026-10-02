@@ -42,6 +42,17 @@ namespace Config {
 
     fs::path PathHelper::getVideosDir() { return getHome() / "Videos" / "Convertiti"; }
 
+    fs::path PathHelper::getThumbCacheDir() {
+#ifdef _WIN32
+        const char* localappdata = std::getenv("LOCALAPPDATA");
+        fs::path base = localappdata ? fs::path(localappdata) / APP_NAME : getHome() / APP_NAME;
+#else
+        const char* xdg = std::getenv("XDG_CACHE_HOME");
+        fs::path base = xdg ? fs::path(xdg) / APP_NAME : getHome() / ".cache" / APP_NAME;
+#endif
+        return base / "thumbs";
+    }
+
     fs::path PathHelper::getSeriesJsonPath() { return getConfigDir() / "series_data.json"; }
     fs::path PathHelper::getAppConfigPath() { return getConfigDir() / "config.json"; }
     fs::path PathHelper::getLogFilePath() { return getLogDir() / "serie_critical_errors.log"; }

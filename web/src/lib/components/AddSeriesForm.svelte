@@ -30,6 +30,7 @@
                 {@const editItem = series.find(item => item._file_index === editing)}
                 {#if editItem}
                   <img src={posterUrl(editItem.path)} alt="poster" class="poster-preview"
+                    loading="lazy" decoding="async"
                     onerror={() => posterError = true} />
                 {/if}
               {:else}

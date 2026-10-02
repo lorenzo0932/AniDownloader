@@ -1,7 +1,7 @@
 <script>
   // Modale dettaglio serie. Lo stato di apertura (detailIndex) resta nel
   // parent: qui solo presentazione della serie + azioni.
-  let { series = null, description = '', poster = '', onclose, onedit, onremove } = $props();
+  let { series = null, description = '', poster = '', srcset = '', onclose, onedit, onremove } = $props();
 </script>
 
 {#if series}
@@ -9,7 +9,9 @@
     <div class="modal-panel detail-modal" onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="detail-modal-inner">
         <div class="detail-poster-col">
-          <img class="detail-poster" src={poster} alt="" loading="lazy" />
+          <img class="detail-poster" src={poster} srcset={srcset}
+            sizes="(max-width: 768px) 160px, 260px"
+            width="480" height="720" alt="" loading="lazy" decoding="async" />
         </div>
         <div class="detail-info-col">
           <button class="detail-close" onclick={onclose}>&times;</button>

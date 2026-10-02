@@ -12,6 +12,8 @@ namespace Config {
         static fs::path getConfigDir();
         static fs::path getLogDir();
         static fs::path getVideosDir();
+        // Cache miniature poster su disco (XDG_CACHE_HOME o ~/.cache).
+        static fs::path getThumbCacheDir();
 
         static fs::path getSeriesJsonPath();
         static fs::path getAppConfigPath();

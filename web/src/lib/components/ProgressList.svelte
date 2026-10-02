@@ -13,7 +13,7 @@
   {#if analysisSeries.length > 0}
     <div class="group-label">Analisi in corso ({analysisSeries.length})</div>
     {#each analysisSeries as s, idx (s.name)}
-      <TaskItem variant="analysing" series={s} poster={posterUrl(s.path)} index={idx} />
+      <TaskItem variant="analysing" series={s} poster={posterUrl(s.path, 96)} index={idx} />
     {/each}
   {/if}
 

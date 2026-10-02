@@ -7,6 +7,7 @@
 #include "core/MediaProcessor.hpp"
 #include "core/PlanningService.hpp"
 #include "core/SeriesUtils.hpp"
+#include "core/ThumbCache.hpp"
 #include "scrapers/ScraperUtils.hpp"
 #include "web/embedded_web.hpp"
 
@@ -641,6 +642,43 @@ namespace Web {
                     return;
                 }
                 auto pathStr = req.get_param_value("path");
+                // Tier di larghezza (w) e qualita' WebP (q): valori non
+                // validi -> default con warn (stesso pattern di /api/log).
+                int w = Core::THUMB_DEFAULT_WIDTH;
+                if (req.has_param("w")) {
+                    try {
+                        w = Core::selectThumbWidth(std::stoi(req.get_param_value("w")));
+                    } catch (const std::exception&) {
+                        Core::Logger::warn("/api/poster: parametro 'w' non valido, uso default");
+                        w = Core::THUMB_DEFAULT_WIDTH;
+                    }
+                }
+                int q = Core::THUMB_DEFAULT_QUALITY;
+                if (req.has_param("q")) {
+                    try {
+                        q = Core::clampThumbQuality(std::stoi(req.get_param_value("q")));
+                    } catch (const std::exception&) {
+                        Core::Logger::warn("/api/poster: parametro 'q' non valido, uso default");
+                        q = Core::THUMB_DEFAULT_QUALITY;
+                    }
+                }
+                // Miniatura WebP con cache su disco. Header immutabili: la
+                // chiave contiene mtime+size del sorgente, mai stantia.
+                // Fallback all'originale se la generazione e' impossibile
+                // (es. ffmpeg assente): niente 500 per un poster.
+                if (auto thumb = Core::thumbFor(pathStr, w, q)) {
+                    std::ifstream f(*thumb, std::ios::binary | std::ios::ate);
+                    auto size = f.tellg();
+                    f.seekg(0);
+                    std::string content(size, '\0');
+                    f.read(content.data(), size);
+                    if (f) {
+                        res.set_header("Access-Control-Allow-Origin", corsOrigin());
+                        res.set_header("Cache-Control", "public, max-age=31536000, immutable");
+                        res.set_content(content, "image/webp");
+                        return;
+                    }
+                }
                 auto posterPath = Core::findPosterPath(pathStr);
                 if (!posterPath.empty()) {
                     std::ifstream f(posterPath, std::ios::binary | std::ios::ate);
@@ -664,6 +702,17 @@ namespace Web {
             } catch (...) {
                 sendJson(res, errorJson("Poster not available"), 404);
             }
+        });
+
+        // ---- CACHE MINIATURE (thumbs su disco di /api/poster) ----
+        m_svr.Get("/api/cache/thumbs", [this](const httplib::Request&, httplib::Response& res) {
+            const auto info = Core::thumbCacheInfo();
+            sendJson(res, successJson({{"files", info.files}, {"bytes", info.bytes}}));
+        });
+        m_svr.Delete("/api/cache/thumbs", [this](const httplib::Request&, httplib::Response& res) {
+            const auto removed = Core::clearThumbCache();
+            sendJson(res,
+                     successJson({{"removedFiles", removed.files}, {"freedBytes", removed.bytes}}));
         });
 
         // ---- DESCRIPTION (path-based, stabile con ordinamento) ----

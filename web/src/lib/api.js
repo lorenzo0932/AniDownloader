@@ -1,9 +1,17 @@
 const isTauri = typeof window !== 'undefined' && typeof window.__TAURI_INTERNALS__ !== 'undefined';
 export const BASE = isTauri ? 'http://127.0.0.1:8989' : '';
 
-export function posterUrl(path) {
+export const THUMB_WIDTHS = [96, 480, 720, 1080];
+
+export function posterUrl(path, w = 480) {
   if (!path) return '';
-  return BASE + '/api/poster?path=' + encodeURIComponent(path);
+  return BASE + '/api/poster?path=' + encodeURIComponent(path) + '&w=' + w;
+}
+
+// srcset per DPR: il browser sceglie il tier in base a sizes x DPR.
+export function posterSrcSet(path) {
+  if (!path) return '';
+  return THUMB_WIDTHS.map((w) => `${posterUrl(path, w)} ${w}w`).join(', ');
 }
 
 async function request(method, path, body) {
@@ -77,6 +85,12 @@ export const api = {
     mkdir: (parent, name) => request('POST', '/api/browse/mkdir', { parent, name }),
     touch: (parent, name) => request('POST', '/api/browse/touch', { parent, name }),
     remove: (path, recursive = false) => request('DELETE', '/api/browse', { path, recursive }),
+  },
+
+  // Cache miniature poster su disco (GET info, DELETE svuota).
+  cache: {
+    thumbs: () => request('GET', '/api/cache/thumbs'),
+    clearThumbs: () => request('DELETE', '/api/cache/thumbs'),
   },
 
   sse: () => new EventSource(BASE + '/api/download/events'),

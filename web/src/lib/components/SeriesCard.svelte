@@ -2,12 +2,14 @@
   // Carta singola della griglia serie. Il compattamento (vista compact) è un
   // prop esplicito: prima era un selettore discendente (.grid-compact) che con
   // la scoped-CSS di Svelte non attraverserebbe il confine del componente.
-  let { item, index = 0, description = '', poster = '', compact = false, onopen, onedit, onremove } = $props();
+  let { item, index = 0, description = '', poster = '', srcset = '', compact = false, onopen, onedit, onremove } = $props();
 </script>
 
 <div class="series-card" class:compact style="--i:{index}" role="button" tabindex="0" onclick={() => onopen?.()} onkeydown={(e) => e.key === 'Enter' && onopen?.()}>
   <div class="card-poster-wrap">
-    <img class="card-poster" src={poster} alt="" loading="lazy" />
+    <img class="card-poster" src={poster} srcset={srcset}
+      sizes={compact ? '(max-width: 768px) 50vw, 140px' : '(max-width: 768px) 100vw, 240px'}
+      width="480" height="720" alt="" loading="lazy" decoding="async" />
     {#if description}
       <div class="card-desc-overlay">
         <p class="card-desc">{description}</p>
