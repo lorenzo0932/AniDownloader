@@ -50,7 +50,7 @@
     .series-row:hover { border-color: var(--accent); }
   }
   .row-poster {
-    width: 40px; height: 56px; border-radius: 4px; object-fit: cover;
+    width: 40px; height: 56px; border-radius: 4px; object-fit: contain;
     background: var(--bg-tertiary); flex-shrink: 0;
   }
   .row-info {

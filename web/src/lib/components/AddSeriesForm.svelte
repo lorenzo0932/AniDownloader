@@ -141,7 +141,7 @@
     background: var(--poster-frame-bg); display: flex; align-items: center; justify-content: center;
     overflow: hidden;
   }
-  .poster-preview { width: 100%; height: 100%; object-fit: cover; transform: translateZ(0); }
+  .poster-preview { width: 100%; height: 100%; object-fit: contain; transform: translateZ(0); }
   .poster-placeholder { color: var(--text-muted-more); font-size: 0.8rem; text-align: center; line-height: 1.5; }
   .form-fields-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 

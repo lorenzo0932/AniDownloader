@@ -97,8 +97,8 @@
     flex-shrink: 0;
   }
   .detail-poster {
-    width: 260px; height: 100%; aspect-ratio: 2/3; object-fit: cover;
-    display: block;
+    width: 260px; height: 100%; aspect-ratio: 2/3; object-fit: contain;
+    display: block; background: var(--bg-tertiary);
     transform: translateZ(0);
   }
   .detail-info-col {
@@ -172,7 +172,7 @@
       flex-direction: column; border-radius: 0;
       max-height: 100dvh; height: 100dvh;
     }
-    .detail-poster { width: 100%; aspect-ratio: 2/3; max-height: 40dvh; object-fit: cover; }
+    .detail-poster { width: 100%; aspect-ratio: 2/3; max-height: 40dvh; object-fit: contain; }
     .detail-info-col { max-width: none; padding: 1rem; }
     .detail-desc { max-height: none; }
     .detail-stat-path { max-width: none; }
@@ -188,7 +188,7 @@
       flex-direction: row; border-radius: 0;
       max-height: 100dvh; height: 100dvh;
     }
-    .detail-poster { width: 160px; max-height: 100dvh; aspect-ratio: 2/3; object-fit: cover; }
+    .detail-poster { width: 160px; max-height: 100dvh; aspect-ratio: 2/3; object-fit: contain; }
     .detail-info-col { max-width: none; padding: 0.75rem; }
     .detail-actions { padding-bottom: 48px; }
   }

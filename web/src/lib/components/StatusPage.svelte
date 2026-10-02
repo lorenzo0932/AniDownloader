@@ -534,7 +534,7 @@
     animation: rowIn 0.3s ease-out both;
   }
   .poster-thumb {
-    width: 40px; height: 56px; border-radius: 4px; object-fit: cover;
+    width: 40px; height: 56px; border-radius: 4px; object-fit: contain;
     background: var(--bg-tertiary); flex-shrink: 0;
   }
   .series-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
