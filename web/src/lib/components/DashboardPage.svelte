@@ -20,7 +20,7 @@
   let detailIndex = $state(-1);
   let sortField = $state('name');
   let sortDir = $state('asc');
-  let viewMode = $state('normal');
+  let viewMode = $state('grid');
 
   let form = $state({
     service: 'animeW_scraper',
@@ -255,10 +255,10 @@
     </svg>
   </button>
   <div class="view-toggle">
-    <button type="button" class="btn-icon-only" class:active={viewMode === 'normal'} onclick={() => viewMode = 'normal'} title="Vista normale">
+    <button type="button" class="btn-icon-only" class:active={viewMode === 'grid'} onclick={() => viewMode = 'grid'} title="Vista griglia">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
     </button>
-    <button type="button" class="btn-icon-only" class:active={viewMode === 'compact'} onclick={() => viewMode = 'compact'} title="Vista compatta">
+    <button type="button" class="btn-icon-only" class:active={viewMode === 'table'} onclick={() => viewMode = 'table'} title="Vista tabella">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="18" height="4"/><rect x="3" y="10" width="18" height="4"/><rect x="3" y="17" width="18" height="4"/></svg>
     </button>
   </div>

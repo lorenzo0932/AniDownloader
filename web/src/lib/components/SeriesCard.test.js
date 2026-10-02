@@ -12,13 +12,17 @@ const itemFixture = (overrides = {}) => ({
 });
 
 describe('SeriesCard', () => {
-  it('render: nome, path, url, servizio e conteggio episodi', () => {
+  it('render: nome, servizio e conteggio episodi (card essenziale)', () => {
     render(SeriesCard, { item: itemFixture(), poster: '/poster.png' });
     expect(screen.getByText('One Piece')).toBeTruthy();
-    expect(screen.getByText('/media/one-piece')).toBeTruthy();
-    expect(screen.getByText('https://example.com/one-piece')).toBeTruthy();
     expect(screen.getByText('AnimeW')).toBeTruthy();
     expect(screen.getByText('Ep: 100')).toBeTruthy();
+  });
+
+  it('render: niente path/URL nel corpo (vivono nel modale dettaglio)', () => {
+    render(SeriesCard, { item: itemFixture(), poster: '/poster.png' });
+    expect(screen.queryByText('/media/one-piece')).toBeNull();
+    expect(screen.queryByText('https://example.com/one-piece')).toBeNull();
   });
 
   it('render: servizio animeU_scraper mappato a AnimeU', () => {
@@ -44,20 +48,27 @@ describe('SeriesCard', () => {
     expect(onopen).toHaveBeenCalledTimes(1);
   });
 
-  it('click Modifica: invoca onedit senza onopen', () => {
+  it('overlay Dettagli: invoca onopen', () => {
+    const onopen = vi.fn();
+    render(SeriesCard, { item: itemFixture(), onopen });
+    fireEvent.click(screen.getByRole('button', { name: 'Dettagli' }));
+    expect(onopen).toHaveBeenCalledTimes(1);
+  });
+
+  it('overlay Modifica: invoca onedit senza onopen', () => {
     const onopen = vi.fn();
     const onedit = vi.fn();
     render(SeriesCard, { item: itemFixture(), onopen, onedit });
-    fireEvent.click(screen.getByRole('button', { name: /^Modifica$/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifica' }));
     expect(onedit).toHaveBeenCalledTimes(1);
     expect(onopen).not.toHaveBeenCalled();
   });
 
-  it('click Elimina: invoca onremove senza onopen', () => {
+  it('overlay Elimina: invoca onremove senza onopen', () => {
     const onopen = vi.fn();
     const onremove = vi.fn();
     render(SeriesCard, { item: itemFixture(), onopen, onremove });
-    fireEvent.click(screen.getByRole('button', { name: /^Elimina$/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Elimina' }));
     expect(onremove).toHaveBeenCalledTimes(1);
     expect(onopen).not.toHaveBeenCalled();
   });

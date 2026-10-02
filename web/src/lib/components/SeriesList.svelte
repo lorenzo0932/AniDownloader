@@ -1,24 +1,31 @@
 <script>
-  // Griglia delle carte serie (con stato vuoto). Il caricamento/ordinamento
-  // resta nel parent (DashboardPage): qui solo presentazione.
+  // Griglia delle carte serie (con stato vuoto) oppure vista tabella densa.
+  // Il caricamento/ordinamento resta nel parent (DashboardPage): qui solo
+  // presentazione. viewMode: 'grid' | 'table'.
   import SeriesCard from './SeriesCard.svelte';
+  import SeriesTable from './SeriesTable.svelte';
   import { posterUrl, posterSrcSet } from '../api.js';
 
-  let { items = [], viewMode = 'normal', totalCount = 0, descriptions = {}, onopen, onedit, onremove } = $props();
+  let { items = [], viewMode = 'grid', totalCount = 0, descriptions = {}, onopen, onedit, onremove } = $props();
 </script>
 
 {#if items.length === 0}
   <div class="empty">{totalCount === 0 ? 'Nessuna serie configurata. Aggiungine una per iniziare!' : 'Nessuna serie corrisponde alla ricerca.'}</div>
+{:else if viewMode === 'table'}
+  <SeriesTable
+    {items}
+    {onopen}
+    {onedit}
+    {onremove}
+  />
 {:else}
-  <div class="series-grid" class:grid-compact={viewMode === 'compact'}>
+  <div class="series-grid">
     {#each items as item, idx (item._file_index)}
       <SeriesCard
         {item}
         index={idx}
-        description={descriptions[item._file_index]}
         poster={posterUrl(item.path)}
         srcset={posterSrcSet(item.path)}
-        compact={viewMode === 'compact'}
         onopen={() => onopen(item._file_index)}
         onedit={() => onedit(item._file_index)}
         onremove={() => onremove(item._file_index)}
@@ -30,11 +37,11 @@
 <style>
   .empty { text-align: center; padding: 3rem; color: var(--text-muted); font-size: 0.9rem; }
 
-  .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
-  .grid-compact { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.75rem; }
+  .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
 
   @media (max-width: 768px) {
-    .series-grid { grid-template-columns: 1fr; }
-    .series-grid.grid-compact { grid-template-columns: repeat(2, 1fr); }
+    /* Mai una sola colonna di card portrait: una locandina 2:3 a tutta
+       larghezza riempie lo schermo da sola. Minimo 2 colonne. */
+    .series-grid { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
   }
 </style>

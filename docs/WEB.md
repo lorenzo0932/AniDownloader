@@ -82,7 +82,7 @@ if (it != files.end()) {
 |------------|-------|-------------|
 | `App.svelte` | — | Shell con sidebar, routing lato client |
 | `StatusPage.svelte` | `/` | Dashboard download live + stato serie |
-| `DashboardPage.svelte` | `/gestione` | CRUD serie con griglia card, poster |
+| `DashboardPage.svelte` | `/gestione` | CRUD serie con griglia card / tabella densa, poster |
 | `ConfigPage.svelte` | `/config` | Configurazione app |
 | `LogsPage.svelte` | `/logs` | Log viewer |
 
@@ -95,6 +95,17 @@ if (it != files.end()) {
 | `Dropdown.svelte` | Componente dropdown riutilizzabile |
 | `ConfirmModal.svelte` | Modale conferma |
 | `DirectoryBrowser.svelte` | File picker: ricerca, dischi, preferiti, creazione, rimozione |
+| `SeriesCard.svelte` | Card essenziale (poster + titolo + badge), azioni in hover overlay |
+| `SeriesTable.svelte` | Vista tabella densa per la gestione (thumb + nome + azioni icona) |
+
+### Viste Gestione Serie
+
+La pagina `/gestione` ha due viste dal toggle in alto (stile Sonarr):
+**griglia** (browsing: card con poster, titolo e badge Ep/servizio; path, URL
+e azioni vivono nel modale dettaglio, con azioni anche in overlay hover su
+desktop) e **tabella** (gestione densa: righe con miniatura 40px, nome e
+icone Modifica/Elimina). Su mobile la griglia non scende mai sotto 2 colonne:
+una card portrait 2:3 a tutta larghezza riempirebbe lo schermo da sola.
 
 ### api.js
 
