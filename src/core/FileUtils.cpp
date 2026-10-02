@@ -163,12 +163,22 @@ namespace Core {
     // un hard link al temporaneo (stesso inode) e il temporaneo viene rimosso.
     // link() fallisce con EEXIST se la destinazione esiste: mai sovrascrittura.
     PublishStatus publishNoReplaceFallback(const std::string& tempPath,
-                                           const std::string& finalPath) {
+                                           const std::string& finalPath, int* outErrno) {
         if (::link(tempPath.c_str(), finalPath.c_str()) != 0) {
-            if (errno == EEXIST) {
+            int err = errno;
+            if (outErrno)
+                *outErrno = err;
+            if (err == EEXIST) {
                 return PublishStatus::Exists;
             }
-            return PublishStatus::NoAtomicSupport;
+            // EPERM/ENOSYS/EOPNOTSUPP/EMLINK = il filesystem non supporta gli
+            // hard link (FAT/exFAT/9p): mancanza di feature, non un errore.
+            if (err == EPERM || err == ENOSYS || err == EOPNOTSUPP || err == EMLINK) {
+                return PublishStatus::NoAtomicSupport;
+            }
+            // Qualsiasi altro errno (ENOENT, EACCES, EXDEV...) è una
+            // condizione reale: non va spacciata per "atomicità non supportata".
+            return PublishStatus::Error;
         }
         // Il file finale (stesso inode) esiste già: la rimozione del temporaneo
         // è fattibile; un eventuale errore qui non compromette il risultato.
@@ -177,7 +187,8 @@ namespace Core {
     }
 #endif
 
-    PublishStatus publishNoReplace(const std::string& tempPath, const std::string& finalPath) {
+    PublishStatus publishNoReplace(const std::string& tempPath, const std::string& finalPath,
+                                   int* outErrno) {
 #if defined(__linux__) || defined(__APPLE__)
         long result = -1;
         int savedErrno = 0;
@@ -194,32 +205,49 @@ namespace Core {
         savedErrno = errno;
 #endif
         if (result == 0) {
+            if (outErrno)
+                *outErrno = 0;
             return PublishStatus::Success;
         }
+        if (outErrno)
+            *outErrno = savedErrno;
         if (savedErrno == EEXIST) {
             return PublishStatus::Exists;
         }
-        // Fallback SOLO se la primitiva non è supportata dal filesystem.
-        // Altri errori (es. EACCES) sono condizioni reali: fail-safe immediato
-        // senza cadere in un messaggio fuorviante.
+        // Fallback SOLO se la primitiva non è supportata dal filesystem
+        // (flag RENAME_NOREPLACE/NOREPLACE non implementato dal fs).
         if (savedErrno == EINVAL || savedErrno == ENOSYS || savedErrno == EOPNOTSUPP) {
-            return publishNoReplaceFallback(tempPath, finalPath);
+            return publishNoReplaceFallback(tempPath, finalPath, outErrno);
         }
-        return PublishStatus::NoAtomicSupport;
+        // ENOENT/EACCES/ENOSPC/EXDEV/EBUSY... sono condizioni reali: fail-safe
+        // immediato, Error → il chiamante riporta l'errno invece di un
+        // fuorviante "il filesystem non supporta l'atomicità".
+        return PublishStatus::Error;
 #elif defined(_WIN32)
         // Senza MOVEFILE_REPLACE_EXISTING fallisce se la destinazione esiste.
         if (::MoveFileExA(tempPath.c_str(), finalPath.c_str(), MOVEFILE_WRITE_THROUGH) != 0) {
+            if (outErrno)
+                *outErrno = 0;
             return PublishStatus::Success;
         }
-        if (::GetLastError() == ERROR_ALREADY_EXISTS) {
+        DWORD err = ::GetLastError();
+        if (outErrno)
+            *outErrno = static_cast<int>(err);
+        if (err == ERROR_ALREADY_EXISTS) {
             return PublishStatus::Exists;
         }
-        return PublishStatus::NoAtomicSupport;
+        // ERROR_NOT_SUPPORTED = il fs non espone il no-replace nativo.
+        if (err == ERROR_NOT_SUPPORTED) {
+            return PublishStatus::NoAtomicSupport;
+        }
+        return PublishStatus::Error;
 #else
         // Piattaforma sconosciuta: niente primitiva no-replace → fail-closed,
         // mai un fallback che possa sovrascrivere.
         (void)tempPath;
         (void)finalPath;
+        if (outErrno)
+            *outErrno = 0;
         return PublishStatus::NoAtomicSupport;
 #endif
     }
