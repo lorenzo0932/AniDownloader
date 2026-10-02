@@ -37,7 +37,12 @@
 <style>
   .empty { text-align: center; padding: 3rem; color: var(--text-muted); font-size: 0.9rem; }
 
-  .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.9rem; }
+  /* Colonne a dimensione fissa (140-180px): niente stretch 1fr che su
+     schermi larghi gonfia le card 2:3 a dismisura. Riga centrata. */
+  .series-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 180px));
+    justify-content: center; gap: 0.9rem;
+  }
 
   @media (max-width: 768px) {
     /* Mai una sola colonna di card portrait: una locandina 2:3 a tutta
