@@ -696,7 +696,7 @@ else
     fail "config non ripristinata"
 fi
 
-echo "[9/14] /api/browse (regressione mtime)"
+echo "[9/14] /api/browse (regressione mtime, parent, files)"
 curl -s -m 10 --get --data-urlencode "path=$WEB_SBX/media" "$BASE/api/browse" > "$RPT/browse.json"
 if jq -e '.entries | length == 2' "$RPT/browse.json" >/dev/null; then
     pass "browse: 2 voci"
@@ -714,6 +714,175 @@ if jq -e '.entries | length == 0' "$RPT/browse2.json" >/dev/null; then
 else
     fail "browse: path inesistente non vuoto: $(cat "$RPT/browse2.json")"
 fi
+# parent: usato dal frontend per "su" senza splitting del path
+if jq -e --arg p "$WEB_SBX" '.parent == $p' "$RPT/browse.json" >/dev/null; then
+    pass "browse: parent corretto"
+else
+    fail "browse: parent errato: $(jq -c '.parent' "$RPT/browse.json") (atteso $WEB_SBX)"
+fi
+# type: le 2 voci in media/ sono directory
+if jq -e '[.entries[].type] | all(. == "dir")' "$RPT/browse.json" >/dev/null; then
+    pass "browse: type=dir sulle directory"
+else
+    fail "browse: type errato: $(cat "$RPT/browse.json")"
+fi
+# files=1: aggiunge i file (in media/ ci sono SerieA/SerieB, nessun file piatto)
+curl -s -m 10 --get --data-urlencode "path=$WEB_SBX/media" --data-urlencode "files=1" \
+    "$BASE/api/browse" > "$RPT/browse3.json"
+if jq -e '.entries | length == 2' "$RPT/browse3.json" >/dev/null; then
+    pass "browse: files=1 non inventa voci"
+else
+    fail "browse: files=1 inatteso: $(cat "$RPT/browse3.json")"
+fi
+# Con un file piatto presente, files=1 deve elencarlo con type=file
+: > "$WEB_SBX/media/pippo.txt"
+curl -s -m 10 --get --data-urlencode "path=$WEB_SBX/media" --data-urlencode "files=1" \
+    "$BASE/api/browse" > "$RPT/browse4.json"
+if jq -e '[.entries[] | select(.type=="file")] | length == 1' "$RPT/browse4.json" >/dev/null; then
+    pass "browse: files=1 elenca i file"
+else
+    fail "browse: files=1 non elenca il file: $(cat "$RPT/browse4.json")"
+fi
+# Senza files=1 il file non deve comparire (retrocompatibilità)
+if jq -e '[.entries[] | select(.type=="file")] | length == 0' "$RPT/browse.json" >/dev/null; then
+    pass "browse: default solo directory"
+else
+    fail "browse: default include i file: $(cat "$RPT/browse.json")"
+fi
+rm -f "$WEB_SBX/media/pippo.txt"
+
+echo "[9b/14] /api/browse/mounts"
+curl -s -m 10 "$BASE/api/browse/mounts" > "$RPT/mounts.json"
+if jq -e '.mounts | length >= 1' "$RPT/mounts.json" >/dev/null; then
+    pass "mounts: almeno un volume"
+else
+    fail "mounts vuoto: $(cat "$RPT/mounts.json")"
+fi
+# La root deve esserci sempre: senza di lei il picker non esce dai mount.
+if jq -e '[.mounts[].path] | index("/") != null' "$RPT/mounts.json" >/dev/null; then
+    pass "mounts: root presente"
+else
+    fail "mounts: root assente: $(cat "$RPT/mounts.json")"
+fi
+# Nessun pseudo-filesystem
+if jq -e '[.mounts[].path] | any(startswith("/proc") or startswith("/sys") or startswith("/dev/"))' \
+    "$RPT/mounts.json" >/dev/null; then
+    fail "mounts: pseudo-fs esposti: $(cat "$RPT/mounts.json")"
+else
+    pass "mounts: niente pseudo-fs"
+fi
+# Niente rumore da snap/boot: non sono dischi da picker.
+if jq -e '[.mounts[].path] | any(startswith("/snap") or startswith("/boot") or startswith("/var/lib/snapd") or startswith("/var/snap"))' \
+    "$RPT/mounts.json" >/dev/null; then
+    fail "mounts: voci snap/boot esposte: $(cat "$RPT/mounts.json")"
+else
+    pass "mounts: niente snap/boot"
+fi
+
+echo "[9b2/14] /api/browse/places"
+curl -s -m 10 "$BASE/api/browse/places" > "$RPT/places.json"
+if jq -e '.places | length >= 1 and (.[0].id == "home")' "$RPT/places.json" >/dev/null; then
+    pass "places: home per prima"
+else
+    fail "places senza home: $(cat "$RPT/places.json")"
+fi
+# Ogni place deve essere una directory esistente con id/nome valorizzati.
+if jq -e '[.places[] | select(.id == "" or .name == "" or .path == "")] | length == 0' \
+    "$RPT/places.json" >/dev/null; then
+    pass "places: voci ben formate"
+else
+    fail "places malformate: $(cat "$RPT/places.json")"
+fi
+
+echo "[9c/14] mkdir / touch / DELETE"
+curl -s -m 10 -X POST "$BASE/api/browse/mkdir" \
+    -d "{\"parent\":\"$WEB_SBX/media\",\"name\":\"SmokeSerie\"}" > "$RPT/mkdir.json"
+if jq -e '.success == true' "$RPT/mkdir.json" >/dev/null && [ -d "$WEB_SBX/media/SmokeSerie" ]; then
+    pass "mkdir: cartella creata"
+else
+    fail "mkdir fallito: $(cat "$RPT/mkdir.json")"
+fi
+# Nome duplicato → 409
+code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$BASE/api/browse/mkdir" \
+    -d "{\"parent\":\"$WEB_SBX/media\",\"name\":\"SmokeSerie\"}")
+if [ "$code" = "409" ]; then
+    pass "mkdir: duplicato → 409"
+else
+    fail "mkdir duplicato: atteso 409, got $code"
+fi
+# Nome con separatore → 400
+code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$BASE/api/browse/mkdir" \
+    -d "{\"parent\":\"$WEB_SBX/media\",\"name\":\"a/b\"}")
+if [ "$code" = "400" ]; then
+    pass "mkdir: nome con separatore → 400"
+else
+    fail "mkdir separatore: atteso 400, got $code"
+fi
+# touch
+curl -s -m 10 -X POST "$BASE/api/browse/touch" \
+    -d "{\"parent\":\"$WEB_SBX/media\",\"name\":\"smoke.mkv\"}" > "$RPT/touch.json"
+if jq -e '.success == true' "$RPT/touch.json" >/dev/null && [ -f "$WEB_SBX/media/smoke.mkv" ]; then
+    pass "touch: file vuoto creato"
+else
+    fail "touch fallito: $(cat "$RPT/touch.json")"
+fi
+# DELETE file
+code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/browse" \
+    -d "{\"path\":\"$WEB_SBX/media/smoke.mkv\"}")
+if [ "$code" = "200" ] && [ ! -e "$WEB_SBX/media/smoke.mkv" ]; then
+    pass "delete: file rimosso"
+else
+    fail "delete file: code $code, esiste=$([ -e "$WEB_SBX/media/smoke.mkv" ] && echo si || echo no)"
+fi
+# DELETE inesistente → 404
+code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/browse" \
+    -d "{\"path\":\"$WEB_SBX/media/non_esiste.mkv\"}")
+if [ "$code" = "404" ]; then
+    pass "delete: inesistente → 404"
+else
+    fail "delete inesistente: atteso 404, got $code"
+fi
+# DELETE cartella non vuota senza recursive → 409 con count
+curl -s -m 10 -X POST "$BASE/api/browse/mkdir" \
+    -d "{\"parent\":\"$WEB_SBX/media\",\"name\":\"SmokeNested\"}" >/dev/null
+curl -s -m 10 -X POST "$BASE/api/browse/touch" \
+    -d "{\"parent\":\"$WEB_SBX/media/SmokeNested\",\"name\":\"ep1.mkv\"}" >/dev/null
+code=$(curl -s -m 10 -o "$RPT/del409.json" -w '%{http_code}' -X DELETE "$BASE/api/browse" \
+    -d "{\"path\":\"$WEB_SBX/media/SmokeNested\"}")
+if [ "$code" = "409" ] && [ -d "$WEB_SBX/media/SmokeNested" ]; then
+    pass "delete: non vuota → 409 e intatta"
+else
+    fail "delete non vuota: code $code (atteso 409)"
+fi
+if jq -e '.count >= 1' "$RPT/del409.json" >/dev/null; then
+    pass "delete: 409 riporta count"
+else
+    fail "delete: count mancante: $(cat "$RPT/del409.json")"
+fi
+# DELETE ricorsiva
+code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/browse" \
+    -d "{\"path\":\"$WEB_SBX/media/SmokeNested\",\"recursive\":true}")
+if [ "$code" = "200" ] && [ ! -e "$WEB_SBX/media/SmokeNested" ]; then
+    pass "delete: ricorsiva ok"
+else
+    fail "delete ricorsiva: code $code"
+fi
+# Guardrail: la root non è mai rimovibile
+code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/browse" \
+    -d '{"path":"/","recursive":true}')
+if [ "$code" = "403" ]; then
+    pass "delete: root protetta → 403"
+else
+    fail "delete root: atteso 403, got $code"
+fi
+# /api/browse/pick è stato rimosso: deve dare 404
+code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$BASE/api/browse/pick" -d '{}')
+if [ "$code" = "404" ]; then
+    pass "browse/pick rimosso → 404"
+else
+    fail "browse/pick: atteso 404, got $code"
+fi
+rm -rf "$WEB_SBX/media/SmokeSerie"
 
 echo "[10/14] /api/log"
 curl -s -m 10 "$BASE/api/log?lines=10" > "$RPT/log.json"

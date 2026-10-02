@@ -11,6 +11,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cstdlib>
@@ -18,6 +19,8 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <string>
+#include <vector>
 
 static int g_failures = 0;
 
@@ -335,6 +338,307 @@ static void testPublishNoReplace() {
     std::filesystem::remove_all(dir);
 }
 
+// ---- File picker: mount, creazione, rimozione ----
+
+static void testParseMountTable() {
+    // Fixture sintetica: i pseudo-fs vanno esclusi, FUSE/NFS vanno tenuti
+    // (sono dischi veri navigabili), il path con spazio va decodificato.
+    std::string table = "proc /proc proc rw,nosuid,relatime 0 0\n"
+                        "sysfs /sys sysfs rw,relatime 0 0\n"
+                        "tmpfs /run/user/1000 tmpfs rw 0 0\n"
+                        "overlay /var/lib/docker/overlay2/x overlay rw 0 0\n"
+                        "/dev/sda2 / ext4 rw,relatime 0 0\n"
+                        "/dev/sdb1 /mnt/My\\040Backup ext4 rw,relatime 0 0\n"
+                        "sshfs:/nas /mnt/nas fuse.sshfs rw 0 0\n"
+                        "/dev/sdc1 /media/usb ntfs3 rw 0 0\n"
+                        "binfmt_misc /proc/sys/fs/binfmt_misc binfmt_misc rw 0 0\n"
+                        // Snap, boot e /home: volumi reali ma non da picker.
+                        "/dev/loop1 /var/lib/snapd/snap/core22/2411 squashfs ro 0 0\n"
+                        "/dev/loop2 /snap/bare/5 squashfs ro 0 0\n"
+                        "/dev/sda1 /boot ext4 rw 0 0\n"
+                        "/dev/sda3 /boot/efi vfat rw 0 0\n"
+                        "/dev/sda4 /home ext4 rw 0 0\n";
+
+    auto mounts = Core::parseMountTable(table);
+    std::vector<std::string> paths;
+    for (const auto& m : mounts)
+        paths.push_back(m.path);
+
+    auto has = [&](const std::string& p) {
+        return std::find(paths.begin(), paths.end(), p) != paths.end();
+    };
+    auto nameOf = [&](const std::string& p) {
+        for (const auto& m : mounts)
+            if (m.path == p)
+                return m.name;
+        return std::string();
+    };
+
+    CHECK(has("/"));              // disco reale
+    CHECK(has("/mnt/My Backup")); // escape octal \040 → spazio
+    CHECK(has("/mnt/nas"));       // FUSE: disco navigabile
+    CHECK(has("/media/usb"));     // rimovibile
+    CHECK(!has("/proc"));         // pseudo-fs escluso
+    CHECK(!has("/sys"));
+    CHECK(!has("/run/user/1000"));                  // tmpfs escluso
+    CHECK(!has("/var/lib/docker/overlay2/x"));      // overlay escluso
+    CHECK(!has("/proc/sys/fs/binfmt_misc"));        // sotto /proc, escluso
+    CHECK(!has("/var/lib/snapd/snap/core22/2411")); // snap: non e' un disco
+    CHECK(!has("/snap/bare/5"));                    // snap: non e' un disco
+    CHECK(!has("/boot"));                           // sistema, non da picker
+    CHECK(!has("/boot/efi"));                       // sistema, non da picker
+    CHECK(!has("/home")); // partizione coperta dalla voce "Home" della sidebar
+
+    // Etichette leggibili: basename, non il path intero.
+    CHECK(nameOf("/") == "/");
+    CHECK(nameOf("/mnt/My Backup") == "My Backup");
+    CHECK(nameOf("/media/usb") == "usb");
+
+    // Bind mount duplicato: stesso path da due device -> una sola voce.
+    // Escape non valido (\0X7: 'X' non e' octal): passa invariato.
+    std::string table2 = std::string(table) + "/dev/sda2 / ext4 rw,relatime 0 0\n"
+                                              "/dev/sdd1 /mnt/Bad\\0X7Escape ext4 rw 0 0\n"
+                                              "riga malformata\n";
+
+    auto mounts2 = Core::parseMountTable(table2);
+    int rootCount = 0;
+    bool hasBad = false;
+    for (const auto& m : mounts2) {
+        if (m.path == "/")
+            ++rootCount;
+        if (m.path == "/mnt/Bad\\0X7Escape")
+            hasBad = true;
+    }
+    CHECK(rootCount == 1); // niente duplicati
+    CHECK(hasBad);         // escape invalido: letterale, niente garbage
+
+    // Tabella vuota: nessun mount, nessun crash.
+    CHECK(Core::parseMountTable("").empty());
+}
+
+static void testParseAllMountPoints() {
+    // Senza filtri: pseudo-fs e tmpfs/overlay sono comunque punti di mount
+    // e il guardrail di removePath deve conoscerli tutti.
+    std::string table = "proc /proc proc rw,nosuid,relatime 0 0\n"
+                        "tmpfs /run/user/1000 tmpfs rw 0 0\n"
+                        "overlay / overlay rw 0 0\n"
+                        "/dev/sda2 / ext4 rw,relatime 0 0\n"
+                        "/dev/sdb1 /mnt/My\\040Backup ext4 rw,relatime 0 0\n";
+    auto points = Core::parseAllMountPoints(table);
+    auto has = [&](const std::string& p) {
+        return std::find(points.begin(), points.end(), p) != points.end();
+    };
+    CHECK(has("/proc"));
+    CHECK(has("/run/user/1000"));
+    CHECK(has("/"));
+    CHECK(has("/mnt/My Backup")); // escape octal condiviso col parse filtrato
+    CHECK(points.size() == 4);
+    CHECK(Core::parseAllMountPoints("").empty());
+
+    // listAllMountPoints() della macchina: include almeno "/" su Linux.
+    auto live = Core::listAllMountPoints();
+    CHECK(!live.empty());
+    CHECK(std::find(live.begin(), live.end(), "/") != live.end());
+}
+
+static void testParseUserDirsFile() {
+    std::string content = "# commento\n"
+                          "XDG_DESKTOP_DIR=\"$HOME/Desktop\"\n"
+                          "XDG_DOCUMENTS_DIR=\"$HOME/Documenti\"\n"
+                          "XDG_DOWNLOAD_DIR=\"$HOME/Scaricati\"\n"
+                          "XDG_MUSIC_DIR=\"$HOME/Musica\"\n"
+                          "XDG_PICTURES_DIR=\"$HOME/Immagini\"\n"
+                          "XDG_VIDEOS_DIR=\"$HOME/Video\"\n"
+                          "XDG_TEMPLATES_DIR=\"$HOME/Modelli\"\n";
+    auto places = Core::parseUserDirsFile(content, "/home/user");
+    CHECK(places.size() == 6); // Modelli non e' una posizione del picker
+    CHECK(places[0].id == "desktop");
+    CHECK(places[0].path == "/home/user/Desktop");
+    CHECK(places[0].name == "Desktop");
+    CHECK(places[1].id == "documents");
+    CHECK(places[1].path == "/home/user/Documenti");
+    CHECK(places[1].name == "Documenti");
+    // Relativo senza $HOME: da spec e' sotto $HOME.
+    auto rel = Core::parseUserDirsFile("XDG_DOCUMENTS_DIR=\"Documenti\"\n", "/home/user");
+    CHECK(rel.size() == 1);
+    CHECK(rel[0].path == "/home/user/Documenti");
+    // Directory disabilitata (puntata alla home stessa): saltata, non
+    // mostrata come doppione della home (caso reale: XDG_DESKTOP_DIR="$HOME/").
+    CHECK(Core::parseUserDirsFile("XDG_DESKTOP_DIR=\"$HOME/\"\n", "/home/user").empty());
+    CHECK(Core::parseUserDirsFile("XDG_DESKTOP_DIR=\"$HOME\"\n", "/home/user").empty());
+    // Righe malformate: ignorate senza crash.
+    CHECK(Core::parseUserDirsFile("XDG_DOCUMENTS_DIR=\n", "/home/user").empty());
+    CHECK(Core::parseUserDirsFile("", "/home/user").empty());
+}
+
+static void testListPlaces() {
+    auto places = Core::listPlaces();
+    // La home c'e' sempre (se $HOME esiste): prima voce, niente duplicati.
+    if (const char* home = std::getenv("HOME")) {
+        if (std::filesystem::is_directory(home)) {
+            CHECK(!places.empty());
+            CHECK(places[0].id == "home");
+            CHECK(places[0].path == std::string(home));
+            for (size_t i = 1; i < places.size(); ++i)
+                CHECK(places[i].path != places[0].path);
+        }
+    }
+    for (const auto& p : places) {
+        CHECK(!p.id.empty());
+        CHECK(!p.name.empty());
+        CHECK(std::filesystem::is_directory(p.path));
+    }
+}
+
+static void testBrowseParentPath() {
+    CHECK(Core::browseParentPath("") == "");
+    CHECK(Core::browseParentPath("/") == "");   // root: nessun parent
+    CHECK(Core::browseParentPath("/a") == "/"); // "su" da /a
+    CHECK(Core::browseParentPath("/a/b") == "/a");
+    CHECK(Core::browseParentPath("relativa") == ""); // niente root: niente parent
+}
+
+static void testIsWindowsDriveRoot() {
+    CHECK(Core::isWindowsDriveRoot("C:"));
+    CHECK(Core::isWindowsDriveRoot("C:\\"));
+    CHECK(Core::isWindowsDriveRoot("c:/"));
+    CHECK(!Core::isWindowsDriveRoot("C:\\foo")); // non e' una radice
+    CHECK(!Core::isWindowsDriveRoot("C:foo"));   // drive-relative: non e' una radice
+    CHECK(!Core::isWindowsDriveRoot("/"));
+    CHECK(!Core::isWindowsDriveRoot(""));
+    CHECK(!Core::isWindowsDriveRoot("CC:"));
+}
+
+static void testListMounts() {
+    auto mounts = Core::listMounts();
+    // Deve esserci almeno la root, o il picker non potrebbe uscire dai mount.
+    bool hasRoot = false;
+    for (const auto& m : mounts)
+        if (m.path == "/")
+            hasRoot = true;
+    CHECK(hasRoot);
+    for (const auto& m : mounts)
+        CHECK(!m.path.empty());
+}
+
+static void testFileOps() {
+    using Core::FsOpStatus;
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_fileops";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    std::string parent = dir.string();
+
+    // --- Creazione directory ---
+    std::string created;
+    CHECK(Core::createDirectory(parent, "Nuova Serie", &created) == FsOpStatus::Ok);
+    CHECK(std::filesystem::is_directory(created));
+    // Nome duplicato → Exists
+    CHECK(Core::createDirectory(parent, "Nuova Serie") == FsOpStatus::Exists);
+    // Nomi invalidi (separatore, punto, vuoto, troppo lungo)
+    CHECK(Core::createDirectory(parent, "a/b") == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, "..") == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, ".") == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, "") == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, std::string(300, 'x')) == FsOpStatus::InvalidName);
+    CHECK(Core::createDirectory(parent, "bad\\name") == FsOpStatus::InvalidName);
+    // Padre inesistente → NotFound
+    CHECK(Core::createDirectory((dir / "ghost").string(), "X") == FsOpStatus::NotFound);
+
+    // --- Creazione file vuoto ---
+    std::string fileCreated;
+    CHECK(Core::createEmptyFile(parent, "vuoto.mkv", &fileCreated) == FsOpStatus::Ok);
+    CHECK(std::filesystem::is_regular_file(fileCreated));
+    CHECK(std::filesystem::file_size(fileCreated) == 0);
+    CHECK(Core::createEmptyFile(parent, "vuoto.mkv") == FsOpStatus::Exists);
+    CHECK(Core::createEmptyFile(parent, "a/b.mkv") == FsOpStatus::InvalidName);
+
+    // --- Listing con file ---
+    auto dirsOnly = Core::listDirectories(parent);
+    CHECK(dirsOnly.size() == 1);
+    CHECK(dirsOnly[0].name == "Nuova Serie");
+    CHECK(dirsOnly[0].isDir);
+
+    auto withFiles = Core::listDirectories(parent, true);
+    CHECK(withFiles.size() == 2);
+    // Le directory vengono prima dei file, poi in ordine alfabetico.
+    CHECK(withFiles[0].isDir);
+    CHECK(withFiles[1].isDir == false);
+    CHECK(withFiles[1].name == "vuoto.mkv");
+    CHECK(withFiles[1].size == 0);
+
+    // --- Rimozione: file e cartella vuota ---
+    CHECK(Core::removePath(fileCreated, false) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(fileCreated));
+    CHECK(Core::removePath(fileCreated, false) == FsOpStatus::NotFound);
+    CHECK(Core::removePath(created, false) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(created));
+
+    // --- Rimozione: cartella non vuota, prima e dopo recursive ---
+    std::string nested;
+    CHECK(Core::createDirectory(parent, "Con Contenuto", &nested) == FsOpStatus::Ok);
+    Core::createEmptyFile(nested, "ep1.mkv");
+    Core::createEmptyFile(nested, "ep2.mkv");
+    std::filesystem::create_directories(std::filesystem::path(nested) / "sub");
+    Core::createEmptyFile((std::filesystem::path(nested) / "sub").string(), "ep3.mkv");
+
+    uint64_t count = 0;
+    CHECK(Core::removePath(nested, false, &count) == FsOpStatus::NotEmpty);
+    CHECK(count == 4);                      // 2 file + 1 subdir + 1 file dentro sub
+    CHECK(std::filesystem::exists(nested)); // non vuota: intatta
+
+    CHECK(Core::removePath(nested, true) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(nested));
+
+#ifndef _WIN32
+    // --- Symlink: si rimuove il link, mai il bersaglio ---
+    // (su Windows la creazione richiede privilegi: test solo POSIX)
+    std::filesystem::path real = dir / "reale";
+    std::filesystem::create_directories(real);
+    Core::createEmptyFile(real.string(), "dentro.mkv");
+    std::filesystem::path linkDir = dir / "linkdir";
+    std::filesystem::create_directory_symlink(real, linkDir);
+    // Senza recursive: il link si rimuove comunque (non e' una directory),
+    // e il bersaglio con il suo contenuto resta intatto.
+    CHECK(Core::removePath(linkDir.string(), false) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(linkDir));
+    CHECK(std::filesystem::exists(real / "dentro.mkv"));
+
+    Core::createEmptyFile(parent, "reale.mkv");
+    std::filesystem::path linkFile = dir / "linkfile.mkv";
+    std::filesystem::create_symlink(dir / "reale.mkv", linkFile);
+    CHECK(Core::removePath(linkFile.string(), false) == FsOpStatus::Ok);
+    CHECK(!std::filesystem::exists(linkFile));
+    CHECK(std::filesystem::exists(dir / "reale.mkv"));
+    Core::removePath((dir / "reale.mkv").string(), false);
+#endif
+
+    // --- Guardrail: la root non è mai rimovibile ---
+    CHECK(Core::removePath("/", true) == FsOpStatus::NotPermitted);
+    CHECK(Core::removePath("", true) == FsOpStatus::InvalidName);
+    // ... né il punto di mount della macchina (su Linux qualcuno esiste)
+    for (const auto& m : Core::listMounts()) {
+        if (m.path == "/")
+            continue;
+        CHECK(Core::removePath(m.path, true) == FsOpStatus::NotPermitted);
+    }
+    // ... e nemmeno quelli filtrati dalla UI (pseudo-fs, tmpfs, overlay):
+    // sono comunque punti di mount, mai rimovibili.
+    for (const auto& mp : Core::listAllMountPoints()) {
+        if (mp == "/")
+            continue;
+        CHECK(Core::removePath(mp, true) == FsOpStatus::NotPermitted);
+    }
+
+    // --- espansione ~ (solo se HOME è impostato) ---
+    if (const char* home = std::getenv("HOME")) {
+        std::string expanded = Core::expandUserPath("~");
+        CHECK(expanded == std::string(home));
+        CHECK(Core::expandUserPath("/tmp") == "/tmp");
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -348,6 +652,14 @@ int main(int argc, char** argv) {
     testConfigMigration();
     testInstanceLock(argv[0]);
     testPublishNoReplace();
+    testParseMountTable();
+    testParseAllMountPoints();
+    testParseUserDirsFile();
+    testListPlaces();
+    testBrowseParentPath();
+    testIsWindowsDriveRoot();
+    testListMounts();
+    testFileOps();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";

@@ -94,7 +94,7 @@ if (it != files.end()) {
 | `theme.svelte.js` | Tema dark/light/system con localStorage |
 | `Dropdown.svelte` | Componente dropdown riutilizzabile |
 | `ConfirmModal.svelte` | Modale conferma |
-| `DirectoryBrowser.svelte` | Browser directory per selezionare path |
+| `DirectoryBrowser.svelte` | File picker: ricerca, dischi, preferiti, creazione, rimozione |
 
 ### api.js
 
@@ -105,9 +105,48 @@ export const api = {
     download: { start, stop, status },
     logs: (lines) => ...,
     status: () => ...,
+    browse: { list, mounts, places, mkdir, touch, remove },
     sse: () => new EventSource('/api/download/events'),
 };
 ```
+
+### DirectoryBrowser
+
+Il file picker è un componente singolo, usato sia dalla pagina Serie sia dalle
+Impostazioni. Funziona identico in browser (`--web`) e nel sidecar Tauri,
+perché ogni operazione passa dagli endpoint HTTP del backend C++ (nessun
+accesso al filesystem dal JavaScript).
+
+Layout a due colonne, stile file manager nativo:
+
+- **Sidebar** (fissa a sinistra su desktop, drawer a tutta altezza su mobile
+  dietro il pulsante in alto, con chiusura propria): **Posizioni**
+  (`/api/browse/places`: Home, Documenti, Scaricati…), **Preferiti** (stelle),
+  **Dischi** (`/api/browse/mounts`, solo volumi utili: niente snap, boot o
+  pseudo-fs). Il pulsante "Aggiorna" rilegge i mount, utile per volumi
+  inseriti a caldo mentre il picker è aperto.
+- **Area principale**: solo il contenuto della cartella corrente (niente più
+  muro di sezioni inline).
+- **Dimensioni fisse** (680×560 su desktop): la finestra non si ridimensiona
+  mai col contenuto; i testi lunghi si troncano con ellipsis. Su mobile va
+  fullscreen in flex (la lista riempie lo spazio), con touch target ~40px,
+  safe-area al posto di padding fissi e ritmo verticale compresso in
+  orizzontale.
+
+- **Ricerca**: filtro locale sui nomi della cartella corrente, senza roundtrip.
+  È per-cartella: cambiando cartella si azzera da sola, così non filtra (e
+  svuota) anche le cartelle successive.
+- **Preferiti**: la stella nel path bar pinna il path corrente in
+  `config.pinned_paths` (max 20, più recenti in cima, con rollback se il
+  salvataggio fallisce). I pin su dischi non più
+  montati restano visibili e riportano l'errore al clic.
+- **Creazione**: `+ Cartella` / `+ File` aprono una riga inline. La validazione
+  del nome è duplicata lato client per evitare un roundtrip inutile.
+- **Rimozione**: l'icona cestino su ogni riga chiede conferma. Se il server
+  risponde `409` (cartella non vuota) parte una **seconda** conferma con il
+  conteggio degli elementi e,in quel caso, la rimozione è ricorsiva.
+- **"Su"**: usa il `parent` restituito dal server invece di splittare il path,
+  così funziona anche su Windows (separatore `\`).
 
 ### Tema
 

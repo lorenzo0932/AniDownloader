@@ -184,34 +184,148 @@ Risposta:
 
 ### `GET /api/browse`
 
-Elenco delle directory del filesystem per il browser cartelle.
+Elenco del contenuto di una directory per il file picker.
 
 **Parametri query:**
-- `path` (opzionale) — directory da esplorare (default: `~`)
+- `path` (opzionale) — directory da esplorare (default: `/`; `~` viene espanso)
+- `files` (opzionale) — `1` per includere anche i file regolari, non solo le
+  directory (default: solo directory)
+
+Le voci che iniziano con `.` sono sempre escluse. L'ordinamento mette le
+directory prima dei file, in ordine alfabetico dentro ciascun gruppo.
+`parent` è calcolato dal server (nessuno splitting lato client), così il
+comando "su" funziona anche su Windows, dove il separatore è `\`.
 
 ```json
 {
     "success": true,
-    "entries": ["Cartella1", "Cartella2", ...],
-    "current_path": "/home/user"
+    "path": "/home/user/Video",
+    "parent": "/home/user",
+    "entries": [
+        {"name": "Anime", "path": "/home/user/Video/Anime", "mtime": 1755000000, "type": "dir", "size": 0},
+        {"name": "ep01.mkv", "path": "/home/user/Video/ep01.mkv", "mtime": 1755000001, "type": "file", "size": 734003200}
+    ]
+}
+```
+
+`parent` è `null` alla root (`/` su POSIX, radice del drive su Windows).
+Un path inesistente (o non directory) restituisce
+`entries` vuota, non un errore.
+
+---
+
+### `GET /api/browse/mounts`
+
+Dischi e volumi montati, ma solo quelli utili all'utente: niente
+pseudo-filesystem (`/proc`, `/sys`, `/dev`, `tmpfs`, `overlay`, `squashfs`),
+niente path di sistema (`/snap`, `/boot`, `/var/lib/{docker,containers,snapd}`,
+`/var/snap`, `/run` tranne `/run/media`) e niente `/home` (coperta dalla
+voce "Home" della sidebar). Restano `/` (sempre presente, per uscire da un
+mount annidato), i volumi rimovibili (`/media`, `/mnt`, `/run/media`) e i
+dischi di rete (FUSE, NFS, CIFS/SMB). Le etichette sono basename leggibili
+(`"SSD Sata"`, non `"/run/media/user/SSD Sata"`).
+
+- Linux: `/proc/self/mounts` filtrato (FUSE e NFS restano, sono dischi navigabili)
+- macOS: contenuto di `/Volumes`
+- Windows: `GetLogicalDrives`, con etichetta per tipo (Disco locale, Rimovibile, Rete, CD/DVD)
+
+```json
+{
+    "success": true,
+    "mounts": [
+        {"name": "/", "path": "/"},
+        {"name": "Backup", "path": "/mnt/Backup"}
+    ]
 }
 ```
 
 ---
 
-### `POST /api/browse/pick`
+### `GET /api/browse/places`
 
-Seleziona una directory e restituisce il path assoluto.
+Posizioni principali dell'utente per la sidebar del picker (stile file
+manager nativo): home per prima, poi le cartelle standard esistenti.
+Solo directory esistenti, senza duplicati.
+
+- Linux: legge `~/.config/user-dirs.dirs` (`XDG_*_DIR`); se manca, prova i
+  candidati convenzionali (`Desktop`/`Scrivania`, `Documents`/`Documenti`, …).
+  Le voci puntate alla home stessa (`XDG_DESKTOP_DIR="$HOME/"`) sono
+  disabilitate da spec e vengono saltate, non mostrate come doppione di Home.
+- macOS: `Desktop`, `Documents`, `Downloads`, `Movies`, `Music`, `Pictures`
+- Windows: `Desktop`, `Documents`, `Downloads`, `Music`, `Pictures`, `Videos`
+  sotto `%USERPROFILE%`
 
 ```json
-{"path": "/home/user/Video/Anime"}
+{
+    "success": true,
+    "places": [
+        {"id": "home", "name": "Home", "path": "/home/user"},
+        {"id": "documents", "name": "Documenti", "path": "/home/user/Documenti"}
+    ]
+}
 ```
 
-Risposta:
+---
+
+### `POST /api/browse/mkdir`
+
+Crea una directory. `name` deve essere un nome singolo: i separatori sono
+rifiutati lato server (la composizione del percorso avviene sempre qui).
+
+**Body:** `{"parent": "/home/user/Video", "name": "Anime 2026"}`
 
 ```json
-{"success": true, "resolved": "/home/user/Video/Anime"}
+{"success": true, "path": "/home/user/Video/Anime 2026"}
 ```
+
+| Errore | Status | Causa |
+|---|---|---|
+| `Nome cartella non valido` | 400 | nome vuoto, con `/` o `\`, `.`, `..`, > 255 caratteri |
+| `Cartella padre non trovata` | 404 | `parent` non esiste o non è una directory |
+| `La cartella esiste gia'` | 409 | il percorso esiste già |
+| `Permessi insufficienti` | 403 | |
+
+---
+
+### `POST /api/browse/touch`
+
+Crea un file vuoto. Stesse regole di validazione di `mkdir`.
+
+**Body:** `{"parent": "/home/user/Video", "name": "ep01.mkv"}`
+
+```json
+{"success": true, "path": "/home/user/Video/ep01.mkv"}
+```
+
+---
+
+### `DELETE /api/browse`
+
+Rimuove un file o una directory. I symlink non vengono mai seguiti: viene
+eliminato il link, non il bersaglio.
+
+**Body:** `{"path": "/home/user/Video/Anime", "recursive": false}`
+
+`recursive` è opzionale (default `false`). Senza, una directory non vuota viene
+rifiutata **senza essere toccata** e la risposta porta il conteggio degli
+elementi, così il client può chiedere una seconda conferma.
+
+```json
+{"success": true}
+```
+
+| Errore | Status | Causa |
+|---|---|---|
+| `Percorso non valido` | 400 | `path` assente |
+| `Percorso non trovato` | 404 | il path non esiste |
+| `La cartella non e' vuota` | 409 | directory con contenuto e `recursive` assente; body: `{"error": ..., "code": 409, "count": 12}` |
+| `Rimozione non consentita` | 403 | root, radice di un drive o punto di mount |
+
+La protezione di root, radici dei drive e punti di mount è voluta: il server
+è open-access e non deve poter diventare un `rm -rf` su `/`. Il guardrail
+conosce TUTTI i punti di mount (anche pseudo-fs e tmpfs, che il picker non
+mostra) e scatta prima ancora del check di esistenza, così resta attivo anche
+se `stat` fallisce per permessi o voci stantie.
 
 ---
 
@@ -227,10 +341,15 @@ Legge la configurazione corrente.
         "retry_delay_ms": 2000,
         "convert_to_h265": true,
         "num_chunks": 0,
-        "auto_cleanup_on_close": true
+        "auto_cleanup_on_close": true,
+        "pinned_paths": ["/home/user/Video/Anime"]
     }
 }
 ```
+
+`pinned_paths` è l'elenco dei path pinnati (stelle) nel file picker: i più
+recenti in cima, massimo 20. Un pin su un disco non più montato non viene
+rimosso automaticamente: torna nel file picker e mostra l'errore al clic.
 
 ---
 
