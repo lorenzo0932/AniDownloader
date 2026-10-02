@@ -37,7 +37,7 @@
 <style>
   .empty { text-align: center; padding: 3rem; color: var(--text-muted); font-size: 0.9rem; }
 
-  .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+  .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.9rem; }
 
   @media (max-width: 768px) {
     /* Mai una sola colonna di card portrait: una locandina 2:3 a tutta

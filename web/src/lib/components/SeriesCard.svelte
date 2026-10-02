@@ -8,7 +8,7 @@
 <div class="series-card" style="--i:{index}" role="button" tabindex="0" onclick={() => onopen?.()} onkeydown={(e) => e.key === 'Enter' && onopen?.()} aria-label={item.name || item.title}>
   <div class="card-poster-wrap">
     <img class="card-poster" src={poster} srcset={srcset}
-      sizes="(max-width: 768px) 50vw, 200px"
+      sizes="(max-width: 768px) 50vw, 160px"
       width="480" height="720" alt="" loading="lazy" decoding="async" />
     <div class="card-title-overlay">
       <h3>{item.name || item.title}</h3>
