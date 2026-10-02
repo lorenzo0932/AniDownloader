@@ -72,6 +72,7 @@ namespace Core {
 
     // Parsing puro di user-dirs.dirs (righe XDG_*_DIR="$HOME/..."), senza
     // I/O: esposta in header per i test.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): vedi definizione in FileUtils.cpp.
     std::vector<PlaceEntry> parseUserDirsFile(const std::string& content, const std::string& home);
 
     // "C:", "C:\" e "C:/" sono radici di drive: mai rimovibili.
@@ -96,8 +97,10 @@ namespace Core {
 
     // Crea parent/name come directory. name deve essere un nome singolo
     // (nessun separatore): la composizione avviene sempre lato server.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): vedi definizione in FileUtils.cpp.
     FsOpStatus createDirectory(const std::string& parent, const std::string& name,
                                std::string* outPath = nullptr);
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): vedi definizione in FileUtils.cpp.
     FsOpStatus createEmptyFile(const std::string& parent, const std::string& name,
                                std::string* outPath = nullptr);
 
