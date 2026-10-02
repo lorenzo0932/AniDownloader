@@ -38,6 +38,18 @@ fn decode_png_to_rgba(bytes: &[u8]) -> (Vec<u8>, u32, u32) {
 }
 
 fn main() {
+    // Workaround renderer su Linux: il compositing DMA-BUF di WebKitGTK
+    // (default nel runtime GNOME) su Mesa produce jank evidente nell'app,
+    // mentre il fallback a shared-memory e' fluido (verificato con
+    // WEBKIT_DISABLE_DMABUF_RENDERER=1). Forziamo il fallback solo se
+    // l'utente non ha gia' scelto (permette A/B futuri). Solo Linux: gli
+    // altri backend (WebView2/WKWebView) ignorano la variabile.
+    // Rivalutare a ogni bump del runtime GNOME / WebKitGTK.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
