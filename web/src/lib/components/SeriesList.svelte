@@ -37,11 +37,13 @@
 <style>
   .empty { text-align: center; padding: 3rem; color: var(--text-muted); font-size: 0.9rem; }
 
-  /* Colonne a dimensione fissa (140-180px): niente stretch 1fr che su
-     schermi larghi gonfia le card 2:3 a dismisura. Riga centrata. */
+  /* Griglia fluida con tetto: le colonne si adattano a ogni schermo
+     (1fr dinamico, ratio 2:3 sempre rispettato), ma oltre ~1100px la
+     griglia smette di crescere e resta centrata — niente più card
+     gonfiate sui monitor larghi. */
   .series-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 180px));
-    justify-content: center; gap: 0.9rem;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.9rem; max-width: 1100px; margin-inline: auto;
   }
 
   @media (max-width: 768px) {
