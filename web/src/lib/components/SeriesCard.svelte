@@ -10,6 +10,15 @@
     <img class="card-poster" src={poster} srcset={srcset}
       sizes="(max-width: 768px) 50vw, 200px"
       width="480" height="720" alt="" loading="lazy" decoding="async" />
+    <div class="card-title-overlay">
+      <h3>{item.name || item.title}</h3>
+      <div class="card-meta-row">
+        {#if item.service}
+          <span class="card-service">{item.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
+        {/if}
+        <span class="card-epcount">Ep: {item.local_episode_count ?? '?'}</span>
+      </div>
+    </div>
     <div class="card-hover-actions">
       <button type="button" class="btn-hover" title="Dettagli" aria-label="Dettagli"
         onclick={(e) => { e.stopPropagation(); onopen?.(); }}>
@@ -23,15 +32,6 @@
         onclick={(e) => { e.stopPropagation(); onremove?.(); }}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
       </button>
-    </div>
-  </div>
-  <div class="card-body">
-    <h3>{item.name || item.title}</h3>
-    <div class="card-meta-row">
-      {#if item.service}
-        <span class="card-service">{item.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
-      {/if}
-      <span class="card-epcount">Ep: {item.local_episode_count ?? '?'}</span>
     </div>
   </div>
 </div>
@@ -85,14 +85,22 @@
   .btn-hover:hover { background: var(--accent); border-color: var(--accent); }
   .btn-hover.danger:hover { background: var(--danger); border-color: var(--danger); }
   .btn-hover svg { width: 1.1rem; height: 1.1rem; }
-  .card-body { padding: 0.6rem 0.75rem; flex: 1; }
-  .card-body h3 { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem; color: var(--text-primary); }
-  .card-meta-row { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.3rem; }
-  .card-service {
-    display: inline-block; font-size: 0.68rem; color: var(--accent);
-    background: var(--card-service-bg); padding: 0.12rem 0.45rem; border-radius: 4px;
+  .card-title-overlay {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 1.6rem 0.6rem 0.55rem;
+    background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.45) 55%, transparent 100%);
+    color: #fff;
   }
-  .card-epcount { font-size: 0.68rem; color: var(--text-muted); }
+  .card-title-overlay h3 {
+    font-size: 0.85rem; font-weight: 600; margin-bottom: 0.2rem; color: #fff;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .card-meta-row { display: flex; align-items: center; gap: 0.4rem; }
+  .card-service {
+    display: inline-block; font-size: 0.65rem; color: #fff;
+    background: rgba(255,255,255,0.18); padding: 0.1rem 0.4rem; border-radius: 4px;
+  }
+  .card-epcount { font-size: 0.65rem; color: rgba(255,255,255,0.8); }
 
   @keyframes cardIn {
     from { opacity: 0; transform: translateY(12px); }
