@@ -342,7 +342,7 @@
           {#if recentAdded.length > 0}
             {#each recentAdded as s (s.name)}
               <div class="series-row">
-                <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
+                <img class="poster-thumb" src={posterUrl(s.path, 96)} alt="" loading="lazy" decoding="async" width="40" height="56" />
                 <div class="series-info">
                   <span class="series-name">{s.name}</span>
                   <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
@@ -360,7 +360,7 @@
           {#if recentlyDownloaded.length > 0}
             {#each recentlyDownloaded as s (s.name)}
               <div class="series-row">
-                <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
+                <img class="poster-thumb" src={posterUrl(s.path, 96)} alt="" loading="lazy" decoding="async" width="40" height="56" />
                 <div class="series-info">
                   <span class="series-name">{s.name}</span>
                   <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
@@ -381,7 +381,7 @@
           {#if recentAdded.length > 0}
             {#each recentAdded as s (s.name)}
               <div class="series-row">
-                <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
+                <img class="poster-thumb" src={posterUrl(s.path, 96)} alt="" loading="lazy" decoding="async" width="40" height="56" />
                 <div class="series-info">
                   <span class="series-name">{s.name}</span>
                   <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
@@ -399,7 +399,7 @@
           {#if recentlyDownloaded.length > 0}
             {#each recentlyDownloaded as s (s.name)}
               <div class="series-row">
-                <img class="poster-thumb" src={posterUrl(s.path)} alt="" loading="lazy" />
+                <img class="poster-thumb" src={posterUrl(s.path, 96)} alt="" loading="lazy" decoding="async" width="40" height="56" />
                 <div class="series-info">
                   <span class="series-name">{s.name}</span>
                   <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>

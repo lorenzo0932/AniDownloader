@@ -7,7 +7,7 @@
 
 {#if variant === 'analysing' && series}
   <div class="series-row analysing" style="--i:{index}">
-    <img class="poster-thumb" src={poster} alt="" loading="lazy" />
+    <img class="poster-thumb" src={poster} alt="" loading="lazy" decoding="async" width="40" height="56" />
     <div class="series-info">
       <span class="series-name">{series.name}</span>
       <span class="series-status">Analisi...</span>

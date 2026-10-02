@@ -12,6 +12,16 @@
   let showBrowser = $state(false);
   let browserTarget = $state('');
   let selectedTheme = $state(getTheme());
+  let cacheInfo = $state(null);
+  let cacheMsg = $state('');
+
+  function formatBytes(b) {
+    if (!b) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let v = b, u = 0;
+    while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
+    return (u === 0 ? v : v.toFixed(1)) + ' ' + units[u];
+  }
 
   const THEME_OPTIONS = [
     { value: 'system', label: 'Sistema (default)' },
@@ -79,7 +89,28 @@
     showBrowser = false;
   }
 
-  onMount(load);
+  // Cache miniature: info non bloccante + svuotamento con conferma.
+  async function loadCacheInfo() {
+    try {
+      cacheInfo = await api.cache.thumbs();
+    } catch {
+      cacheInfo = null;
+    }
+  }
+
+  async function clearCache() {
+    if (!confirm('Svuotare la cache delle miniature? Verranno rigenerate al bisogno.')) return;
+    cacheMsg = '';
+    try {
+      const r = await api.cache.clearThumbs();
+      cacheMsg = `Rimossi ${r.removedFiles} file (${formatBytes(r.freedBytes)} liberati).`;
+      await loadCacheInfo();
+    } catch (e) {
+      error = e.message;
+    }
+  }
+
+  onMount(() => { load(); loadCacheInfo(); });
 </script>
 
 <div in:fly={{ y: 8, duration: 200 }}>
@@ -194,6 +225,18 @@
 
             <label for="retry_delay_ms">Ritardo tra tentativi (ms)</label>
             <input id="retry_delay_ms" type="number" min="100" max="30000" step="100" bind:value={config.retry_delay_ms} />
+          </div>
+
+          <div class="group-box">
+            <div class="group-title">Manutenzione</div>
+            <p class="field-hint">
+              Miniature poster: {cacheInfo ? `${cacheInfo.files} file, ${formatBytes(cacheInfo.bytes)}` : 'non disponibili'}.
+              La cache si autoriduce oltre i 500 MB e le miniature rimosse vengono rigenerate al bisogno.
+            </p>
+            <button type="button" class="btn-browse" onclick={clearCache}>Svuota cache miniature</button>
+            {#if cacheMsg}
+              <p class="field-hint">{cacheMsg}</p>
+            {/if}
           </div>
 
         </div>

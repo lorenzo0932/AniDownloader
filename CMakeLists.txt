@@ -169,6 +169,7 @@ set(SOURCES
     src/core/FileUtils.cpp
     src/core/LogUtils.cpp
     src/core/SeriesUtils.cpp
+    src/core/ThumbCache.cpp
     src/web/WebServer.cpp
     ${EMBEDDED_CPP})
 
@@ -198,6 +199,7 @@ add_executable(test_core
     src/core/FileUtils.cpp
     src/core/InstanceLock.cpp
     src/core/ProcessUtils.cpp
+    src/core/ThumbCache.cpp
     src/core/UpdateChecker.cpp
     src/core/Logger.cpp
     src/core/Series.cpp

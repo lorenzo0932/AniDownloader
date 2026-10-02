@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { api, posterUrl, BASE } from './api.js';
+import { api, posterUrl, posterSrcSet, BASE } from './api.js';
 
 function jsonResponse(data, status = 200, statusText = '') {
   return {
@@ -259,7 +259,50 @@ describe('posterUrl', () => {
     expect(posterUrl(undefined)).toBe('');
   });
 
-  it('path valorizzato: BASE + /api/poster con path encoded', () => {
-    expect(posterUrl('/a/b c.png')).toBe(BASE + '/api/poster?path=' + encodeURIComponent('/a/b c.png'));
+  it('default: BASE + /api/poster con path encoded e w=480', () => {
+    expect(posterUrl('/a/b c.png')).toBe(BASE + '/api/poster?path=' + encodeURIComponent('/a/b c.png') + '&w=480');
+  });
+
+  it('w esplicito in query', () => {
+    expect(posterUrl('/a', 96)).toBe(BASE + '/api/poster?path=' + encodeURIComponent('/a') + '&w=96');
+  });
+});
+
+describe('posterSrcSet', () => {
+  it('path vuoto: ritorna stringa vuota', () => {
+    expect(posterSrcSet('')).toBe('');
+    expect(posterSrcSet(null)).toBe('');
+  });
+
+  it('unisce i 4 tier con descrittori w', () => {
+    const p = '/a/b';
+    expect(posterSrcSet(p)).toBe(
+      [96, 480, 720, 1080]
+        .map((w) => `${BASE}/api/poster?path=${encodeURIComponent(p)}&w=${w} ${w}w`)
+        .join(', '),
+    );
+  });
+});
+
+describe('api.cache', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('thumbs: GET /api/cache/thumbs', async () => {
+    fetch.mockResolvedValue(jsonResponse({ files: 3, bytes: 100 }));
+    const r = await api.cache.thumbs();
+    expect(fetch).toHaveBeenCalledWith(BASE + '/api/cache/thumbs', expect.objectContaining({ method: 'GET' }));
+    expect(r).toEqual({ files: 3, bytes: 100 });
+  });
+
+  it('clearThumbs: DELETE /api/cache/thumbs', async () => {
+    fetch.mockResolvedValue(jsonResponse({ removedFiles: 3, freedBytes: 100 }));
+    await api.cache.clearThumbs();
+    expect(fetch).toHaveBeenCalledWith(BASE + '/api/cache/thumbs', expect.objectContaining({ method: 'DELETE' }));
   });
 });

@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { api, BASE, posterUrl } from '../api.js';
+  import { api, BASE, posterUrl, posterSrcSet } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
   import ConfirmModal from './ConfirmModal.svelte';
   import DirectoryBrowser from './DirectoryBrowser.svelte';
@@ -190,6 +190,10 @@
     return posterUrl(item ? item.path : '');
   }
 
+  function posterSet(item) {
+    return posterSrcSet(item ? item.path : '');
+  }
+
   function openDetail(idx) { detailIndex = idx; }
   function closeDetail() { detailIndex = -1; }
 
@@ -317,6 +321,7 @@
       series={s}
       description={descriptions[detailIndex]}
       poster={posterSrc(s)}
+      srcset={posterSet(s)}
       onclose={closeDetail}
       onedit={() => { const idx = detailIndex; closeDetail(); openEdit(idx); }}
       onremove={() => { const idx = detailIndex; closeDetail(); promptRemove(idx); }}

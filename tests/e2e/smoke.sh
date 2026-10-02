@@ -794,6 +794,72 @@ else
     fail "places malformate: $(cat "$RPT/places.json")"
 fi
 
+echo "[9b3/14] /api/poster thumbs + /api/cache/thumbs"
+mkdir -p "$WEB_SBX/media/SeriePoster"
+ffmpeg -hide_banner -v error -f lavfi -i testsrc=size=800x1200:duration=1 -frames:v 1 \
+    -y "$WEB_SBX/media/SeriePoster/folder.jpg" 2>/dev/null \
+    || fail "ffmpeg non genera folder.jpg di fixture"
+# w=480 -> WebP 480px (tier esatto: sorgente 800px), header immutabili
+curl -s -m 15 --get --data-urlencode "path=$WEB_SBX/media/SeriePoster" --data-urlencode "w=480" \
+    -o "$RPT/thumb480.webp" -D "$RPT/thumb480.hdr" "$BASE/api/poster"
+if grep -qi 'content-type: image/webp' "$RPT/thumb480.hdr"; then
+    pass "poster w=480 -> WebP"
+else
+    fail "poster w=480 non WebP: $(grep -i content-type "$RPT/thumb480.hdr" || echo 'no header')"
+fi
+if [ "$(ffprobe -v error -show_entries stream=width -of csv=p=0 "$RPT/thumb480.webp")" = "480" ]; then
+    pass "poster w=480 -> 480px"
+else
+    fail "poster w=480 dimensioni errate"
+fi
+if grep -qi 'max-age=31536000, immutable' "$RPT/thumb480.hdr"; then
+    pass "poster -> cache immutable"
+else
+    fail "poster senza cache immutable"
+fi
+# w=96 -> tier 96px; default (no w) e w invalido -> 480px
+curl -s -m 15 --get --data-urlencode "path=$WEB_SBX/media/SeriePoster" --data-urlencode "w=96" \
+    -o "$RPT/thumb96.webp" "$BASE/api/poster"
+if [ "$(ffprobe -v error -show_entries stream=width -of csv=p=0 "$RPT/thumb96.webp")" = "96" ]; then
+    pass "poster w=96 -> 96px"
+else
+    fail "poster w=96 dimensioni errate"
+fi
+for warg in "" "w=abc" "w=9999"; do
+    if [ -z "$warg" ]; then
+        curl -s -m 15 --get --data-urlencode "path=$WEB_SBX/media/SeriePoster" \
+            -o "$RPT/thumbdef.webp" -D "$RPT/thumbdef.hdr" "$BASE/api/poster"
+    else
+        curl -s -m 15 --get --data-urlencode "path=$WEB_SBX/media/SeriePoster" --data-urlencode "$warg" \
+            -o "$RPT/thumbdef.webp" -D "$RPT/thumbdef.hdr" "$BASE/api/poster"
+    fi
+    if grep -qi 'content-type: image/webp' "$RPT/thumbdef.hdr"; then
+        pass "poster ${warg:-default} -> WebP (fallback tier)"
+    else
+        fail "poster ${warg:-default} non WebP"
+    fi
+done
+# cache info: almeno i file generati sopra
+curl -s -m 10 "$BASE/api/cache/thumbs" > "$RPT/thumbs.json"
+if jq -e '.files >= 1 and .bytes > 0' "$RPT/thumbs.json" >/dev/null; then
+    pass "cache thumbs: info popolata"
+else
+    fail "cache thumbs info vuota: $(cat "$RPT/thumbs.json")"
+fi
+# DELETE svuota e la info torna a zero
+curl -s -m 10 -X DELETE "$BASE/api/cache/thumbs" > "$RPT/thumbs-del.json"
+if jq -e '.removedFiles >= 1 and .freedBytes > 0' "$RPT/thumbs-del.json" >/dev/null; then
+    pass "cache thumbs: DELETE svuota"
+else
+    fail "cache thumbs DELETE inefficace: $(cat "$RPT/thumbs-del.json")"
+fi
+curl -s -m 10 "$BASE/api/cache/thumbs" > "$RPT/thumbs2.json"
+if jq -e '.files == 0 and .bytes == 0' "$RPT/thumbs2.json" >/dev/null; then
+    pass "cache thumbs: info a zero dopo DELETE"
+else
+    fail "cache thumbs non azzerata: $(cat "$RPT/thumbs2.json")"
+fi
+
 echo "[9c/14] mkdir / touch / DELETE"
 curl -s -m 10 -X POST "$BASE/api/browse/mkdir" \
     -d "{\"parent\":\"$WEB_SBX/media\",\"name\":\"SmokeSerie\"}" > "$RPT/mkdir.json"
