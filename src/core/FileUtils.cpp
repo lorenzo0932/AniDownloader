@@ -1,6 +1,7 @@
 #include "core/FileUtils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cerrno>
 #include <chrono>
@@ -11,6 +12,7 @@
 #include <mutex>
 #include <regex>
 #include <sstream>
+#include <string_view>
 #ifdef __linux__
 #include <fcntl.h>
 #include <linux/fs.h>
@@ -26,6 +28,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 // _open/_close per la creazione esclusiva (O_EXCL) di createEmptyFile.
+#include <fcntl.h>
 #include <io.h>
 #include <sys/stat.h>
 #endif
@@ -196,12 +199,12 @@ namespace Core {
         // squashfs/nsfs in lista: gli snap (squashfs) e i namespace non sono
         // volumi che l'utente voglia sfogliare nel picker.
         bool isPseudoFs(const std::string& fsType) {
-            static const char* pseudo[] = {
+            static constexpr std::array<std::string_view, 22> pseudo = {
                 "proc",       "sysfs",     "devtmpfs",    "devpts",  "cgroup",     "cgroup2",
                 "securityfs", "pstore",    "debugfs",     "tracefs", "configfs",   "fusectl",
                 "mqueue",     "hugetlbfs", "binfmt_misc", "autofs",  "rpc_pipefs", "nsfs",
                 "bpf",        "selinuxfs", "efivarfs",    "squashfs"};
-            for (const char* p : pseudo)
+            for (std::string_view p : pseudo)
                 if (fsType == p)
                     return true;
             return false;
@@ -215,8 +218,12 @@ namespace Core {
 
         bool isOctalDigit(char c) { return c >= '0' && c <= '7'; }
 
-        bool underPrefix(const std::string& p, const std::string& prefix) {
-            return p == prefix || p.rfind(prefix + "/", 0) == 0;
+        bool underPrefix(std::string_view p, std::string_view prefix) {
+            if (p == prefix)
+                return true;
+            // p inizia con "prefix/"?
+            return p.size() > prefix.size() && p.substr(0, prefix.size()) == prefix &&
+                   p[prefix.size()] == '/';
         }
 
         // Path di sistema: mai offerti come "dischi" nel picker, anche se il
@@ -227,16 +234,16 @@ namespace Core {
         bool isSystemMountPath(const std::string& mp) {
             if (underPrefix(mp, "/run") && !underPrefix(mp, "/run/media"))
                 return true;
-            static const char* sys[] = {"/proc",
-                                        "/sys",
-                                        "/dev",
-                                        "/snap",
-                                        "/boot",
-                                        "/var/lib/docker",
-                                        "/var/lib/containers",
-                                        "/var/lib/snapd",
-                                        "/var/snap"};
-            for (const char* prefix : sys)
+            static constexpr std::array<std::string_view, 9> sys = {"/proc",
+                                                                    "/sys",
+                                                                    "/dev",
+                                                                    "/snap",
+                                                                    "/boot",
+                                                                    "/var/lib/docker",
+                                                                    "/var/lib/containers",
+                                                                    "/var/lib/snapd",
+                                                                    "/var/snap"};
+            for (std::string_view prefix : sys)
                 if (underPrefix(mp, prefix))
                     return true;
             return mp == "/home";
@@ -353,15 +360,19 @@ namespace Core {
     }
 
     // ---- Posizioni principali (sidebar del picker) ----
+    // (content, home) segue l'ordine naturale "dati + contesto"; lo scambio e' coperto dai test.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::vector<PlaceEntry> parseUserDirsFile(const std::string& content, const std::string& home) {
         struct KeyMap {
             const char* key;
             const char* id;
         };
-        static const KeyMap keys[] = {
-            {"XDG_DESKTOP_DIR", "desktop"},    {"XDG_DOCUMENTS_DIR", "documents"},
-            {"XDG_DOWNLOAD_DIR", "downloads"}, {"XDG_MUSIC_DIR", "music"},
-            {"XDG_PICTURES_DIR", "pictures"},  {"XDG_VIDEOS_DIR", "videos"}};
+        static constexpr std::array<KeyMap, 6> keys = {{{"XDG_DESKTOP_DIR", "desktop"},
+                                                        {"XDG_DOCUMENTS_DIR", "documents"},
+                                                        {"XDG_DOWNLOAD_DIR", "downloads"},
+                                                        {"XDG_MUSIC_DIR", "music"},
+                                                        {"XDG_PICTURES_DIR", "pictures"},
+                                                        {"XDG_VIDEOS_DIR", "videos"}}};
         std::vector<PlaceEntry> out;
         std::istringstream in(content);
         std::string line;
@@ -384,11 +395,17 @@ namespace Core {
                 size_t b = val.find_last_not_of(" \t\"'");
                 val = val.substr(a, b - a + 1);
                 if (val.rfind("$HOME/", 0) == 0)
-                    val = home + val.substr(5);
+                    val.replace(0, 5, home); // "$HOME" -> home, resta "/..."
                 else if (val == "$HOME")
                     val = home;
-                else if (!val.empty() && val[0] != '/')
-                    val = home + "/" + val; // relativo: da spec e' sotto $HOME
+                else if (!val.empty() && val[0] != '/') { // relativo: da spec e' sotto $HOME
+                    std::string abs;
+                    abs.reserve(home.size() + 1 + val.size());
+                    abs += home;
+                    abs += '/';
+                    abs += val;
+                    val = std::move(abs);
+                }
                 if (val.empty() || val[0] != '/')
                     continue;
                 // Directory DISABILITATA: da spec xdg-user-dirs, puntare alla
@@ -684,6 +701,8 @@ namespace Core {
         }
     } // namespace
 
+    // (parent, name) e' l'API in stile mkdir; lo scambio e' coperto dai test.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     FsOpStatus createDirectory(const std::string& parent, const std::string& name,
                                std::string* outPath) {
         if (!isValidEntryName(name))
@@ -705,6 +724,8 @@ namespace Core {
         return FsOpStatus::Ok;
     }
 
+    // Come createDirectory: (parent, name) in stile mkdir.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     FsOpStatus createEmptyFile(const std::string& parent, const std::string& name,
                                std::string* outPath) {
         if (!isValidEntryName(name))
