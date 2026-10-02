@@ -97,7 +97,7 @@
     flex-shrink: 0;
   }
   .detail-poster {
-    width: 260px; height: 100%; aspect-ratio: 2/3; object-fit: contain;
+    width: 260px; height: auto; aspect-ratio: 2/3; object-fit: contain;
     display: block; background: var(--bg-tertiary);
     transform: translateZ(0);
   }

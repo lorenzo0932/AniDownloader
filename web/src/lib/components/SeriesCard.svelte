@@ -63,7 +63,7 @@
     cursor: pointer;
   }
   .card-poster {
-    width: 100%; aspect-ratio: 2 / 3; object-fit: contain;
+    width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: contain;
     background: var(--bg-tertiary);
     display: block;
     transform: translateZ(0);
