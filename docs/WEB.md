@@ -113,6 +113,9 @@ Su mobile la griglia non scende mai sotto 2 colonne: una card portrait 2:3
 a tutta larghezza riempirebbe lo schermo da sola. Sotto ~560px anche la
 vista grande resta a 2 colonne (2×220px non ci starebbero: l'auto-fill
 crollerebbe a 1 colonna); su tablet la grande differenzia (3 colonne).
+Sempre sotto ~560px il bottone Vista grande è nascosto (coinciderebbe
+con la griglia: precedente Gmail/Jellyfin) e la tabella nasconde la data
+ultimo download — riga a una sola riga con servizio, Ep e badge.
 
 ### api.js
 

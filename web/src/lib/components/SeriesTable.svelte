@@ -26,15 +26,15 @@
       <div class="row-info">
         <span class="row-name">{item.name || item.title}</span>
         <span class="row-meta">
-          {#if item.service}
-            <span class="row-service">{item.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
-            <span aria-hidden="true">·</span>
-          {/if}
-          Ep: {item.local_episode_count ?? '?'}
-          {#if downloadDate(item.last_downloaded_at)}
-            <span aria-hidden="true">·</span>
-            <span class="row-date" title="Ultimo download">{downloadDate(item.last_downloaded_at)}</span>
-          {/if}
+          <span class="row-meta-text">
+            {#if item.service}
+              <span class="row-service">{item.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
+            {/if}
+            <span class="row-ep">Ep: {item.local_episode_count ?? '?'}</span>
+            {#if downloadDate(item.last_downloaded_at)}
+              <span class="row-date" title="Ultimo download">{downloadDate(item.last_downloaded_at)}</span>
+            {/if}
+          </span>
           {#if item.is_high_priority}
             <span class="row-badge row-badge-warn">Alta Priorità</span>
           {/if}
@@ -83,14 +83,35 @@
   .row-meta {
     font-size: 0.72rem; color: var(--text-muted);
     display: flex; align-items: center; gap: 0.35rem;
+    min-width: 0; overflow: hidden; white-space: nowrap;
+  }
+  /* Testo ellissizzabile (una riga, mai a capo): i separatori '·' vivono
+     in CSS sui fratelli, cosi nascondere un pezzo (es. data su mobile)
+     non lascia mai puntini orfani. */
+  .row-meta-text {
+    display: flex; align-items: center;
+    min-width: 0; overflow: hidden; white-space: nowrap;
+  }
+  .row-meta-text > span { flex-shrink: 0; }
+  .row-meta-text > span + span::before {
+    content: '·'; margin: 0 0.35rem; color: var(--text-muted-more, var(--text-muted));
+  }
+  .row-meta-text > .row-date {
+    flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; min-width: 0;
   }
   .row-service { color: var(--accent); }
   .row-date { color: var(--text-muted); }
   .row-badge {
     font-size: 0.66rem; font-weight: 600; padding: 0.08rem 0.4rem;
     border-radius: 20px; background: var(--bg-tertiary); color: var(--text-muted);
+    white-space: nowrap; flex-shrink: 0;
   }
   .row-badge-warn { color: var(--warning-text); background: var(--warning-bg); }
+  @media (max-width: 560px) {
+    /* Precedente Jellyfin mobile: via le info secondarie. La data resta
+       su tablet/desktop e comunque nel modale dettaglio. */
+    .row-meta-text > .row-date { display: none; }
+  }
   .row-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
   .btn-row {
     background: none; border: none; color: var(--text-muted);

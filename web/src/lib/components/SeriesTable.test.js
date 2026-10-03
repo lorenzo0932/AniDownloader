@@ -78,4 +78,16 @@ describe('SeriesTable', () => {
     render(SeriesTable, { items });
     expect(screen.getAllByText('Alta Priorità')).toHaveLength(1);
   });
+
+  it('struttura mobile-friendly: testo ellissizzabile + badge mai troncato', () => {
+    const items = itemsFixture();
+    items[0].last_downloaded_at = '2026-09-22T12:00:00';
+    items[0].is_high_priority = true;
+    const { container } = render(SeriesTable, { items });
+    const meta = container.querySelector('.series-row .row-meta');
+    // Il badge e fratello del testo (non dentro): non viene mai
+    // ellissizzato via, resta sempre intero su una riga.
+    expect(meta.querySelector('.row-meta-text + .row-badge')).toBeTruthy();
+    expect(meta.querySelector('.row-meta-text .row-date')).toBeTruthy();
+  });
 });
