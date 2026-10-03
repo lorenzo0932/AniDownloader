@@ -100,13 +100,19 @@ if (it != files.end()) {
 
 ### Viste Gestione Serie
 
-La pagina `/gestione` ha tre viste dal toggle in alto (stile Sonarr):
-**griglia** (browsing: card 150px con poster, titolo e badge Ep/servizio),
-**grande** (stesse card a 220px, poster ~330px) e **tabella** (gestione densa:
-righe con miniatura 40px, nome e icone Modifica/Elimina). Path, URL e azioni
-vivono nel modale dettaglio, con azioni anche in overlay hover su desktop.
+La pagina `/gestione` ha tre viste dal toggle in alto (stile Sonarr),
+default **grande**: **griglia** (browsing: card 150px con poster, titolo e
+badge Ep/servizio), **grande** (stesse card a 220px, poster ~330px) e
+**tabella** (gestione densa: righe con miniatura 40px, nome, Episodi,
+data ultimo download e badge Alta Priorità + icone Modifica/Elimina).
+Vista e ordinamento (default: data inserimento, più recenti prima)
+persistono in `localStorage` (`anidl.series.view` / `anidl.series.sort`,
+per-browser come Sonarr). Path, URL e azioni vivono nel modale dettaglio,
+con azioni anche in overlay hover su desktop.
 Su mobile la griglia non scende mai sotto 2 colonne: una card portrait 2:3
-a tutta larghezza riempirebbe lo schermo da sola.
+a tutta larghezza riempirebbe lo schermo da sola. Sotto ~560px anche la
+vista grande resta a 2 colonne (2×220px non ci starebbero: l'auto-fill
+crollerebbe a 1 colonna); su tablet la grande differenzia (3 colonne).
 
 ### api.js
 
