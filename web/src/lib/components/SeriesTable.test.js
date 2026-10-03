@@ -50,4 +50,32 @@ describe('SeriesTable', () => {
     expect(onremove).toHaveBeenCalledWith(1);
     expect(onopen).not.toHaveBeenCalled();
   });
+
+  it('riga gestionale: ultimo download in forma breve', () => {
+    const items = itemsFixture();
+    items[0].last_downloaded_at = '2026-09-22T12:00:00';
+    const { container } = render(SeriesTable, { items });
+    // Formato it-IT gg/mm/aaaa, robusto al fuso (mezzogiorno UTC).
+    const metas = container.querySelectorAll('.row-meta');
+    expect(metas[0].textContent).toMatch(/\d{2}\/\d{2}\/\d{4}/);
+    expect(metas[1].textContent).not.toMatch(/\d{2}\/\d{2}\/\d{4}/);
+  });
+
+  it('riga gestionale: data assente o invalida -> nascosta', () => {
+    const items = itemsFixture();
+    items[0].last_downloaded_at = '';
+    items[1].last_downloaded_at = 'non-una-data';
+    const { container } = render(SeriesTable, { items });
+    const metas = container.querySelectorAll('.row-meta');
+    for (const m of metas) expect(m.textContent).not.toMatch(/\d{2}\/\d{2}\/\d{4}/);
+    // Episodi restano sempre visibili.
+    expect(metas[0].textContent).toContain('Ep: 100');
+  });
+
+  it('riga gestionale: badge Alta Priorita solo se flaggata', () => {
+    const items = itemsFixture();
+    items[0].is_high_priority = true;
+    render(SeriesTable, { items });
+    expect(screen.getAllByText('Alta Priorità')).toHaveLength(1);
+  });
 });

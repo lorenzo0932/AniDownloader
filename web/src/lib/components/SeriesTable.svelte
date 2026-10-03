@@ -1,9 +1,21 @@
 <script>
   // Vista tabella densa per la gestione: righe con miniatura + nome +
-  // servizio/episodi + azioni icona. Stessi callback della griglia.
+  // riga gestionale (servizio/episodi/ultimo download/badge) + azioni.
+  // Stessi callback della griglia. Niente badge "continua": nel backend
+  // e' true di default, apparirebbe su quasi ogni riga (= rumore);
+  // resta nel modale dettaglio insieme a path/URL.
   import { posterUrl } from '../api.js';
 
   let { items = [], onopen, onedit, onremove } = $props();
+
+  // Ultimo download in forma breve gg/mm/aaaa; stringhe vuote o non
+  // valide -> nascosto (la riga resta densa).
+  function downloadDate(v) {
+    if (!v) return '';
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
 </script>
 
 <div class="series-table" role="table" aria-label="Serie">
@@ -19,6 +31,13 @@
             <span aria-hidden="true">·</span>
           {/if}
           Ep: {item.local_episode_count ?? '?'}
+          {#if downloadDate(item.last_downloaded_at)}
+            <span aria-hidden="true">·</span>
+            <span class="row-date" title="Ultimo download">{downloadDate(item.last_downloaded_at)}</span>
+          {/if}
+          {#if item.is_high_priority}
+            <span class="row-badge row-badge-warn">Alta Priorità</span>
+          {/if}
         </span>
       </div>
       <div class="row-actions">
@@ -66,6 +85,12 @@
     display: flex; align-items: center; gap: 0.35rem;
   }
   .row-service { color: var(--accent); }
+  .row-date { color: var(--text-muted); }
+  .row-badge {
+    font-size: 0.66rem; font-weight: 600; padding: 0.08rem 0.4rem;
+    border-radius: 20px; background: var(--bg-tertiary); color: var(--text-muted);
+  }
+  .row-badge-warn { color: var(--warning-text); background: var(--warning-bg); }
   .row-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
   .btn-row {
     background: none; border: none; color: var(--text-muted);
