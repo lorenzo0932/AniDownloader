@@ -121,11 +121,16 @@ ultimo download — riga a una sola riga con servizio, Ep e badge.
 
 Info e modifica condividono: overlay `fadeIn` + pannello `scaleIn`,
 scroll di sfondo bloccato, bottone `← Serie` per tornare all'elenco
-(oltre a X, overlay e Esc; su mobile resta solo `← Serie`). La locandina nel dettaglio si ingrandisce
+(oltre a X, overlay e Esc; su mobile resta solo `← Serie`).
+Il form ricorda l'origine (modello drill-down): aperto dal dettaglio,
+back e Salva riportano al dettaglio (`← [nome]`); da lista/FAB tutto
+come prima. La locandina nel dettaglio si ingrandisce
 in lightbox fullscreen vincolata al viewport (max 100vw/100dvh,
 full-res 1080); Esc chiude prima la lightbox, poi il modale.
 Animazioni standard in tutta la UI: ingressi `fly`/`fadeIn`/`scaleIn`/
-`slideUp`/`cardIn`/`rowIn` (0.2–0.35s ease-out), hover 0.15s.
+`slideUp`/`cardIn`/`rowIn` (0.2–0.35s ease-out), hover 0.15s. Modali,
+lightbox e pagine usano `transition:` simmetriche: anche la chiusura
+e animata, con gli stessi tempi dell'apertura.
 
 ### api.js
 

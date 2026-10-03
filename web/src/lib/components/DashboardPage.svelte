@@ -144,7 +144,11 @@
     showForm = true;
   }
 
-  function openEdit(fileIdx) {
+  // origin: 'list' (FAB, griglia, tabella) o 'detail' (dal modale info).
+  // Ricordarla rende il back contestuale: dal dettaglio si torna al
+  // dettaglio, non alla lista (navigazione drill-down).
+  let formOrigin = $state('list');
+  function openEdit(fileIdx, origin = 'list') {
     const s = series.find(item => item._file_index === fileIdx);
     if (!s) { error = 'Errore: serie con indice ' + fileIdx + ' non trovata.'; return; }
     form = {
@@ -157,6 +161,7 @@
       passedEpisodes: s.passed_episodes || 0,
     };
     editing = fileIdx;
+    formOrigin = origin;
     showForm = true;
     posterError = false;
   }
@@ -165,6 +170,16 @@
     showForm = false;
     editing = -1;
     resetForm();
+    formOrigin = 'list';
+  }
+
+  // Chiusura contestuale (back/Annulla): dal dettaglio si riapre il
+  // dettaglio, dalla lista si torna alla lista.
+  function closeFormToOrigin() {
+    const idx = editing;
+    const origin = formOrigin;
+    closeForm();
+    if (origin === 'detail' && idx >= 0) detailIndex = idx;
   }
 
   async function saveForm() {
@@ -190,8 +205,12 @@
       } else {
         await api.series.add(item);
       }
+      // Dopo il salvataggio si torna all'origine (dettaglio o lista).
+      const savedIdx = editing;
+      const origin = formOrigin;
       closeForm();
       await load();
+      if (origin === 'detail' && savedIdx >= 0) detailIndex = savedIdx;
     } catch (e) {
       error = e.message;
     }
@@ -271,7 +290,7 @@
 
 </script>
 
-<div in:fly={{ y: 8, duration: 200 }}>
+<div transition:fly={{ y: 8, duration: 200 }}>
 <div class="header-row">
   <h2>Gestione Serie</h2>
 </div>
@@ -353,7 +372,8 @@
     {form}
     {editing}
     {series}
-    onclose={closeForm}
+    backToName={formOrigin === 'detail' ? form.name : ''}
+    onclose={closeFormToOrigin}
     onsave={saveForm}
     ondelete={() => { const idx = editing; closeForm(); promptRemove(idx); }}
     onpick={pickDirectory}
@@ -371,7 +391,7 @@
       srcset={posterSet(s)}
       fullPoster={posterUrl(s.path, 1080)}
       onclose={closeDetail}
-      onedit={() => { const idx = detailIndex; closeDetail(); openEdit(idx); }}
+      onedit={() => { const idx = detailIndex; closeDetail(); openEdit(idx, 'detail'); }}
       onremove={() => { const idx = detailIndex; closeDetail(); promptRemove(idx); }}
     />
   {:else}
