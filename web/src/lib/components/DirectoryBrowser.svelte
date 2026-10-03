@@ -1,5 +1,6 @@
 <script>
   import { untrack } from 'svelte';
+  import { fade, fly } from 'svelte/transition';
   import { api } from '../api.js';
   import ConfirmModal from './ConfirmModal.svelte';
 
@@ -242,8 +243,8 @@
 </script>
 
 {#if show}
-  <div class="browser-overlay" onclick={oncancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="browser-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
+  <div class="browser-overlay" out:fade={{ duration: 150 }} onclick={oncancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="browser-modal" out:fly={{ y: 16, duration: 200 }} onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
       <div class="browser-header">
         <button type="button" class="btn-icon-sm side-toggle" onclick={() => sidebarOpen = !sidebarOpen}
                 title="Posizioni e dischi" aria-label="Posizioni e dischi" aria-expanded={sidebarOpen}>
@@ -441,7 +442,7 @@
     width: 680px; max-width: 94vw;
     height: 560px; max-height: 88vh;
     display: flex; flex-direction: column;
-    animation: scaleIn 0.2s ease-out;
+    animation: panelIn 0.2s ease-out;
     box-shadow: 0 12px 40px rgba(0,0,0,0.5);
   }
   .browser-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
@@ -498,6 +499,7 @@
     padding: 0.45rem 0.7rem; font-size: 0.8rem;
     background: none; border: 1px solid var(--btn-cancel-border);
     border-radius: 6px; color: var(--text-secondary); cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel-sm:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .browser-sort-bar {
@@ -592,15 +594,18 @@
   .btn-cancel {
     padding: 0.55rem 1.1rem; background: none; border: 1px solid var(--btn-cancel-border);
     border-radius: 8px; color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-primary {
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
 
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes panelIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 
   @media (max-width: 768px) {

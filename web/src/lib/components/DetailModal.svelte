@@ -1,20 +1,37 @@
 <script>
   // Modale dettaglio serie. Lo stato di apertura (detailIndex) resta nel
-  // parent: qui solo presentazione della serie + azioni.
-  let { series = null, description = '', poster = '', srcset = '', onclose, onedit, onremove } = $props();
+  // parent: qui solo presentazione della serie + azioni + lightbox.
+  import { fade, fly, scale } from 'svelte/transition';
+
+  let { series = null, description = '', poster = '', srcset = '', fullPoster = '', onclose, onedit, onremove } = $props();
+  let showLightbox = $state(false);
 </script>
 
 {#if series}
-  <div class="modal-overlay" onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="modal-panel detail-modal" onclick={(e) => e.stopPropagation()} role="presentation">
+  <!-- Ingresso via CSS (sempre visibile) + uscita via out: (simmetrica).
+       transition: copriva entrambe ma l'ingresso non risultava percepibile. -->
+  <div class="modal-overlay" out:fade={{ duration: 150 }} onclick={onclose} onkeydown={(e) => { if (e.key !== 'Escape') return; if (showLightbox) showLightbox = false; else onclose?.(); }} role="dialog" aria-modal="true" tabindex="-1">
+    <!-- Pannello con rise (fly y+fade): lo scale 0.95 era impercettibile,
+         specie sul modale fullscreen mobile dove solo il testo sembrava
+         animarsi. Stesso vocabolario delle pagine (fly y:8). -->
+    <div class="modal-panel detail-modal" out:fly={{ y: 16, duration: 200 }} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="detail-modal-inner">
         <div class="detail-poster-col">
-          <img class="detail-poster" src={poster} srcset={srcset}
-            sizes="(max-width: 768px) 160px, 260px"
-            width="480" height="720" alt="" loading="lazy" decoding="async" />
+          <button type="button" class="detail-poster-btn" onclick={() => showLightbox = true} title="Ingrandisci locandina" aria-label="Ingrandisci locandina">
+            <img class="detail-poster-ambient" src={poster} alt="" aria-hidden="true" />
+            <img class="detail-poster" src={poster} srcset={srcset}
+              sizes="(max-width: 768px) 160px, 260px"
+              width="480" height="720" alt="" loading="lazy" decoding="async" />
+          </button>
         </div>
         <div class="detail-info-col">
-          <button class="detail-close" onclick={onclose}>&times;</button>
+          <div class="detail-topbar">
+            <button type="button" class="modal-back" onclick={onclose} title="Torna alle serie" aria-label="Torna alle serie">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              <span>Serie</span>
+            </button>
+            <button class="detail-close" onclick={onclose} aria-label="Chiudi">&times;</button>
+          </div>
           <div class="detail-info-scroll">
             <h2 class="detail-title">{series.name || series.title}</h2>
             <div class="detail-meta">
@@ -71,6 +88,11 @@
           </div>
         </div>
       </div>
+      {#if showLightbox}
+        <div class="lightbox" out:fade={{ duration: 150 }} onclick={() => showLightbox = false} role="dialog" aria-modal="true" aria-label="Locandina a tutto schermo" title="Chiudi">
+          <img class="lightbox-img" out:scale={{ duration: 200, start: 0.95 }} src={fullPoster || poster} alt="" />
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
@@ -84,7 +106,7 @@
     animation: fadeIn 0.2s ease;
   }
   .detail-modal {
-    animation: scaleIn 0.25s ease-out;
+    animation: panelIn 0.25s ease-out;
     max-width: 90vw; max-height: 90vh;
   }
   .detail-modal-inner {
@@ -96,10 +118,32 @@
   .detail-poster-col {
     flex-shrink: 0;
   }
+  .detail-poster-btn {
+    background: none; border: none; padding: 0; display: block; width: 100%; cursor: zoom-in;
+  }
+  /* Desktop: nascosto (la colonna 260px calza a pennello, niente bande). */
+  .detail-poster-ambient { display: none; }
   .detail-poster {
-    width: 260px; height: 100%; aspect-ratio: 2/3; object-fit: cover;
-    display: block;
+    width: 260px; height: auto; aspect-ratio: 2/3; object-fit: contain;
+    display: block; background: var(--bg-tertiary);
     transform: translateZ(0);
+    transition: transform 0.2s ease, filter 0.2s ease;
+  }
+  @media (hover: hover) {
+    .detail-poster-btn:hover .detail-poster { transform: scale(1.02); filter: brightness(1.06); }
+  }
+  /* Lightbox: locandina vincolata al viewport (mai oltre lo schermo,
+     mai ingrandita oltre il naturale). Stesso vocabolario animazioni
+     dei modali: fadeIn overlay + scaleIn contenuto. */
+  .lightbox {
+    position: fixed; inset: 0; z-index: 300;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.9); cursor: zoom-out;
+    animation: fadeIn 0.2s ease;
+  }
+  .lightbox-img {
+    max-width: 100vw; max-height: 100dvh; object-fit: contain;
+    animation: scaleIn 0.25s ease-out;
   }
   .detail-info-col {
     flex: 1; min-width: 0; padding: 1.5rem;
@@ -111,13 +155,29 @@
     display: flex; flex-direction: column; gap: 0.75rem;
   }
   .detail-close {
-    position: absolute; top: 0.75rem; right: 0.75rem;
     background: none; border: none; color: var(--text-muted);
     font-size: 1.5rem; cursor: pointer; line-height: 1;
     padding: 0.25rem;
+    transition: color 0.15s ease;
   }
   .detail-close:hover { color: var(--text-primary); }
-  .detail-title { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); padding-right: 2rem; }
+  .detail-topbar {
+    display: flex; align-items: center; justify-content: flex-end;
+    margin-bottom: 0.5rem;
+  }
+  .modal-back {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: none; border: 1px solid var(--border-color); border-radius: 8px;
+    color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;
+    padding: 0.35rem 0.6rem; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .modal-back:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent); }
+  /* Desktop: solo la X come prima; il back vive su mobile. */
+  @media (min-width: 769px) {
+    .detail-topbar .modal-back { display: none; }
+  }
+  .detail-title { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
   .detail-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
   .card-service {
     display: inline-block; font-size: 0.68rem; color: var(--accent);
@@ -142,41 +202,66 @@
   .detail-stat-url { font-size: 0.75rem; font-weight: 400; word-break: break-all; text-align: right; max-width: 55%; }
   .detail-stat-url:hover { color: var(--accent); }
   .detail-actions { display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); flex-shrink: 0;
-    padding-bottom: 96px;
   }
   .detail-stat-diff { color: var(--text-muted); font-size: 0.75rem; margin-left: 0.4rem; }
   .btn-primary {
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
+    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-danger {
     padding: 0.55rem 1.1rem; background: var(--danger); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
+    transition: opacity 0.15s ease;
   }
   .btn-danger:hover { opacity: 0.85; }
 
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes panelIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
   @media (max-width: 768px) {
     .detail-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       max-width: 100vw; max-height: 100dvh; border-radius: 0;
-      animation: fadeIn 0.2s ease;
     }
     .detail-modal-inner {
       flex-direction: column; border-radius: 0;
       max-height: 100dvh; height: 100dvh;
     }
-    .detail-poster { width: 100%; aspect-ratio: 2/3; max-height: 40dvh; object-fit: cover; }
+    /* Banner ambient: la stessa locandina (URL identico = zero traffico
+       extra) che sborda sfocata oltre i bordi: il poster sembra
+       prolungarsi (stile Spotify). Vivido di proposito: niente tagli
+       di luminosita, altrimenti su arte scura non si percepisce. */
+    .detail-poster-col { background: #000; }
+    .detail-poster-btn { position: relative; overflow: hidden; }
+    .detail-poster-ambient {
+      display: block; position: absolute; inset: -15%;
+      width: 130%; height: 130%;
+      object-fit: cover; filter: blur(32px) saturate(1.8);
+    }
+    .detail-poster {
+      position: relative; width: 100%; height: 38dvh;
+      aspect-ratio: auto; object-fit: contain;
+      /* Trasparente: il suo fondo coprirebbe l'ambient dietro.
+         (Su desktop resta --bg-tertiary: la colonna calza a pennello.) */
+      background: transparent;
+    }
     .detail-info-col { max-width: none; padding: 1rem; }
     .detail-desc { max-height: none; }
     .detail-stat-path { max-width: none; }
     .detail-stat-url { max-width: none; }
+    /* Un solo figlio visibile per volta: mobile back a sinistra,
+       desktop X a destra (space-between li metterebbe entrambi male). */
+    .detail-topbar { justify-content: flex-start; }
+    /* Su mobile resta solo '<- Serie': la X vive su desktop. */
+    .detail-close { display: none; }
+    /* Spazio sotto le azioni solo su mobile (era il bianco su desktop). */
+    .detail-actions { padding-bottom: 96px; }
   }
 
   @media (orientation: landscape) and (max-height: 520px) {
@@ -188,7 +273,7 @@
       flex-direction: row; border-radius: 0;
       max-height: 100dvh; height: 100dvh;
     }
-    .detail-poster { width: 160px; max-height: 100dvh; aspect-ratio: 2/3; object-fit: cover; }
+    .detail-poster { width: 160px; max-height: 100dvh; aspect-ratio: 2/3; object-fit: contain; }
     .detail-info-col { max-width: none; padding: 0.75rem; }
     .detail-actions { padding-bottom: 48px; }
   }

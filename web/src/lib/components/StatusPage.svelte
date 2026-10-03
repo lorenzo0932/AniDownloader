@@ -278,7 +278,7 @@
   });
 </script>
 
-<div class="vetrina" in:fly={{ y: 8, duration: 200 }}>
+<div class="vetrina" transition:fly={{ y: 8, duration: 200 }}>
   <OverallHeader
     {downloadRunning}
     {overallStatus}
@@ -468,12 +468,14 @@
   .btn-primary {
     padding: 0.6rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-secondary {
     padding: 0.6rem 1.25rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-secondary:hover { background: var(--bg-hover); color: var(--text-primary); }
   .btn-sm { padding: 0.45rem 0.9rem; font-size: 0.8rem; }
@@ -534,7 +536,7 @@
     animation: rowIn 0.3s ease-out both;
   }
   .poster-thumb {
-    width: 40px; height: 56px; border-radius: 4px; object-fit: cover;
+    width: 40px; height: 56px; border-radius: 4px; object-fit: contain;
     background: var(--bg-tertiary); flex-shrink: 0;
   }
   .series-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }

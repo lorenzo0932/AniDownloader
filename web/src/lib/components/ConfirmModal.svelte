@@ -1,4 +1,6 @@
 <script>
+  import { fade, fly } from 'svelte/transition';
+
   let { show = false, title = 'Conferma', message = '', confirmText = 'Conferma', cancelText = 'Annulla', danger = false, onConfirm, onCancel } = $props();
 
   let confirmId = $state('');
@@ -10,8 +12,8 @@
 </script>
 
 {#if show}
-  <div class="confirm-overlay" onclick={onCancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="confirm-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
+  <div class="confirm-overlay" out:fade={{ duration: 150 }} onclick={onCancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="confirm-modal" out:fly={{ y: 16, duration: 200 }} onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
       <div class="confirm-header">
         <h3>{title}</h3>
       </div>
@@ -35,9 +37,9 @@
     border: none; padding: 0; cursor: default;
   }
   .confirm-modal {
+    animation: panelIn 0.2s ease-out;
     background: var(--bg-secondary); border: 1px solid var(--border-color);
     border-radius: 12px; padding: 1.25rem; min-width: 320px; max-width: 90vw;
-    animation: scaleIn 0.2s ease-out;
     box-shadow: 0 12px 40px rgba(0,0,0,0.5);
   }
   .confirm-header { margin-bottom: 0.75rem; }
@@ -48,16 +50,19 @@
   .btn-cancel {
     padding: 0.55rem 1.1rem; background: none; border: 1px solid var(--btn-cancel-border);
     border-radius: 8px; color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-confirm {
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s ease;
   }
   .btn-confirm:hover { background: var(--accent-hover); }
   .btn-confirm.danger { background: var(--danger); }
   .btn-confirm.danger:hover { background: #ef4444; }
 
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes panelIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 </style>

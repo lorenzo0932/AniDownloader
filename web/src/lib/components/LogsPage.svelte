@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { fly } from 'svelte/transition';
   import { api } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
 
@@ -25,7 +26,7 @@
   onMount(load);
 </script>
 
-<div in:fly={{ y: 8, duration: 200 }}>
+<div transition:fly={{ y: 8, duration: 200 }}>
   <div class="header-row">
     <h2>Server Logs</h2>
     <div class="controls">
@@ -59,6 +60,7 @@
   .btn-primary {
     padding: 0.5rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .error {

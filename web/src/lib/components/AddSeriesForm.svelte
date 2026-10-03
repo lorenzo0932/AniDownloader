@@ -2,8 +2,9 @@
   // Modale aggiunta/modifica serie. Lo stato del form e le azioni di salvataggio
   // restano nel parent (DashboardPage): qui solo presentazione + fetch-name.
   import { api, posterUrl } from '../api.js';
+  import { fade, fly } from 'svelte/transition';
 
-  let { show = false, form, editing = -1, series = [], onclose, onsave, ondelete, onpick, onerror } = $props();
+  let { show = false, form, editing = -1, series = [], backToName = '', onclose, onsave, ondelete, onpick, onerror } = $props();
   let posterError = $state(false);
 
   async function fetchName() {
@@ -18,9 +19,15 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="modal-panel form-modal" onclick={(e) => e.stopPropagation()} role="presentation">
+  <div class="modal-overlay" out:fade={{ duration: 150 }} onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="modal-panel form-modal" out:fly={{ y: 16, duration: 200 }} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="form-modal-body">
+        <div class="form-topbar">
+          <button type="button" class="modal-back" onclick={onclose} title={backToName ? `Torna a ${backToName}` : 'Torna alle serie'} aria-label={backToName ? `Torna a ${backToName}` : 'Torna alle serie'}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            <span class="back-label">{backToName || 'Serie'}</span>
+          </button>
+        </div>
         <h3>{editing >= 0 ? 'Modifica: ' + form.name : 'Aggiungi Nuova Serie'}</h3>
 
         <div class="form-layout">
@@ -127,12 +134,31 @@
     animation: fadeIn 0.2s ease;
   }
   .form-modal {
-    animation: scaleIn 0.25s ease-out;
+    animation: panelIn 0.25s ease-out;
     background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px;
     padding: 1.5rem; min-width: 520px; max-width: 90vw;
     max-height: 90vh; overflow-y: auto;
   }
   .form-modal-body h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--accent-light); }
+  .form-topbar { margin-bottom: 0.75rem; }
+  .modal-back {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: none; border: 1px solid var(--border-color); border-radius: 8px;
+    color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;
+    padding: 0.35rem 0.6rem; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .modal-back:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent); }
+  /* Desktop: bastano Annulla/Salva (il ritorno all'origine avviene
+     comunque); il back vive su mobile. Nascosta l'intera topbar per
+     non lasciare spazi vuoti. */
+  @media (min-width: 769px) {
+    .form-topbar { display: none; }
+  }
+  .modal-back .back-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0; max-width: 40vw;
+  }
 
   .form-layout { display: flex; gap: 1.25rem; }
   .form-poster-col { flex-shrink: 0; }
@@ -141,7 +167,7 @@
     background: var(--poster-frame-bg); display: flex; align-items: center; justify-content: center;
     overflow: hidden;
   }
-  .poster-preview { width: 100%; height: 100%; object-fit: cover; transform: translateZ(0); }
+  .poster-preview { width: 100%; height: 100%; object-fit: contain; transform: translateZ(0); }
   .poster-placeholder { color: var(--text-muted-more); font-size: 0.8rem; text-align: center; line-height: 1.5; }
   .form-fields-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 
@@ -184,21 +210,25 @@
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
+    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-cancel {
     padding: 0.55rem 1.1rem; background: none; border: 1px solid var(--btn-cancel-border); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-danger {
     padding: 0.55rem 1.1rem; background: var(--danger); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
+    transition: opacity 0.15s ease;
   }
   .btn-danger:hover { opacity: 0.85; }
 
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes panelIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 
   @media (max-width: 768px) {

@@ -82,7 +82,7 @@ if (it != files.end()) {
 |------------|-------|-------------|
 | `App.svelte` | — | Shell con sidebar, routing lato client |
 | `StatusPage.svelte` | `/` | Dashboard download live + stato serie |
-| `DashboardPage.svelte` | `/gestione` | CRUD serie con griglia card, poster |
+| `DashboardPage.svelte` | `/gestione` | CRUD serie con griglia card / tabella densa, poster |
 | `ConfigPage.svelte` | `/config` | Configurazione app |
 | `LogsPage.svelte` | `/logs` | Log viewer |
 
@@ -95,6 +95,46 @@ if (it != files.end()) {
 | `Dropdown.svelte` | Componente dropdown riutilizzabile |
 | `ConfirmModal.svelte` | Modale conferma |
 | `DirectoryBrowser.svelte` | File picker: ricerca, dischi, preferiti, creazione, rimozione |
+| `SeriesCard.svelte` | Card essenziale (poster + titolo + badge), azioni in hover overlay |
+| `SeriesTable.svelte` | Vista tabella densa per la gestione (thumb + nome + azioni icona) |
+
+### Viste Gestione Serie
+
+La pagina `/gestione` ha tre viste dal toggle in alto (stile Sonarr),
+default **grande**: **griglia** (browsing: card 150px con poster, titolo e
+badge Ep/servizio), **grande** (stesse card a 220px, poster ~330px) e
+**tabella** (gestione densa: righe con miniatura 40px, nome, Episodi,
+data ultimo download e badge Alta Priorità + icone Modifica/Elimina).
+Vista e ordinamento (default: data inserimento, più recenti prima)
+persistono in `localStorage` (`anidl.series.view` / `anidl.series.sort`,
+per-browser come Sonarr). Path, URL e azioni vivono nel modale dettaglio,
+con azioni anche in overlay hover su desktop.
+Su mobile la griglia non scende mai sotto 2 colonne: una card portrait 2:3
+a tutta larghezza riempirebbe lo schermo da sola. Sotto ~560px anche la
+vista grande resta a 2 colonne (2×220px non ci starebbero: l'auto-fill
+crollerebbe a 1 colonna); su tablet la grande differenzia (3 colonne).
+Sempre sotto ~560px il bottone Vista grande è nascosto (coinciderebbe
+con la griglia: precedente Gmail/Jellyfin) e la tabella nasconde la data
+ultimo download — riga a una sola riga con servizio, Ep e badge.
+
+### Modali Gestione Serie
+
+Info e modifica condividono: overlay `fadeIn` + pannello `panelIn` (rise
++16px, visibile anche sul fullscreen mobile) in ingresso via CSS,
+uscita via `out:` simmetrica (le `transition:` integrali non risultavano
+percepibili all'apertura). Scroll di sfondo bloccato.
+Su mobile il back `← Serie` è l'unica via (niente X, topbar a sinistra);
+su desktop restano X a destra in info e Annulla/Salva nel form.
+Su mobile la locandina ha sfondo ambient (stessa immagine sfocata dietro,
+zero traffico extra): niente bande grigie.
+Il form ricorda l'origine (modello drill-down): aperto dal dettaglio,
+back e Salva riportano al dettaglio (`← [nome]` su mobile); da lista/FAB
+tutto come prima. Lo switch griglia↔grande ricrea la griglia (`{#key}`,
+`cardIn` sempre) + `animate:flip` per i riordini. La locandina nel dettaglio
+si ingrandisce in lightbox fullscreen vincolata al viewport (max
+100vw/100dvh, full-res 1080); Esc chiude prima la lightbox, poi il modale.
+Animazioni standard in tutta la UI: ingressi `fly`/`fadeIn`/`panelIn`/
+`scaleIn`/`slideUp`/`cardIn`/`rowIn` (0.2–0.35s ease-out), hover 0.15s.
 
 ### api.js
 

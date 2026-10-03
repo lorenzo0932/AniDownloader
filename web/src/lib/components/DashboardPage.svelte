@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { fly } from 'svelte/transition';
   import { api, BASE, posterUrl, posterSrcSet } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
   import ConfirmModal from './ConfirmModal.svelte';
@@ -18,9 +19,30 @@
   let showBrowser = $state(false);
   let descriptions = $state({});
   let detailIndex = $state(-1);
-  let sortField = $state('name');
-  let sortDir = $state('asc');
-  let viewMode = $state('normal');
+  // Ordinamento persistente (stessa chiave-famiglia della vista).
+  // Default 'added'+desc = piu recenti prima (ordine file invertito).
+  const SORT_KEY = 'anidl.series.sort';
+  function loadSortPref() {
+    try {
+      const p = JSON.parse(localStorage.getItem(SORT_KEY));
+      if (p && typeof p.field === 'string' && (p.dir === 'asc' || p.dir === 'desc')) return p;
+    } catch {}
+    return { field: 'added', dir: 'desc' };
+  }
+  const sortPref = loadSortPref();
+  let sortField = $state(sortPref.field);
+  let sortDir = $state(sortPref.dir);
+  // Vista preferita persistente (per-browser, come Sonarr): sopravvive
+  // alla chiusura. Default 'large' (scelta utente). Chiave namespaced.
+  const VIEW_KEY = 'anidl.series.view';
+  function loadViewPref() {
+    try {
+      const v = localStorage.getItem(VIEW_KEY);
+      if (v === 'grid' || v === 'table' || v === 'large') return v;
+    } catch {}
+    return 'large';
+  }
+  let viewMode = $state(loadViewPref());
 
   let form = $state({
     service: 'animeW_scraper',
@@ -59,12 +81,24 @@
 
   onMount(() => { load(); });
 
-  let loadedFor = $state({ field: 'name', dir: 'asc' });
+  // Allineato ai default correnti: evita un doppio load() al mount
+  // (l'effect ricaricherebbe appena vede la discrepanza).
+  let loadedFor = $state({ field: sortField, dir: sortDir });
   $effect(() => {
     if (sortField !== loadedFor.field || sortDir !== loadedFor.dir) {
       loadedFor = { field: sortField, dir: sortDir };
       load();
     }
+  });
+
+  // Persiste la vista a ogni cambio (scrittura anche al mount: innocua).
+  $effect(() => {
+    try { localStorage.setItem(VIEW_KEY, viewMode); } catch {}
+  });
+
+  // Persiste l'ordinamento a ogni cambio.
+  $effect(() => {
+    try { localStorage.setItem(SORT_KEY, JSON.stringify({ field: sortField, dir: sortDir })); } catch {}
   });
 
   function setSort(field) {
@@ -110,7 +144,11 @@
     showForm = true;
   }
 
-  function openEdit(fileIdx) {
+  // origin: 'list' (FAB, griglia, tabella) o 'detail' (dal modale info).
+  // Ricordarla rende il back contestuale: dal dettaglio si torna al
+  // dettaglio, non alla lista (navigazione drill-down).
+  let formOrigin = $state('list');
+  function openEdit(fileIdx, origin = 'list') {
     const s = series.find(item => item._file_index === fileIdx);
     if (!s) { error = 'Errore: serie con indice ' + fileIdx + ' non trovata.'; return; }
     form = {
@@ -123,6 +161,7 @@
       passedEpisodes: s.passed_episodes || 0,
     };
     editing = fileIdx;
+    formOrigin = origin;
     showForm = true;
     posterError = false;
   }
@@ -131,6 +170,16 @@
     showForm = false;
     editing = -1;
     resetForm();
+    formOrigin = 'list';
+  }
+
+  // Chiusura contestuale (back/Annulla): dal dettaglio si riapre il
+  // dettaglio, dalla lista si torna alla lista.
+  function closeFormToOrigin() {
+    const idx = editing;
+    const origin = formOrigin;
+    closeForm();
+    if (origin === 'detail' && idx >= 0) detailIndex = idx;
   }
 
   async function saveForm() {
@@ -156,8 +205,12 @@
       } else {
         await api.series.add(item);
       }
+      // Dopo il salvataggio si torna all'origine (dettaglio o lista).
+      const savedIdx = editing;
+      const origin = formOrigin;
       closeForm();
       await load();
+      if (origin === 'detail' && savedIdx >= 0) detailIndex = savedIdx;
     } catch (e) {
       error = e.message;
     }
@@ -197,6 +250,16 @@
   function openDetail(idx) { detailIndex = idx; }
   function closeDetail() { detailIndex = -1; }
 
+  // Lock dello scroll di sfondo finche un modale e aperto
+  // (info / form / conferma / browser): ripristino in cleanup.
+  const anyModalOpen = $derived(detailIndex >= 0 || showForm || confirmDeleteIdx >= 0 || showBrowser);
+  $effect(() => {
+    if (!anyModalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  });
+
   function pickDirectory() {
     showBrowser = true;
   }
@@ -227,7 +290,7 @@
 
 </script>
 
-<div in:fly={{ y: 8, duration: 200 }}>
+<div transition:fly={{ y: 8, duration: 200 }}>
 <div class="header-row">
   <h2>Gestione Serie</h2>
 </div>
@@ -255,11 +318,14 @@
     </svg>
   </button>
   <div class="view-toggle">
-    <button type="button" class="btn-icon-only" class:active={viewMode === 'normal'} onclick={() => viewMode = 'normal'} title="Vista normale">
+    <button type="button" class="btn-icon-only" class:active={viewMode === 'grid'} onclick={() => viewMode = 'grid'} title="Vista griglia">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
     </button>
-    <button type="button" class="btn-icon-only" class:active={viewMode === 'compact'} onclick={() => viewMode = 'compact'} title="Vista compatta">
+    <button type="button" class="btn-icon-only" class:active={viewMode === 'table'} onclick={() => viewMode = 'table'} title="Vista tabella">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="18" height="4"/><rect x="3" y="10" width="18" height="4"/><rect x="3" y="17" width="18" height="4"/></svg>
+    </button>
+    <button type="button" class="btn-icon-only view-btn-large" class:active={viewMode === 'large'} onclick={() => viewMode = 'large'} title="Vista grande">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
     </button>
   </div>
 </div>
@@ -306,7 +372,8 @@
     {form}
     {editing}
     {series}
-    onclose={closeForm}
+    backToName={formOrigin === 'detail' ? form.name : ''}
+    onclose={closeFormToOrigin}
     onsave={saveForm}
     ondelete={() => { const idx = editing; closeForm(); promptRemove(idx); }}
     onpick={pickDirectory}
@@ -322,8 +389,9 @@
       description={descriptions[detailIndex]}
       poster={posterSrc(s)}
       srcset={posterSet(s)}
+      fullPoster={posterUrl(s.path, 1080)}
       onclose={closeDetail}
-      onedit={() => { const idx = detailIndex; closeDetail(); openEdit(idx); }}
+      onedit={() => { const idx = detailIndex; closeDetail(); openEdit(idx, 'detail'); }}
       onremove={() => { const idx = detailIndex; closeDetail(); promptRemove(idx); }}
     />
   {:else}
@@ -346,6 +414,7 @@
     background: none; border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); cursor: pointer; padding: 0.5rem;
     display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .btn-icon-only:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 
@@ -370,6 +439,12 @@
   .view-toggle { display: flex; gap: 0.15rem; margin-left: auto; }
   .view-toggle .btn-icon-only { padding: 0.35rem; border-radius: 6px; }
   .view-toggle .btn-icon-only.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  /* Su telefono large e griglia coincidono (vincolo geometrico): il bottone
+     resta nascosto invece di sembrare morto. Precedenti: Gmail nasconde la
+     densita su mobile, Jellyfin semplifica i layout per device. */
+  @media (max-width: 560px) {
+    .view-toggle .view-btn-large { display: none; }
+  }
 
   .error {
     background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger);
