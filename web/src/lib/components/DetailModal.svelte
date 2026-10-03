@@ -111,7 +111,7 @@
     flex-shrink: 0;
   }
   .detail-poster-btn {
-    background: none; border: none; padding: 0; display: block; cursor: zoom-in;
+    background: none; border: none; padding: 0; display: block; width: 100%; cursor: zoom-in;
   }
   .detail-poster {
     width: 260px; height: auto; aspect-ratio: 2/3; object-fit: contain;
@@ -219,11 +219,16 @@
       flex-direction: column; border-radius: 0;
       max-height: 100dvh; height: 100dvh;
     }
-    .detail-poster { width: 100%; aspect-ratio: 2/3; max-height: 40dvh; object-fit: contain; }
+    .detail-poster-col { background: var(--bg-tertiary); }
+    /* Box ad altezza fissa + contain: niente conflitti aspect/max-height
+       dentro il bottone, barre in tinta con lo sfondo. */
+    .detail-poster { width: 100%; height: 38dvh; aspect-ratio: auto; object-fit: contain; }
     .detail-info-col { max-width: none; padding: 1rem; }
     .detail-desc { max-height: none; }
     .detail-stat-path { max-width: none; }
     .detail-stat-url { max-width: none; }
+    /* Su mobile resta solo '<- Serie': la X vive su desktop. */
+    .detail-close { display: none; }
     /* Spazio sotto le azioni solo su mobile (era il bianco su desktop). */
     .detail-actions { padding-bottom: 96px; }
   }
