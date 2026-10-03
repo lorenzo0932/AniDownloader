@@ -16,6 +16,14 @@ namespace Core {
         if (std::find(validFields.begin(), validFields.end(), field) == validFields.end())
             return;
 
+        // "added" non e un campo reale degli oggetti serie: significa ordine
+        // di inserimento (ordine nel file). desc = piu recenti prima.
+        if (field == "added") {
+            if (desc)
+                std::reverse(data.begin(), data.end());
+            return;
+        }
+
         std::sort(data.begin(), data.end(), [&](const nlohmann::json& a, const nlohmann::json& b) {
             auto getVal = [&](const nlohmann::json& j) -> nlohmann::json {
                 if (!j.is_object())

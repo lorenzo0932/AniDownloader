@@ -6,6 +6,7 @@
 #include "core/ProcessUtils.hpp"
 #include "core/Series.hpp"
 #include "core/SeriesRepository.hpp"
+#include "core/SeriesUtils.hpp"
 #include "core/ThumbCache.hpp"
 #include "core/UpdateChecker.hpp"
 #include "scrapers/ScraperUtils.hpp"
@@ -694,6 +695,37 @@ static void testThumbCache() {
     std::filesystem::remove_all(dir);
 }
 
+static void testSortAdded() {
+    // "added" non e un campo reale: vale l'ordine nel file.
+    auto items = []() {
+        return nlohmann::json::array({
+            {{"name", "vecchia"}},
+            {{"name", "media"}},
+            {{"name", "nuova"}},
+        });
+    };
+    // desc = piu recenti prima (ordine invertito)...
+    auto d = items();
+    Core::sortSeries(d, "added", true);
+    CHECK(d[0].value("name", "") == "nuova");
+    CHECK(d[2].value("name", "") == "vecchia");
+    // ...asc = ordine file conservato.
+    d = items();
+    Core::sortSeries(d, "added", false);
+    CHECK(d[0].value("name", "") == "vecchia");
+    CHECK(d[2].value("name", "") == "nuova");
+    // Campo sconosciuto: nessun effetto.
+    d = items();
+    Core::sortSeries(d, "nope", true);
+    CHECK(d[0].value("name", "") == "vecchia");
+    // Regressione: sort reale invariato (name desc alfabetico).
+    d = items();
+    Core::sortSeries(d, "name", true);
+    CHECK(d[0].value("name", "") == "vecchia");
+    CHECK(d[1].value("name", "") == "nuova");
+    CHECK(d[2].value("name", "") == "media");
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -716,6 +748,7 @@ int main(int argc, char** argv) {
     testListMounts();
     testFileOps();
     testThumbCache();
+    testSortAdded();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";
