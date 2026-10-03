@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { fly } from 'svelte/transition';
   import { api, BASE, posterUrl, posterSrcSet } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
   import ConfirmModal from './ConfirmModal.svelte';
@@ -20,7 +21,17 @@
   let detailIndex = $state(-1);
   let sortField = $state('name');
   let sortDir = $state('asc');
-  let viewMode = $state('grid');
+  // Vista preferita persistente (per-browser, come Sonarr): sopravvive
+  // alla chiusura. Default 'large' (scelta utente). Chiave namespaced.
+  const VIEW_KEY = 'anidl.series.view';
+  function loadViewPref() {
+    try {
+      const v = localStorage.getItem(VIEW_KEY);
+      if (v === 'grid' || v === 'table' || v === 'large') return v;
+    } catch {}
+    return 'large';
+  }
+  let viewMode = $state(loadViewPref());
 
   let form = $state({
     service: 'animeW_scraper',
@@ -65,6 +76,11 @@
       loadedFor = { field: sortField, dir: sortDir };
       load();
     }
+  });
+
+  // Persiste la vista a ogni cambio (scrittura anche al mount: innocua).
+  $effect(() => {
+    try { localStorage.setItem(VIEW_KEY, viewMode); } catch {}
   });
 
   function setSort(field) {
