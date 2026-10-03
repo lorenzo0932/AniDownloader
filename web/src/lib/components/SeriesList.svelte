@@ -1,7 +1,7 @@
 <script>
   // Griglia delle carte serie (con stato vuoto) oppure vista tabella densa.
   // Il caricamento/ordinamento resta nel parent (DashboardPage): qui solo
-  // presentazione. viewMode: 'grid' | 'table'.
+  // presentazione. viewMode: 'grid' | 'table' | 'large'.
   import SeriesCard from './SeriesCard.svelte';
   import SeriesTable from './SeriesTable.svelte';
   import { posterUrl, posterSrcSet } from '../api.js';
@@ -59,5 +59,17 @@
     /* Mai una sola colonna di card portrait: una locandina 2:3 a tutta
        larghezza riempie lo schermo da sola. Minimo 2 colonne. */
     .series-grid { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+    /* Tablet (561-768px): la large torna auto-fill e differenzia davvero
+       (3 colonne dove ci stanno). Selettore piu specifico della regola
+       sopra, quindi vince per la large senza dipendere dall'ordine. */
+    .series-grid.grid-large {
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    }
+  }
+  @media (max-width: 560px) {
+    /* Telefono: 2 colonne da 220px non ci stanno (l'auto-fill crollerebbe
+       a 1 colonna = card giganti bandite), quindi la large resta 2 colonne
+       come la griglia. Identita voluta e dichiarata, non un bug. */
+    .series-grid.grid-large { grid-template-columns: repeat(2, 1fr); }
   }
 </style>
