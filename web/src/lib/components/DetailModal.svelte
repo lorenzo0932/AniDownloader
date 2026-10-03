@@ -8,14 +8,17 @@
 </script>
 
 {#if series}
-  <div class="modal-overlay" transition:fade={{ duration: 200 }} onclick={onclose} onkeydown={(e) => { if (e.key !== 'Escape') return; if (showLightbox) showLightbox = false; else onclose?.(); }} role="dialog" aria-modal="true" tabindex="-1">
+  <!-- Ingresso via CSS (sempre visibile) + uscita via out: (simmetrica).
+       transition: copriva entrambe ma l'ingresso non risultava percepibile. -->
+  <div class="modal-overlay" out:fade={{ duration: 150 }} onclick={onclose} onkeydown={(e) => { if (e.key !== 'Escape') return; if (showLightbox) showLightbox = false; else onclose?.(); }} role="dialog" aria-modal="true" tabindex="-1">
     <!-- Pannello con rise (fly y+fade): lo scale 0.95 era impercettibile,
          specie sul modale fullscreen mobile dove solo il testo sembrava
          animarsi. Stesso vocabolario delle pagine (fly y:8). -->
-    <div class="modal-panel detail-modal" transition:fly={{ y: 16, duration: 250 }} onclick={(e) => e.stopPropagation()} role="presentation">
+    <div class="modal-panel detail-modal" out:fly={{ y: 16, duration: 200 }} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="detail-modal-inner">
         <div class="detail-poster-col">
           <button type="button" class="detail-poster-btn" onclick={() => showLightbox = true} title="Ingrandisci locandina" aria-label="Ingrandisci locandina">
+            <img class="detail-poster-ambient" src={poster} alt="" aria-hidden="true" />
             <img class="detail-poster" src={poster} srcset={srcset}
               sizes="(max-width: 768px) 160px, 260px"
               width="480" height="720" alt="" loading="lazy" decoding="async" />
@@ -86,8 +89,8 @@
         </div>
       </div>
       {#if showLightbox}
-        <div class="lightbox" transition:fade={{ duration: 150 }} onclick={() => showLightbox = false} role="dialog" aria-modal="true" aria-label="Locandina a tutto schermo" title="Chiudi">
-          <img class="lightbox-img" transition:scale={{ duration: 200, start: 0.95 }} src={fullPoster || poster} alt="" />
+        <div class="lightbox" out:fade={{ duration: 150 }} onclick={() => showLightbox = false} role="dialog" aria-modal="true" aria-label="Locandina a tutto schermo" title="Chiudi">
+          <img class="lightbox-img" out:scale={{ duration: 200, start: 0.95 }} src={fullPoster || poster} alt="" />
         </div>
       {/if}
     </div>
@@ -100,8 +103,10 @@
     display: flex; align-items: center; justify-content: center;
     background: var(--overlay); z-index: 200;
     border: none; padding: 0; cursor: default;
+    animation: fadeIn 0.2s ease;
   }
   .detail-modal {
+    animation: panelIn 0.25s ease-out;
     max-width: 90vw; max-height: 90vh;
   }
   .detail-modal-inner {
@@ -116,6 +121,8 @@
   .detail-poster-btn {
     background: none; border: none; padding: 0; display: block; width: 100%; cursor: zoom-in;
   }
+  /* Desktop: nascosto (la colonna 260px calza a pennello, niente bande). */
+  .detail-poster-ambient { display: none; }
   .detail-poster {
     width: 260px; height: auto; aspect-ratio: 2/3; object-fit: contain;
     display: block; background: var(--bg-tertiary);
@@ -132,9 +139,11 @@
     position: fixed; inset: 0; z-index: 300;
     display: flex; align-items: center; justify-content: center;
     background: rgba(0, 0, 0, 0.9); cursor: zoom-out;
+    animation: fadeIn 0.2s ease;
   }
   .lightbox-img {
     max-width: 100vw; max-height: 100dvh; object-fit: contain;
+    animation: scaleIn 0.25s ease-out;
   }
   .detail-info-col {
     flex: 1; min-width: 0; padding: 1.5rem;
@@ -153,7 +162,7 @@
   }
   .detail-close:hover { color: var(--text-primary); }
   .detail-topbar {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: flex-end;
     margin-bottom: 0.5rem;
   }
   .modal-back {
@@ -213,6 +222,7 @@
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes panelIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
   @media (max-width: 768px) {
     .detail-modal {
@@ -223,14 +233,27 @@
       flex-direction: column; border-radius: 0;
       max-height: 100dvh; height: 100dvh;
     }
-    .detail-poster-col { background: var(--bg-tertiary); }
-    /* Box ad altezza fissa + contain: niente conflitti aspect/max-height
-       dentro il bottone, barre in tinta con lo sfondo. */
-    .detail-poster { width: 100%; height: 38dvh; aspect-ratio: auto; object-fit: contain; }
+    /* Banner ambient: la stessa locandina (URL identico = zero traffico
+       extra) sfocata e coprente dietro quella nitida. Niente più bande
+       grigie: lo sfondo prende i colori del poster (stile Spotify). */
+    .detail-poster-col { background: #000; }
+    .detail-poster-btn { position: relative; overflow: hidden; }
+    .detail-poster-ambient {
+      display: block; position: absolute; inset: -24px;
+      width: calc(100% + 48px); height: calc(100% + 48px);
+      object-fit: cover; filter: blur(24px) brightness(0.65) saturate(1.5);
+    }
+    .detail-poster {
+      position: relative; width: 100%; height: 38dvh;
+      aspect-ratio: auto; object-fit: contain;
+    }
     .detail-info-col { max-width: none; padding: 1rem; }
     .detail-desc { max-height: none; }
     .detail-stat-path { max-width: none; }
     .detail-stat-url { max-width: none; }
+    /* Un solo figlio visibile per volta: mobile back a sinistra,
+       desktop X a destra (space-between li metterebbe entrambi male). */
+    .detail-topbar { justify-content: flex-start; }
     /* Su mobile resta solo '<- Serie': la X vive su desktop. */
     .detail-close { display: none; }
     /* Spazio sotto le azioni solo su mobile (era il bianco su desktop). */

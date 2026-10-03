@@ -119,20 +119,22 @@ ultimo download — riga a una sola riga con servizio, Ep e badge.
 
 ### Modali Gestione Serie
 
-Info e modifica condividono: overlay `fade`, pannello `fly` (+16px rise,
-visibile anche sul fullscreen mobile), scroll di sfondo bloccato.
-Su mobile il back `← Serie` è l'unica via (niente X); su desktop restano
-X in info e Annulla/Salva nel form.
+Info e modifica condividono: overlay `fadeIn` + pannello `panelIn` (rise
++16px, visibile anche sul fullscreen mobile) in ingresso via CSS,
+uscita via `out:` simmetrica (le `transition:` integrali non risultavano
+percepibili all'apertura). Scroll di sfondo bloccato.
+Su mobile il back `← Serie` è l'unica via (niente X, topbar a sinistra);
+su desktop restano X a destra in info e Annulla/Salva nel form.
+Su mobile la locandina ha sfondo ambient (stessa immagine sfocata dietro,
+zero traffico extra): niente bande grigie.
 Il form ricorda l'origine (modello drill-down): aperto dal dettaglio,
 back e Salva riportano al dettaglio (`← [nome]` su mobile); da lista/FAB
-tutto come prima. Lo switch griglia↔grande usa `animate:flip`: le card
-scivolano nelle nuove posizioni. La locandina nel dettaglio si ingrandisce
-in lightbox fullscreen vincolata al viewport (max 100vw/100dvh,
-full-res 1080); Esc chiude prima la lightbox, poi il modale.
-Animazioni standard in tutta la UI: ingressi `fly`/`fadeIn`/`scaleIn`/
-`slideUp`/`cardIn`/`rowIn` (0.2–0.35s ease-out), hover 0.15s. Modali,
-lightbox e pagine usano `transition:` simmetriche: anche la chiusura
-è animata, con gli stessi tempi dell'apertura.
+tutto come prima. Lo switch griglia↔grande ricrea la griglia (`{#key}`,
+`cardIn` sempre) + `animate:flip` per i riordini. La locandina nel dettaglio
+si ingrandisce in lightbox fullscreen vincolata al viewport (max
+100vw/100dvh, full-res 1080); Esc chiude prima la lightbox, poi il modale.
+Animazioni standard in tutta la UI: ingressi `fly`/`fadeIn`/`panelIn`/
+`scaleIn`/`slideUp`/`cardIn`/`rowIn` (0.2–0.35s ease-out), hover 0.15s.
 
 ### api.js
 

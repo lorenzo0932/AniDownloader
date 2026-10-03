@@ -80,6 +80,15 @@ describe('DetailModal', () => {
     expect(box.querySelector('img').getAttribute('src')).toBe('/poster1080');
   });
 
+  it('ambient mobile: stessa locandina sfocata dietro, nascosta ai lettori', () => {
+    const { container } = renderModal();
+    const ambient = container.querySelector('.detail-poster-ambient');
+    expect(ambient).toBeTruthy();
+    // Stesso URL del poster: zero traffico extra (cache browser).
+    expect(ambient.getAttribute('src')).toBe('/poster480');
+    expect(ambient.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('lightbox: fallback al poster se fullPoster assente', async () => {
     const { container } = renderModal({ fullPoster: '' });
     await fireEvent.click(screen.getByLabelText('Ingrandisci locandina'));
