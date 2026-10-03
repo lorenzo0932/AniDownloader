@@ -1,13 +1,15 @@
 <script>
   // Modale dettaglio serie. Lo stato di apertura (detailIndex) resta nel
   // parent: qui solo presentazione della serie + azioni + lightbox.
+  import { fade, scale } from 'svelte/transition';
+
   let { series = null, description = '', poster = '', srcset = '', fullPoster = '', onclose, onedit, onremove } = $props();
   let showLightbox = $state(false);
 </script>
 
 {#if series}
-  <div class="modal-overlay" onclick={onclose} onkeydown={(e) => { if (e.key !== 'Escape') return; if (showLightbox) showLightbox = false; else onclose?.(); }} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="modal-panel detail-modal" onclick={(e) => e.stopPropagation()} role="presentation">
+  <div class="modal-overlay" transition:fade={{ duration: 200 }} onclick={onclose} onkeydown={(e) => { if (e.key !== 'Escape') return; if (showLightbox) showLightbox = false; else onclose?.(); }} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="modal-panel detail-modal" transition:scale={{ duration: 250, start: 0.95 }} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="detail-modal-inner">
         <div class="detail-poster-col">
           <button type="button" class="detail-poster-btn" onclick={() => showLightbox = true} title="Ingrandisci locandina" aria-label="Ingrandisci locandina">
@@ -81,8 +83,8 @@
         </div>
       </div>
       {#if showLightbox}
-        <div class="lightbox" onclick={() => showLightbox = false} role="dialog" aria-modal="true" aria-label="Locandina a tutto schermo" title="Chiudi">
-          <img class="lightbox-img" src={fullPoster || poster} alt="" />
+        <div class="lightbox" transition:fade={{ duration: 150 }} onclick={() => showLightbox = false} role="dialog" aria-modal="true" aria-label="Locandina a tutto schermo" title="Chiudi">
+          <img class="lightbox-img" transition:scale={{ duration: 200, start: 0.95 }} src={fullPoster || poster} alt="" />
         </div>
       {/if}
     </div>
@@ -95,10 +97,8 @@
     display: flex; align-items: center; justify-content: center;
     background: var(--overlay); z-index: 200;
     border: none; padding: 0; cursor: default;
-    animation: fadeIn 0.2s ease;
   }
   .detail-modal {
-    animation: scaleIn 0.25s ease-out;
     max-width: 90vw; max-height: 90vh;
   }
   .detail-modal-inner {
@@ -129,11 +129,9 @@
     position: fixed; inset: 0; z-index: 300;
     display: flex; align-items: center; justify-content: center;
     background: rgba(0, 0, 0, 0.9); cursor: zoom-out;
-    animation: fadeIn 0.2s ease;
   }
   .lightbox-img {
     max-width: 100vw; max-height: 100dvh; object-fit: contain;
-    animation: scaleIn 0.25s ease-out;
   }
   .detail-info-col {
     flex: 1; min-width: 0; padding: 1.5rem;
@@ -213,7 +211,6 @@
     .detail-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       max-width: 100vw; max-height: 100dvh; border-radius: 0;
-      animation: fadeIn 0.2s ease;
     }
     .detail-modal-inner {
       flex-direction: column; border-radius: 0;

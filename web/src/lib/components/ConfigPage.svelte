@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { fly } from 'svelte/transition';
   import { api, BASE } from '../api.js';
   import { getTheme, setTheme } from '../theme.svelte.js';
   import Dropdown from '../Dropdown.svelte';
@@ -113,7 +114,7 @@
   onMount(() => { load(); loadCacheInfo(); });
 </script>
 
-<div in:fly={{ y: 8, duration: 200 }}>
+<div transition:fly={{ y: 8, duration: 200 }}>
 <h2>Impostazioni AniDownloader</h2>
 
 {#if error}

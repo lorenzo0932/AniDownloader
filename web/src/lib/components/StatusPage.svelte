@@ -278,7 +278,7 @@
   });
 </script>
 
-<div class="vetrina" in:fly={{ y: 8, duration: 200 }}>
+<div class="vetrina" transition:fly={{ y: 8, duration: 200 }}>
   <OverallHeader
     {downloadRunning}
     {overallStatus}

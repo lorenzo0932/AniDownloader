@@ -2,8 +2,9 @@
   // Modale aggiunta/modifica serie. Lo stato del form e le azioni di salvataggio
   // restano nel parent (DashboardPage): qui solo presentazione + fetch-name.
   import { api, posterUrl } from '../api.js';
+  import { fade, scale } from 'svelte/transition';
 
-  let { show = false, form, editing = -1, series = [], onclose, onsave, ondelete, onpick, onerror } = $props();
+  let { show = false, form, editing = -1, series = [], backToName = '', onclose, onsave, ondelete, onpick, onerror } = $props();
   let posterError = $state(false);
 
   async function fetchName() {
@@ -18,13 +19,13 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="modal-panel form-modal" onclick={(e) => e.stopPropagation()} role="presentation">
+  <div class="modal-overlay" transition:fade={{ duration: 200 }} onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="modal-panel form-modal" transition:scale={{ duration: 250, start: 0.95 }} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="form-modal-body">
         <div class="form-topbar">
-          <button type="button" class="modal-back" onclick={onclose} title="Torna alle serie" aria-label="Torna alle serie">
+          <button type="button" class="modal-back" onclick={onclose} title={backToName ? `Torna a ${backToName}` : 'Torna alle serie'} aria-label={backToName ? `Torna a ${backToName}` : 'Torna alle serie'}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            <span>Serie</span>
+            <span class="back-label">{backToName || 'Serie'}</span>
           </button>
         </div>
         <h3>{editing >= 0 ? 'Modifica: ' + form.name : 'Aggiungi Nuova Serie'}</h3>
@@ -130,10 +131,8 @@
     display: flex; align-items: center; justify-content: center;
     background: var(--overlay); z-index: 200;
     border: none; padding: 0; cursor: default;
-    animation: fadeIn 0.2s ease;
   }
   .form-modal {
-    animation: scaleIn 0.25s ease-out;
     background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px;
     padding: 1.5rem; min-width: 520px; max-width: 90vw;
     max-height: 90vh; overflow-y: auto;
@@ -148,6 +147,10 @@
     transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .modal-back:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent); }
+  .modal-back .back-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0; max-width: 40vw;
+  }
 
   .form-layout { display: flex; gap: 1.25rem; }
   .form-poster-col { flex-shrink: 0; }

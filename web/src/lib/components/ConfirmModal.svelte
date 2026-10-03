@@ -1,4 +1,6 @@
 <script>
+  import { fade, scale } from 'svelte/transition';
+
   let { show = false, title = 'Conferma', message = '', confirmText = 'Conferma', cancelText = 'Annulla', danger = false, onConfirm, onCancel } = $props();
 
   let confirmId = $state('');
@@ -10,8 +12,8 @@
 </script>
 
 {#if show}
-  <div class="confirm-overlay" onclick={onCancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="confirm-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
+  <div class="confirm-overlay" transition:fade={{ duration: 150 }} onclick={onCancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="confirm-modal" transition:scale={{ duration: 200, start: 0.95 }} onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
       <div class="confirm-header">
         <h3>{title}</h3>
       </div>
@@ -31,13 +33,11 @@
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: var(--overlay); z-index: 300;
     display: flex; align-items: center; justify-content: center;
-    animation: fadeIn 0.15s ease;
     border: none; padding: 0; cursor: default;
   }
   .confirm-modal {
     background: var(--bg-secondary); border: 1px solid var(--border-color);
     border-radius: 12px; padding: 1.25rem; min-width: 320px; max-width: 90vw;
-    animation: scaleIn 0.2s ease-out;
     box-shadow: 0 12px 40px rgba(0,0,0,0.5);
   }
   .confirm-header { margin-bottom: 0.75rem; }

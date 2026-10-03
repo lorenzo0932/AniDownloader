@@ -3,6 +3,26 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/sve
 import DirectoryBrowser from './DirectoryBrowser.svelte';
 import { api } from '../api.js';
 
+// happy-dom non ha la Web Animations API usata da transition: del modale:
+// stub minimo. Svelte crea una dummy-animation + una principale e attende
+// `onfinish` su entrambe: va invocato in async dopo l'assegnazione,
+// altrimenti gli outro non completano mai e i nodi restano (inert).
+if (typeof Element !== 'undefined' && !Element.prototype.animate) {
+  Element.prototype.animate = function () {
+    const anim = {
+      currentTime: 0,
+      playState: 'finished',
+      onfinish: null,
+      cancel() {}, play() {}, pause() {}, reverse() {},
+      finished: null,
+    };
+    anim.finished = Promise.resolve().then(() => {
+      anim.onfinish?.();
+    });
+    return anim;
+  };
+}
+
 const ENTRIES = [
   { name: 'Alpha', path: '/media/Alpha', type: 'dir', mtime: 1000, size: 0 },
   { name: 'Beta', path: '/media/Beta', type: 'dir', mtime: 2000, size: 0 },
