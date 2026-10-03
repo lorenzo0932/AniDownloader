@@ -123,10 +123,17 @@ Info e modifica condividono: overlay `fadeIn` + pannello `panelIn` (rise
 +16px, visibile anche sul fullscreen mobile) in ingresso via CSS,
 uscita via `out:` simmetrica (le `transition:` integrali non risultavano
 percepibili all'apertura). Scroll di sfondo bloccato.
-Su mobile il back `← Serie` è l'unica via (niente X, topbar a sinistra);
-su desktop restano X a destra in info e Annulla/Salva nel form.
-Su mobile la locandina ha sfondo ambient (stessa immagine sfocata dietro,
-zero traffico extra): niente bande grigie.
+Su mobile il back `← Serie` è l'unica via (niente X); su desktop restano
+X in info e Annulla/Salva nel form. Su mobile la locandina ha sfondo ambient
+(stessa immagine sfocata dietro, zero traffico extra): niente bande grigie.
+
+### Home: righe recenti cliccabili
+
+Le righe di Ultime aggiunte/scaricate (`RecentSeriesRow`) aprono lo stesso
+`DetailModal` in sola lettura (`actions=false`): niente Modifica/Elimina,
+gestire resta compito di Gestione. Stesso comportamento delle righe
+tabella (tutta la riga = bottone). La colonna aggiunte usa il sort server
+`added` desc (più recenti prima).
 Il form ricorda l'origine (modello drill-down): aperto dal dettaglio,
 back e Salva riportano al dettaglio (`← [nome]` su mobile); da lista/FAB
 tutto come prima. Lo switch griglia↔grande ricrea la griglia (`{#key}`,
