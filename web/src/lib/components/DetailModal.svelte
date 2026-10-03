@@ -234,14 +234,15 @@
       max-height: 100dvh; height: 100dvh;
     }
     /* Banner ambient: la stessa locandina (URL identico = zero traffico
-       extra) sfocata e coprente dietro quella nitida. Niente più bande
-       grigie: lo sfondo prende i colori del poster (stile Spotify). */
+       extra) che sborda sfocata oltre i bordi: il poster sembra
+       prolungarsi (stile Spotify). Vivido di proposito: niente tagli
+       di luminosita, altrimenti su arte scura non si percepisce. */
     .detail-poster-col { background: #000; }
     .detail-poster-btn { position: relative; overflow: hidden; }
     .detail-poster-ambient {
-      display: block; position: absolute; inset: -24px;
-      width: calc(100% + 48px); height: calc(100% + 48px);
-      object-fit: cover; filter: blur(24px) brightness(0.65) saturate(1.5);
+      display: block; position: absolute; inset: -15%;
+      width: 130%; height: 130%;
+      object-fit: cover; filter: blur(32px) saturate(1.8);
     }
     .detail-poster {
       position: relative; width: 100%; height: 38dvh;
