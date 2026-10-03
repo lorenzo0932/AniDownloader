@@ -295,7 +295,7 @@
     <button type="button" class="btn-icon-only" class:active={viewMode === 'table'} onclick={() => viewMode = 'table'} title="Vista tabella">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="18" height="4"/><rect x="3" y="10" width="18" height="4"/><rect x="3" y="17" width="18" height="4"/></svg>
     </button>
-    <button type="button" class="btn-icon-only" class:active={viewMode === 'large'} onclick={() => viewMode = 'large'} title="Vista grande">
+    <button type="button" class="btn-icon-only view-btn-large" class:active={viewMode === 'large'} onclick={() => viewMode = 'large'} title="Vista grande">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
     </button>
   </div>
@@ -407,6 +407,12 @@
   .view-toggle { display: flex; gap: 0.15rem; margin-left: auto; }
   .view-toggle .btn-icon-only { padding: 0.35rem; border-radius: 6px; }
   .view-toggle .btn-icon-only.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  /* Su telefono large e griglia coincidono (vincolo geometrico): il bottone
+     resta nascosto invece di sembrare morto. Precedenti: Gmail nasconde la
+     densita su mobile, Jellyfin semplifica i layout per device. */
+  @media (max-width: 560px) {
+    .view-toggle .view-btn-large { display: none; }
+  }
 
   .error {
     background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger);

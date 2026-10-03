@@ -69,8 +69,7 @@ describe('DashboardPage vista', () => {
     expect(container.querySelector('.series-grid.grid-large')).toBeTruthy();
   });
 
-  it('cambio vista: aggiorna la UI e persiste', async () => {
-    const { container } = render(DashboardPage);
+  it('cambio vista: aggiorna la UI e persiste', async () => {    const { container } = render(DashboardPage);
     await screen.findByText('One Piece');
     await fireEvent.click(screen.getByTitle('Vista tabella'));
     expect(container.querySelector('.series-table')).toBeTruthy();
@@ -78,6 +77,14 @@ describe('DashboardPage vista', () => {
     await fireEvent.click(screen.getByTitle('Vista griglia'));
     expect(container.querySelector('.series-grid:not(.grid-large)')).toBeTruthy();
     expect(localStorage.getItem(VIEW_KEY)).toBe('grid');
+  });
+
+  it('bottone large: hook CSS per nasconderlo su telefono', async () => {
+    // Il nascondiglio e media-query (non verificabile in happy-dom):
+    // qui si fissa solo l'hook che il CSS usa.
+    render(DashboardPage);
+    await screen.findByText('One Piece');
+    expect(screen.getByTitle('Vista grande').classList.contains('view-btn-large')).toBe(true);
   });
 });
 
