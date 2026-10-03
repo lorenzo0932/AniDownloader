@@ -498,6 +498,7 @@
     padding: 0.45rem 0.7rem; font-size: 0.8rem;
     background: none; border: 1px solid var(--btn-cancel-border);
     border-radius: 6px; color: var(--text-secondary); cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel-sm:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .browser-sort-bar {
@@ -592,11 +593,13 @@
   .btn-cancel {
     padding: 0.55rem 1.1rem; background: none; border: 1px solid var(--btn-cancel-border);
     border-radius: 8px; color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-primary {
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
 

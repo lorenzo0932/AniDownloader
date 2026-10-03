@@ -394,6 +394,7 @@
     background: none; border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); cursor: pointer; padding: 0.5rem;
     display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .btn-icon-only:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 

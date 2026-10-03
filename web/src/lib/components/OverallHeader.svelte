@@ -35,12 +35,14 @@
   .btn-primary {
     padding: 0.6rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-danger {
     padding: 0.6rem 1.25rem; background: var(--danger-bg); border: 1px solid var(--danger-border); border-radius: 8px;
     color: var(--danger); font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s ease;
   }
   .btn-danger:hover { background: var(--danger-bg-hover); }
   .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }

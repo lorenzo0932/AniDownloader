@@ -468,12 +468,14 @@
   .btn-primary {
     padding: 0.6rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-secondary {
     padding: 0.6rem 1.25rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-secondary:hover { background: var(--bg-hover); color: var(--text-primary); }
   .btn-sm { padding: 0.45rem 0.9rem; font-size: 0.8rem; }

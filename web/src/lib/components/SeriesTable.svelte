@@ -20,7 +20,7 @@
 
 <div class="series-table" role="table" aria-label="Serie">
   {#each items as item, idx (item._file_index ?? idx)}
-    <div class="series-row" role="button" tabindex="0"
+    <div class="series-row" style="--i:{idx}" role="button" tabindex="0"
       onclick={() => onopen?.(item._file_index)} onkeydown={(e) => e.key === 'Enter' && onopen?.(item._file_index)}>
       <img class="row-poster" src={posterUrl(item.path, 96)} alt="" loading="lazy" decoding="async" width="40" height="56" />
       <div class="row-info">
@@ -64,6 +64,9 @@
     border-radius: 10px; padding: 0.4rem 0.6rem;
     cursor: pointer;
     transition: border-color 0.15s ease;
+    /* Ingresso come le righe TaskItem/StatusPage (stesso rowIn + stagger). */
+    animation: rowIn 0.3s ease-out both;
+    animation-delay: calc(var(--i, 0) * 20ms);
   }
   @media (hover: hover) {
     .series-row:hover { border-color: var(--accent); }
@@ -120,4 +123,9 @@
   }
   .btn-row:hover { color: var(--accent); background: var(--bg-tertiary); }
   .btn-row.danger:hover { color: var(--danger); }
+
+  @keyframes rowIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
 </style>

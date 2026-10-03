@@ -199,17 +199,20 @@
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
+    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-cancel {
     padding: 0.55rem 1.1rem; background: none; border: 1px solid var(--btn-cancel-border); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-danger {
     padding: 0.55rem 1.1rem; background: var(--danger); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
+    transition: opacity 0.15s ease;
   }
   .btn-danger:hover { opacity: 0.85; }
 
