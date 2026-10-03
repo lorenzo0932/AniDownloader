@@ -247,6 +247,9 @@
     .detail-poster {
       position: relative; width: 100%; height: 38dvh;
       aspect-ratio: auto; object-fit: contain;
+      /* Trasparente: il suo fondo coprirebbe l'ambient dietro.
+         (Su desktop resta --bg-tertiary: la colonna calza a pennello.) */
+      background: transparent;
     }
     .detail-info-col { max-width: none; padding: 1rem; }
     .detail-desc { max-height: none; }
