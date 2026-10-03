@@ -100,12 +100,13 @@ if (it != files.end()) {
 
 ### Viste Gestione Serie
 
-La pagina `/gestione` ha due viste dal toggle in alto (stile Sonarr):
-**griglia** (browsing: card con poster, titolo e badge Ep/servizio; path, URL
-e azioni vivono nel modale dettaglio, con azioni anche in overlay hover su
-desktop) e **tabella** (gestione densa: righe con miniatura 40px, nome e
-icone Modifica/Elimina). Su mobile la griglia non scende mai sotto 2 colonne:
-una card portrait 2:3 a tutta larghezza riempirebbe lo schermo da sola.
+La pagina `/gestione` ha tre viste dal toggle in alto (stile Sonarr):
+**griglia** (browsing: card 150px con poster, titolo e badge Ep/servizio),
+**grande** (stesse card a 220px, poster ~330px) e **tabella** (gestione densa:
+righe con miniatura 40px, nome e icone Modifica/Elimina). Path, URL e azioni
+vivono nel modale dettaglio, con azioni anche in overlay hover su desktop.
+Su mobile la griglia non scende mai sotto 2 colonne: una card portrait 2:3
+a tutta larghezza riempirebbe lo schermo da sola.
 
 ### api.js
 

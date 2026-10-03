@@ -32,4 +32,13 @@ describe('SeriesList', () => {
     expect(container.querySelector('.series-grid')).toBeNull();
     expect(screen.getByText('Naruto')).toBeTruthy();
   });
+
+  it('large: griglia con colonne grandi, niente tabella', () => {
+    const { container } = render(SeriesList, {
+      items: itemsFixture(), viewMode: 'large', totalCount: 2, onopen: noop, onedit: noop, onremove: noop,
+    });
+    expect(container.querySelector('.series-grid.grid-large')).toBeTruthy();
+    expect(container.querySelector('.series-table')).toBeNull();
+    expect(screen.getByText('One Piece')).toBeTruthy();
+  });
 });

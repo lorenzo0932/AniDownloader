@@ -7,6 +7,8 @@
   import { posterUrl, posterSrcSet } from '../api.js';
 
   let { items = [], viewMode = 'grid', totalCount = 0, descriptions = {}, onopen, onedit, onremove } = $props();
+  // 'large' = stessa griglia con colonne grandi (220px, poster ~330px).
+  const large = viewMode === 'large';
 </script>
 
 {#if items.length === 0}
@@ -19,13 +21,14 @@
     {onremove}
   />
 {:else}
-  <div class="series-grid">
+  <div class="series-grid" class:grid-large={large}>
     {#each items as item, idx (item._file_index)}
       <SeriesCard
         {item}
         index={idx}
         poster={posterUrl(item.path)}
         srcset={posterSrcSet(item.path)}
+        {large}
         onopen={() => onopen(item._file_index)}
         onedit={() => onedit(item._file_index)}
         onremove={() => onremove(item._file_index)}
@@ -44,6 +47,11 @@
   .series-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 0.9rem; max-width: 1100px; margin-inline: auto;
+  }
+  /* Vista grande: stesse card, colonne da 220px (poster ~330px). */
+  .grid-large {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    max-width: 1400px;
   }
 
   @media (max-width: 768px) {

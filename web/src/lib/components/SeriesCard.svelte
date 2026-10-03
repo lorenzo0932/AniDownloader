@@ -2,13 +2,13 @@
   // Carta essenziale della griglia serie: poster + titolo + badge.
   // Path/URL e azioni vivono nel modale dettaglio; le azioni sono anche in
   // overlay hover (solo desktop con hover: su touch il tap apre il dettaglio).
-  let { item, index = 0, poster = '', srcset = '', onopen, onedit, onremove } = $props();
+  let { item, index = 0, poster = '', srcset = '', large = false, onopen, onedit, onremove } = $props();
 </script>
 
 <div class="series-card" style="--i:{index}" role="button" tabindex="0" onclick={() => onopen?.()} onkeydown={(e) => e.key === 'Enter' && onopen?.()} aria-label={item.name || item.title}>
   <div class="card-poster-wrap">
     <img class="card-poster" src={poster} srcset={srcset}
-      sizes="(max-width: 768px) 50vw, 180px"
+      sizes={large ? '(max-width: 768px) 50vw, 240px' : '(max-width: 768px) 50vw, 180px'}
       width="480" height="720" alt="" loading="lazy" decoding="async" />
     <div class="card-title-overlay">
       <h3>{item.name || item.title}</h3>
