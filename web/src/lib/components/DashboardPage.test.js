@@ -24,6 +24,7 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
 }
 
 const VIEW_KEY = 'anidl.series.view';
+const SORT_KEY = 'anidl.series.sort';
 
 const seriesFixture = () => [
   { _file_index: 0, name: 'One Piece', path: '/media/one-piece', service: 'animeW_scraper', local_episode_count: 100 },
@@ -33,7 +34,9 @@ const seriesFixture = () => [
 beforeEach(() => {
   localStorage.clear();
   listMock.mockReset();
-  listMock.mockResolvedValue({ series: seriesFixture() });
+  // Array fresco a ogni chiamata: load() fa reverse() in place per
+  // 'added'+desc e non deve inquinare i load successivi.
+  listMock.mockImplementation(async () => ({ series: seriesFixture() }));
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })));
 });
 
@@ -75,5 +78,49 @@ describe('DashboardPage vista', () => {
     await fireEvent.click(screen.getByTitle('Vista griglia'));
     expect(container.querySelector('.series-grid:not(.grid-large)')).toBeTruthy();
     expect(localStorage.getItem(VIEW_KEY)).toBe('grid');
+  });
+});
+
+describe('DashboardPage ordinamento', () => {
+  it('default: data inserimento desc (piu recenti prima), senza sort server', async () => {
+    const { container } = render(DashboardPage);
+    await screen.findByText('One Piece');
+    // 'added' = ordine file senza parametri server...
+    expect(listMock).toHaveBeenCalledTimes(1);
+    expect(listMock).toHaveBeenCalledWith({});
+    // ...invertito lato client (desc): Naruto (indice 1) prima di One Piece.
+    const gridText = container.querySelector('.series-grid').textContent;
+    expect(gridText.indexOf('Naruto')).toBeLessThan(gridText.indexOf('One Piece'));
+  });
+
+  it('legge l ordinamento da localStorage (nome asc)', async () => {
+    localStorage.setItem(SORT_KEY, JSON.stringify({ field: 'name', dir: 'asc' }));
+    const { container } = render(DashboardPage);
+    await screen.findByText('One Piece');
+    expect(listMock).toHaveBeenCalledWith({ sort: 'name', dir: 'asc' });
+    const gridText = container.querySelector('.series-grid').textContent;
+    expect(gridText.indexOf('One Piece')).toBeLessThan(gridText.indexOf('Naruto'));
+  });
+
+  it('storage non valido: fallback a data-desc', async () => {
+    localStorage.setItem(SORT_KEY, '{rotto');
+    render(DashboardPage);
+    await screen.findByText('One Piece');
+    expect(listMock).toHaveBeenCalledWith({});
+  });
+
+  it('toggle direzione: ricarica e persiste', async () => {
+    const { container } = render(DashboardPage);
+    await screen.findByText('One Piece');
+    // Default desc -> click -> asc: niente reverse, torna ordine file.
+    await fireEvent.click(screen.getByTitle('Decrescente'));
+    expect(JSON.parse(localStorage.getItem(SORT_KEY))).toEqual({ field: 'added', dir: 'asc' });
+    // Il reload e ri-render sono asincroni: attendi il secondo load
+    // e poi il nuovo ordine nel DOM.
+    await vi.waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => {
+      const gridText = container.querySelector('.series-grid').textContent;
+      expect(gridText.indexOf('One Piece')).toBeLessThan(gridText.indexOf('Naruto'));
+    });
   });
 });

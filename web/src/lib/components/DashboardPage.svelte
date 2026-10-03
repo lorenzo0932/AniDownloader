@@ -19,8 +19,19 @@
   let showBrowser = $state(false);
   let descriptions = $state({});
   let detailIndex = $state(-1);
-  let sortField = $state('name');
-  let sortDir = $state('asc');
+  // Ordinamento persistente (stessa chiave-famiglia della vista).
+  // Default 'added'+desc = piu recenti prima (ordine file invertito).
+  const SORT_KEY = 'anidl.series.sort';
+  function loadSortPref() {
+    try {
+      const p = JSON.parse(localStorage.getItem(SORT_KEY));
+      if (p && typeof p.field === 'string' && (p.dir === 'asc' || p.dir === 'desc')) return p;
+    } catch {}
+    return { field: 'added', dir: 'desc' };
+  }
+  const sortPref = loadSortPref();
+  let sortField = $state(sortPref.field);
+  let sortDir = $state(sortPref.dir);
   // Vista preferita persistente (per-browser, come Sonarr): sopravvive
   // alla chiusura. Default 'large' (scelta utente). Chiave namespaced.
   const VIEW_KEY = 'anidl.series.view';
@@ -70,7 +81,9 @@
 
   onMount(() => { load(); });
 
-  let loadedFor = $state({ field: 'name', dir: 'asc' });
+  // Allineato ai default correnti: evita un doppio load() al mount
+  // (l'effect ricaricherebbe appena vede la discrepanza).
+  let loadedFor = $state({ field: sortField, dir: sortDir });
   $effect(() => {
     if (sortField !== loadedFor.field || sortDir !== loadedFor.dir) {
       loadedFor = { field: sortField, dir: sortDir };
@@ -81,6 +94,11 @@
   // Persiste la vista a ogni cambio (scrittura anche al mount: innocua).
   $effect(() => {
     try { localStorage.setItem(VIEW_KEY, viewMode); } catch {}
+  });
+
+  // Persiste l'ordinamento a ogni cambio.
+  $effect(() => {
+    try { localStorage.setItem(SORT_KEY, JSON.stringify({ field: sortField, dir: sortDir })); } catch {}
   });
 
   function setSort(field) {
