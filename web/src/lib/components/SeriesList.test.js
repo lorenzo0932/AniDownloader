@@ -41,4 +41,21 @@ describe('SeriesList', () => {
     expect(container.querySelector('.series-table')).toBeNull();
     expect(screen.getByText('One Piece')).toBeTruthy();
   });
+
+  it('cambio vista grid -> large: applica grid-large (regressione reattivita)', async () => {
+    const base = { items: itemsFixture(), totalCount: 2, onopen: noop, onedit: noop, onremove: noop };
+    const { container, rerender } = render(SeriesList, { ...base, viewMode: 'grid' });
+    expect(container.querySelector('.series-grid:not(.grid-large)')).toBeTruthy();
+    await rerender({ ...base, viewMode: 'large' });
+    expect(container.querySelector('.series-grid.grid-large')).toBeTruthy();
+  });
+
+  it('cambio vista grid -> table: mostra la tabella (regressione reattivita)', async () => {
+    const base = { items: itemsFixture(), totalCount: 2, onopen: noop, onedit: noop, onremove: noop };
+    const { container, rerender } = render(SeriesList, { ...base, viewMode: 'grid' });
+    expect(container.querySelector('.series-grid')).toBeTruthy();
+    await rerender({ ...base, viewMode: 'table' });
+    expect(container.querySelector('.series-table')).toBeTruthy();
+    expect(container.querySelector('.series-grid')).toBeNull();
+  });
 });

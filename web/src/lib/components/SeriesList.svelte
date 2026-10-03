@@ -8,7 +8,8 @@
 
   let { items = [], viewMode = 'grid', totalCount = 0, descriptions = {}, onopen, onedit, onremove } = $props();
   // 'large' = stessa griglia con colonne grandi (220px, poster ~330px).
-  const large = viewMode === 'large';
+  // $derived: const calcolerebbe una volta sola e il toggle sembrerebbe morto.
+  let large = $derived(viewMode === 'large');
 </script>
 
 {#if items.length === 0}
