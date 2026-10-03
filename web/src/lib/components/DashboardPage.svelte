@@ -231,6 +231,16 @@
   function openDetail(idx) { detailIndex = idx; }
   function closeDetail() { detailIndex = -1; }
 
+  // Lock dello scroll di sfondo finche un modale e aperto
+  // (info / form / conferma / browser): ripristino in cleanup.
+  const anyModalOpen = $derived(detailIndex >= 0 || showForm || confirmDeleteIdx >= 0 || showBrowser);
+  $effect(() => {
+    if (!anyModalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  });
+
   function pickDirectory() {
     showBrowser = true;
   }
@@ -359,6 +369,7 @@
       description={descriptions[detailIndex]}
       poster={posterSrc(s)}
       srcset={posterSet(s)}
+      fullPoster={posterUrl(s.path, 1080)}
       onclose={closeDetail}
       onedit={() => { const idx = detailIndex; closeDetail(); openEdit(idx); }}
       onremove={() => { const idx = detailIndex; closeDetail(); promptRemove(idx); }}

@@ -21,6 +21,12 @@
   <div class="modal-overlay" onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" tabindex="-1">
     <div class="modal-panel form-modal" onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="form-modal-body">
+        <div class="form-topbar">
+          <button type="button" class="modal-back" onclick={onclose} title="Torna alle serie" aria-label="Torna alle serie">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            <span>Serie</span>
+          </button>
+        </div>
         <h3>{editing >= 0 ? 'Modifica: ' + form.name : 'Aggiungi Nuova Serie'}</h3>
 
         <div class="form-layout">
@@ -133,6 +139,15 @@
     max-height: 90vh; overflow-y: auto;
   }
   .form-modal-body h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--accent-light); }
+  .form-topbar { margin-bottom: 0.75rem; }
+  .modal-back {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: none; border: 1px solid var(--border-color); border-radius: 8px;
+    color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;
+    padding: 0.35rem 0.6rem; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .modal-back:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent); }
 
   .form-layout { display: flex; gap: 1.25rem; }
   .form-poster-col { flex-shrink: 0; }

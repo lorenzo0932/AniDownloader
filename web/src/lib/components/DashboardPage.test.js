@@ -33,6 +33,7 @@ const seriesFixture = () => [
 
 beforeEach(() => {
   localStorage.clear();
+  document.body.style.overflow = '';
   listMock.mockReset();
   // Array fresco a ogni chiamata: load() fa reverse() in place per
   // 'added'+desc e non deve inquinare i load successivi.
@@ -129,5 +130,19 @@ describe('DashboardPage ordinamento', () => {
       const gridText = container.querySelector('.series-grid').textContent;
       expect(gridText.indexOf('One Piece')).toBeLessThan(gridText.indexOf('Naruto'));
     });
+  });
+});
+
+describe('DashboardPage modali', () => {
+  it('apertura dettaglio: lock scroll sfondo; chiusura: ripristino', async () => {
+    render(DashboardPage);
+    await screen.findByText('One Piece');
+    expect(document.body.style.overflow).toBe('');
+    // Le card hanno role=button con aria-label = nome serie.
+    await fireEvent.click(screen.getByRole('button', { name: 'One Piece' }));
+    await screen.findByTitle('Torna alle serie');
+    expect(document.body.style.overflow).toBe('hidden');
+    await fireEvent.click(screen.getByTitle('Torna alle serie'));
+    await vi.waitFor(() => expect(document.body.style.overflow).toBe(''));
   });
 });

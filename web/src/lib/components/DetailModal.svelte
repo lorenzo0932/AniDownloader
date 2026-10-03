@@ -1,20 +1,29 @@
 <script>
   // Modale dettaglio serie. Lo stato di apertura (detailIndex) resta nel
-  // parent: qui solo presentazione della serie + azioni.
-  let { series = null, description = '', poster = '', srcset = '', onclose, onedit, onremove } = $props();
+  // parent: qui solo presentazione della serie + azioni + lightbox.
+  let { series = null, description = '', poster = '', srcset = '', fullPoster = '', onclose, onedit, onremove } = $props();
+  let showLightbox = $state(false);
 </script>
 
 {#if series}
-  <div class="modal-overlay" onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" tabindex="-1">
+  <div class="modal-overlay" onclick={onclose} onkeydown={(e) => { if (e.key !== 'Escape') return; if (showLightbox) showLightbox = false; else onclose?.(); }} role="dialog" aria-modal="true" tabindex="-1">
     <div class="modal-panel detail-modal" onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="detail-modal-inner">
         <div class="detail-poster-col">
-          <img class="detail-poster" src={poster} srcset={srcset}
-            sizes="(max-width: 768px) 160px, 260px"
-            width="480" height="720" alt="" loading="lazy" decoding="async" />
+          <button type="button" class="detail-poster-btn" onclick={() => showLightbox = true} title="Ingrandisci locandina" aria-label="Ingrandisci locandina">
+            <img class="detail-poster" src={poster} srcset={srcset}
+              sizes="(max-width: 768px) 160px, 260px"
+              width="480" height="720" alt="" loading="lazy" decoding="async" />
+          </button>
         </div>
         <div class="detail-info-col">
-          <button class="detail-close" onclick={onclose}>&times;</button>
+          <div class="detail-topbar">
+            <button type="button" class="modal-back" onclick={onclose} title="Torna alle serie" aria-label="Torna alle serie">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              <span>Serie</span>
+            </button>
+            <button class="detail-close" onclick={onclose} aria-label="Chiudi">&times;</button>
+          </div>
           <div class="detail-info-scroll">
             <h2 class="detail-title">{series.name || series.title}</h2>
             <div class="detail-meta">
@@ -71,6 +80,11 @@
           </div>
         </div>
       </div>
+      {#if showLightbox}
+        <div class="lightbox" onclick={() => showLightbox = false} role="dialog" aria-modal="true" aria-label="Locandina a tutto schermo" title="Chiudi">
+          <img class="lightbox-img" src={fullPoster || poster} alt="" />
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
@@ -96,10 +110,30 @@
   .detail-poster-col {
     flex-shrink: 0;
   }
+  .detail-poster-btn {
+    background: none; border: none; padding: 0; display: block; cursor: zoom-in;
+  }
   .detail-poster {
     width: 260px; height: auto; aspect-ratio: 2/3; object-fit: contain;
     display: block; background: var(--bg-tertiary);
     transform: translateZ(0);
+    transition: transform 0.2s ease, filter 0.2s ease;
+  }
+  @media (hover: hover) {
+    .detail-poster-btn:hover .detail-poster { transform: scale(1.02); filter: brightness(1.06); }
+  }
+  /* Lightbox: locandina vincolata al viewport (mai oltre lo schermo,
+     mai ingrandita oltre il naturale). Stesso vocabolario animazioni
+     dei modali: fadeIn overlay + scaleIn contenuto. */
+  .lightbox {
+    position: fixed; inset: 0; z-index: 300;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.9); cursor: zoom-out;
+    animation: fadeIn 0.2s ease;
+  }
+  .lightbox-img {
+    max-width: 100vw; max-height: 100dvh; object-fit: contain;
+    animation: scaleIn 0.25s ease-out;
   }
   .detail-info-col {
     flex: 1; min-width: 0; padding: 1.5rem;
@@ -111,13 +145,25 @@
     display: flex; flex-direction: column; gap: 0.75rem;
   }
   .detail-close {
-    position: absolute; top: 0.75rem; right: 0.75rem;
     background: none; border: none; color: var(--text-muted);
     font-size: 1.5rem; cursor: pointer; line-height: 1;
     padding: 0.25rem;
+    transition: color 0.15s ease;
   }
   .detail-close:hover { color: var(--text-primary); }
-  .detail-title { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); padding-right: 2rem; }
+  .detail-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.5rem;
+  }
+  .modal-back {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: none; border: 1px solid var(--border-color); border-radius: 8px;
+    color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;
+    padding: 0.35rem 0.6rem; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .modal-back:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent); }
+  .detail-title { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
   .detail-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
   .card-service {
     display: inline-block; font-size: 0.68rem; color: var(--accent);
@@ -142,7 +188,6 @@
   .detail-stat-url { font-size: 0.75rem; font-weight: 400; word-break: break-all; text-align: right; max-width: 55%; }
   .detail-stat-url:hover { color: var(--accent); }
   .detail-actions { display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); flex-shrink: 0;
-    padding-bottom: 96px;
   }
   .detail-stat-diff { color: var(--text-muted); font-size: 0.75rem; margin-left: 0.4rem; }
   .btn-primary {
@@ -177,6 +222,8 @@
     .detail-desc { max-height: none; }
     .detail-stat-path { max-width: none; }
     .detail-stat-url { max-width: none; }
+    /* Spazio sotto le azioni solo su mobile (era il bianco su desktop). */
+    .detail-actions { padding-bottom: 96px; }
   }
 
   @media (orientation: landscape) and (max-height: 520px) {
