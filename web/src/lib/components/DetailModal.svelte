@@ -1,7 +1,7 @@
 <script>
   // Modale dettaglio serie. Lo stato di apertura (detailIndex) resta nel
   // parent: qui solo presentazione della serie + azioni + lightbox.
-  import { fade, scale } from 'svelte/transition';
+  import { fade, fly, scale } from 'svelte/transition';
 
   let { series = null, description = '', poster = '', srcset = '', fullPoster = '', onclose, onedit, onremove } = $props();
   let showLightbox = $state(false);
@@ -9,7 +9,10 @@
 
 {#if series}
   <div class="modal-overlay" transition:fade={{ duration: 200 }} onclick={onclose} onkeydown={(e) => { if (e.key !== 'Escape') return; if (showLightbox) showLightbox = false; else onclose?.(); }} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="modal-panel detail-modal" transition:scale={{ duration: 250, start: 0.95 }} onclick={(e) => e.stopPropagation()} role="presentation">
+    <!-- Pannello con rise (fly y+fade): lo scale 0.95 era impercettibile,
+         specie sul modale fullscreen mobile dove solo il testo sembrava
+         animarsi. Stesso vocabolario delle pagine (fly y:8). -->
+    <div class="modal-panel detail-modal" transition:fly={{ y: 16, duration: 250 }} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="detail-modal-inner">
         <div class="detail-poster-col">
           <button type="button" class="detail-poster-btn" onclick={() => showLightbox = true} title="Ingrandisci locandina" aria-label="Ingrandisci locandina">
@@ -161,6 +164,10 @@
     transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .modal-back:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent); }
+  /* Desktop: solo la X come prima; il back vive su mobile. */
+  @media (min-width: 769px) {
+    .detail-topbar .modal-back { display: none; }
+  }
   .detail-title { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
   .detail-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
   .card-service {

@@ -4,6 +4,7 @@
   // presentazione. viewMode: 'grid' | 'table' | 'large'.
   import SeriesCard from './SeriesCard.svelte';
   import SeriesTable from './SeriesTable.svelte';
+  import { flip } from 'svelte/animate';
   import { posterUrl, posterSrcSet } from '../api.js';
 
   let { items = [], viewMode = 'grid', totalCount = 0, descriptions = {}, onopen, onedit, onremove } = $props();
@@ -24,6 +25,10 @@
 {:else}
   <div class="series-grid" class:grid-large={large}>
     {#each items as item, idx (item._file_index)}
+      <!-- Wrapper per animate:flip (lo standard Svelte per i relayout):
+           senza, lo switch griglia<->large riuserebbe i nodi e sembrerebbe
+           morto. Le card scivolano nelle nuove posizioni, niente refetch. -->
+      <div class="flip-wrap" animate:flip={{ duration: 300 }}>
       <SeriesCard
         {item}
         index={idx}
@@ -34,6 +39,7 @@
         onedit={() => onedit(item._file_index)}
         onremove={() => onremove(item._file_index)}
       />
+      </div>
     {/each}
   </div>
 {/if}
@@ -49,6 +55,9 @@
     display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 0.9rem; max-width: 1100px; margin-inline: auto;
   }
+  /* Wrapper flip: item di griglia neutro, la card riempie. */
+  .flip-wrap { min-width: 0; }
+  .flip-wrap > :first-child { width: 100%; }
   /* Vista grande: stesse card, colonne da 220px (poster ~330px). */
   .grid-large {
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

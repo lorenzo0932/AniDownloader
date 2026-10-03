@@ -147,6 +147,12 @@
     transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .modal-back:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent); }
+  /* Desktop: bastano Annulla/Salva (il ritorno all'origine avviene
+     comunque); il back vive su mobile. Nascosta l'intera topbar per
+     non lasciare spazi vuoti. */
+  @media (min-width: 769px) {
+    .form-topbar { display: none; }
+  }
   .modal-back .back-label {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     min-width: 0; max-width: 40vw;

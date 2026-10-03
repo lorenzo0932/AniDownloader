@@ -2,6 +2,24 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import SeriesList from './SeriesList.svelte';
 
+// happy-dom non ha la Web Animations API usata da animate:flip:
+// stub minimo (vedi DashboardPage.test.js per il protocollo onfinish).
+if (typeof Element !== 'undefined' && !Element.prototype.animate) {
+  Element.prototype.animate = function () {
+    const anim = {
+      currentTime: 0,
+      playState: 'finished',
+      onfinish: null,
+      cancel() {}, play() {}, pause() {}, reverse() {},
+      finished: null,
+    };
+    anim.finished = Promise.resolve().then(() => {
+      anim.onfinish?.();
+    });
+    return anim;
+  };
+}
+
 const itemsFixture = () => [
   { _file_index: 0, name: 'One Piece', path: '/media/one-piece', service: 'animeW_scraper', local_episode_count: 100 },
   { _file_index: 1, name: 'Naruto', path: '/media/naruto', service: 'animeU_scraper', local_episode_count: 50 },
@@ -40,6 +58,8 @@ describe('SeriesList', () => {
     expect(container.querySelector('.series-grid.grid-large')).toBeTruthy();
     expect(container.querySelector('.series-table')).toBeNull();
     expect(screen.getByText('One Piece')).toBeTruthy();
+    // Wrapper animate:flip: lo switch griglia<->large scivola, non salta.
+    expect(container.querySelectorAll('.series-grid .flip-wrap')).toHaveLength(2);
   });
 
   it('cambio vista grid -> large: applica grid-large (regressione reattivita)', async () => {
