@@ -117,6 +117,16 @@ Sempre sotto ~560px il bottone Vista grande è nascosto (coinciderebbe
 con la griglia: precedente Gmail/Jellyfin) e la tabella nasconde la data
 ultimo download — riga a una sola riga con servizio, Ep e badge.
 
+### Modali Gestione Serie
+
+Info e modifica condividono: overlay `fadeIn` + pannello `scaleIn`,
+scroll di sfondo bloccato, bottone `← Serie` per tornare all'elenco
+(oltre a X, overlay e Esc). La locandina nel dettaglio si ingrandisce
+in lightbox fullscreen vincolata al viewport (max 100vw/100dvh,
+full-res 1080); Esc chiude prima la lightbox, poi il modale.
+Animazioni standard in tutta la UI: ingressi `fly`/`fadeIn`/`scaleIn`/
+`slideUp`/`cardIn`/`rowIn` (0.2–0.35s ease-out), hover 0.15s.
+
 ### api.js
 
 ```js
