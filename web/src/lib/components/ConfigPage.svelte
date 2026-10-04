@@ -38,14 +38,27 @@
     num_chunks: 0,
     max_network_retries: 3,
     retry_delay_ms: 2000,
+    scheduling: { abilitato: true, intervalloMinuti: 15 },
+    notifiche: { abilitate: false, sorgente: 'entrambi' },
   };
+
+  const SORGENTE_OPTIONS = [
+    { value: 'ui', label: 'Solo interfaccia' },
+    { value: 'backend', label: 'Solo sistema' },
+    { value: 'entrambi', label: 'Entrambi' },
+  ];
 
   async function load() {
     busy = true;
     error = '';
     try {
       const data = await api.config.get();
-      config = { ...DEFAULTS, ...(data.config || {}) };
+      const backend = data.config || {};
+      config = { ...DEFAULTS, ...backend };
+      // Merge profondo delle sezioni note: il backend potrebbe non averle
+      // (config vecchia) senza che la UI perda i suoi default.
+      config.scheduling = { ...DEFAULTS.scheduling, ...(backend.scheduling || {}) };
+      config.notifiche = { ...DEFAULTS.notifiche, ...(backend.notifiche || {}) };
     } catch (e) {
       error = e.message;
     } finally {
@@ -226,6 +239,32 @@
 
             <label for="retry_delay_ms">Ritardo tra tentativi (ms)</label>
             <input id="retry_delay_ms" type="number" min="100" max="30000" step="100" bind:value={config.retry_delay_ms} />
+          </div>
+
+          <div class="group-box">
+            <div class="group-title">Controlli Automatici</div>
+
+            <div class="checkbox-row">
+              <input id="sched_abilitato" type="checkbox" bind:checked={config.scheduling.abilitato} />
+              <label for="sched_abilitato">Controllo periodico nuovi episodi</label>
+            </div>
+            <p class="field-hint">Sostituisce il vecchio timer di sistema: il demone controlla da solo.</p>
+
+            <label for="sched_intervallo">Ogni quanti minuti</label>
+            <input id="sched_intervallo" type="number" min="5" max="1440" step="5"
+              bind:value={config.scheduling.intervalloMinuti} disabled={!config.scheduling.abilitato} />
+            <p class="field-hint">Da 5 minuti a 24 ore. La modifica vale dal prossimo giro, quello in corso non si interrompe.</p>
+
+            <hr class="field-sep" />
+
+            <div class="checkbox-row">
+              <input id="notifiche_abilitate" type="checkbox" bind:checked={config.notifiche.abilitate} />
+              <label for="notifiche_abilitate">Notifiche nuovi episodi</label>
+            </div>
+
+            <label for="notifiche_sorgente">Mostra tramite</label>
+            <Dropdown bind:value={config.notifiche.sorgente} options={SORGENTE_OPTIONS} onchange={() => {}} />
+            <p class="field-hint">Memorizzata ora, attiva dal prossimo aggiornamento dell'app.</p>
           </div>
 
           <div class="group-box">

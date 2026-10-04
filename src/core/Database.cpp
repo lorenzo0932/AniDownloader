@@ -37,6 +37,28 @@ CREATE TABLE IF NOT EXISTS kv (
     value TEXT NOT NULL DEFAULT ''
 );
 )";
+        // Schema v2: + coda task persistente (B4/B6, ADR-004). Gli stati sono
+        // testo vincolato da CHECK: attesa = da eseguire, attivo = in mano a
+        // un worker (reset ad attesa a ogni avvio: crash recovery), fatto e
+        // fallito = terminali. Epoch unix in prossima_esecuzione per retry
+        // con backoff senza svegliare nessuno.
+        constexpr const char* kSchemaV2 = R"(
+CREATE TABLE IF NOT EXISTS tasks (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind               TEXT NOT NULL DEFAULT 'check',
+    serie              TEXT NOT NULL DEFAULT '',
+    episodio           INTEGER NOT NULL DEFAULT 0,
+    payload            TEXT NOT NULL DEFAULT '{}',
+    stato              TEXT NOT NULL DEFAULT 'attesa'
+                       CHECK (stato IN ('attesa', 'attivo', 'fatto', 'fallito')),
+    tentativi          INTEGER NOT NULL DEFAULT 0,
+    prossima_esecuzione INTEGER NOT NULL DEFAULT 0,
+    priorita           INTEGER NOT NULL DEFAULT 0,
+    creato_il          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_claim
+    ON tasks(stato, prossima_esecuzione, priorita DESC, id);
+)";
     } // namespace
 
     struct Statement::Impl {
@@ -277,22 +299,34 @@ CREATE TABLE IF NOT EXISTS kv (
                 *error = lastError();
             return false;
         }
-        if (!execute(kSchemaV1, error))
-            return false;
-        auto insert = prepare("INSERT OR IGNORE INTO migrations(version) VALUES (?);");
-        if (!insert.valid() || !insert.bindInt(1, kSchemaVersion) ||
-            (insert.step(), insert.hasError())) {
-            if (error)
-                *error = insert.lastError();
-            return false;
+        // Migrazioni in ordine di versione: ogni schema è idempotente
+        // (IF NOT EXISTS) e registra la sua versione; DB fermi a v1
+        // prendono solo la v2, DB nuovi prendono tutto.
+        int attuale = 0;
+        {
+            // Scope: statement finalizzato prima dei DDL (stessa lezione dei
+            // cursori aperti prima del COMMIT).
+            auto versione = prepare("SELECT MAX(version) FROM migrations;");
+            if (versione.valid() && versione.step() && !versione.hasError())
+                attuale = static_cast<int>(versione.columnInt(0));
         }
-        auto maxVersion = prepare("SELECT MAX(version) FROM migrations;");
-        if (!maxVersion.valid() || !maxVersion.step() || maxVersion.hasError()) {
-            if (error)
-                *error = maxVersion.lastError();
+        auto applica = [&](int v, const char* schema) {
+            if (attuale >= v)
+                return true;
+            if (!execute(schema, error))
+                return false;
+            auto insert = prepare("INSERT OR IGNORE INTO migrations(version) VALUES (?);");
+            if (!insert.valid() || !insert.bindInt(1, v) || (insert.step(), insert.hasError())) {
+                if (error)
+                    *error = insert.lastError();
+                return false;
+            }
+            attuale = v;
+            return true;
+        };
+        if (!applica(1, kSchemaV1) || !applica(2, kSchemaV2))
             return false;
-        }
-        m_impl->schemaVersion = static_cast<int>(maxVersion.columnInt(0));
+        m_impl->schemaVersion = attuale;
         if (!tx.commit()) {
             if (error)
                 *error = lastError();

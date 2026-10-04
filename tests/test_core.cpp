@@ -1,11 +1,15 @@
 // Unit test per le funzioni pure del core (nessuna dipendenza da processi esterni).
 // Eseguire con: ctest --test-dir build  (oppure ./build/test_core)
 #include "config/AppConfigManager.hpp"
+#include "core/CheckRunner.hpp"
 #include "core/Database.hpp"
 #include "core/DbImporter.hpp"
+#include "core/ExecutionEngine.hpp"
 #include "core/FileUtils.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/ProcessUtils.hpp"
+#include "core/QueueStore.hpp"
+#include "core/Scheduler.hpp"
 #include "core/Series.hpp"
 #include "core/SeriesRepository.hpp"
 #include "core/SeriesUtils.hpp"
@@ -804,9 +808,26 @@ static void testDatabase() {
     {
         Core::Database reopen(dir / "test.db");
         CHECK(reopen.isOpen());
-        CHECK(reopen.schemaVersion() == 1);
+        CHECK(reopen.schemaVersion() == Core::Database::kSchemaVersion);
         std::string error;
         CHECK(reopen.migrate(&error));
+    }
+
+    // Migrazione v1 -> v2: simulo un DB fermo alla v1 (niente tasks) e
+    // verifico che la riapertura crei la tabella senza toccare i dati.
+    {
+        CHECK(db.execute("INSERT INTO series(name) VALUES ('Vecchia');"));
+        CHECK(db.execute("DROP TABLE tasks;"));
+        CHECK(db.execute("DELETE FROM migrations WHERE version = 2;"));
+    }
+    {
+        Core::Database migrato(dir / "test.db");
+        CHECK(migrato.isOpen());
+        CHECK(migrato.schemaVersion() == 2);
+        auto sel = migrato.prepare("SELECT name FROM series WHERE name = 'Vecchia';");
+        CHECK(sel.step() && sel.columnText(0) == "Vecchia");
+        auto tasks = migrato.prepare("SELECT COUNT(*) FROM tasks;");
+        CHECK(tasks.step() && tasks.columnInt(0) == 0);
     }
 
     // SQL errato: false + messaggio utile.
@@ -1088,6 +1109,157 @@ static void testConcurrentWrites() {
     fs::remove_all(dir, ec);
 }
 
+// QueueStore: enqueue/claim atomico, priorità, retry con backoff,
+// crash recovery, conteggi per kind. Cleanup sempre.
+static void testQueueStore() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_queue";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    const fs::path dbPath = dir / "q.db";
+    Core::QueueStore q(dbPath);
+    CHECK(q.isOpen());
+
+    // Coda vuota: nessun claim.
+    CHECK(!q.claim().has_value());
+    CHECK(q.pendingCount() == 0);
+
+    // Priorità: il claim prende prima la più alta, poi FIFO.
+    const auto idBassa = q.enqueue("check", "", 0, "{}", 0);
+    const auto idAlta = q.enqueue("check", "", 0, "{}", 10);
+    const auto idMedia = q.enqueue("check", "", 0, "{}", 5);
+    CHECK(idBassa > 0 && idAlta > 0 && idMedia > 0);
+    CHECK(q.pendingCount() == 3);
+    CHECK(q.pendingCount("check") == 3);
+    CHECK(q.pendingCount("download") == 0);
+    auto primo = q.claim();
+    CHECK(primo.has_value() && primo->id == idAlta);
+    auto secondo = q.claim();
+    CHECK(secondo.has_value() && secondo->id == idMedia);
+    CHECK(q.pendingCount() == 1);
+    // Task attivi non riclaimabili: terzo claim va sul rimanente.
+    auto terzo = q.claim();
+    CHECK(terzo.has_value() && terzo->id == idBassa);
+    CHECK(!q.claim().has_value());
+    CHECK(q.complete(idAlta) && q.complete(idMedia) && q.complete(idBassa));
+    CHECK(q.pendingCount() == 0);
+
+    // Retry con backoff: subito non riclaimabile, dopo scadenza sì.
+    const auto idRetry = q.enqueue("check", "", 0, "{}", 0);
+    auto t = q.claim();
+    CHECK(t.has_value() && t->id == idRetry);
+    CHECK(t->tentativi == 0);
+    CHECK(q.failRetry(idRetry, 3600));
+    CHECK(!q.claim().has_value());
+    CHECK(q.pendingCount() == 1); // attesa futura conta come pending
+    auto t2 = q.claim();          // ma non è ancora eseguibile
+    CHECK(!t2.has_value());
+    CHECK(q.failDead(idRetry));
+    CHECK(q.pendingCount() == 0);
+
+    // Crash recovery: task rimasto attivo torna in coda al reset.
+    const auto idOrfano = q.enqueue("check", "Serie X", 3, "{}", 0);
+    {
+        auto preso = q.claim();
+        CHECK(preso.has_value() && preso->serie == "Serie X" && preso->episodio == 3);
+    }
+    CHECK(!q.claim().has_value());
+    CHECK(q.resetOrfani());
+    {
+        auto risorto = q.claim();
+        CHECK(risorto.has_value() && risorto->id == idOrfano);
+        CHECK(q.complete(idOrfano));
+    }
+
+    fs::remove_all(dir, ec);
+}
+
+// CheckRunner skip-paths (mai rete): libreria vuota e lock occupato.
+// Scheduler: ciclo completo su libreria vuota senza toccare la rete
+// (il giro trova zero serie e marca il task fallito). Cleanup sempre.
+static void testScheduler() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_sched";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    Config::AppConfigManager config(dir / "config.json");
+    const std::string jsonPath = (dir / "series_data.json").string();
+    std::atomic<bool> stop{false};
+
+    // Libreria vuota: giro saltato, exit 0 equivalente.
+    {
+        Core::CheckOutcome esito = Core::CheckRunner::runOnce(config, jsonPath, false, stop);
+        CHECK(!esito.eseguito);
+        CHECK(esito.salto == Core::CheckOutcome::Salto::Vuoto);
+    }
+
+    // Lock occupato (da noi o dal demone: in entrambi i casi il giro si
+    // rimanda): deterministico senza dipendere dallo stato esterno. Serve
+    // una serie, altrimenti il giro salta prima per libreria vuota.
+    {
+        Core::SeriesRepository prepara(jsonPath, Core::SeriesRepository::dbPathFor(jsonPath));
+        Core::Series s;
+        s.name = "Blocca";
+        s.service = "animew";
+        s.path = "/tmp/blocca";
+        s.seriesPageUrl = "https://x/blocca";
+        prepara.saveSeriesData({s});
+        Core::InstanceLock occupante((Config::PathHelper::getConfigDir() / "exec.lock").string());
+        Core::CheckOutcome esito = Core::CheckRunner::runOnce(config, jsonPath, false, stop);
+        CHECK(!esito.eseguito);
+        CHECK(esito.salto == Core::CheckOutcome::Salto::Occupato);
+    }
+
+    // Scheduler spento: start/stop puliti, niente accodato.
+    {
+        // Reset libreria: i test dopo devono girare a zero serie (mai rete).
+        for (const auto& entry : fs::directory_iterator(dir)) {
+            const auto nome = entry.path().filename().string();
+            if (nome.rfind("series_data", 0) == 0)
+                fs::remove_all(entry.path(), ec);
+        }
+        config.set("scheduling", {{"abilitato", false}, {"intervalloMinuti", 15}});
+        Core::Scheduler sched(config, jsonPath);
+        CHECK(!sched.running());
+        sched.start();
+        CHECK(sched.running());
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        sched.stop();
+        CHECK(!sched.running());
+        Core::QueueStore coda(Core::SeriesRepository::dbPathFor(jsonPath));
+        CHECK(coda.pendingCount() == 0);
+    }
+
+    // Scheduler acceso su libreria vuota: accoda un check (catch-up),
+    // il worker lo esegue senza rete, task fallito, niente accumulo.
+    {
+        config.set("scheduling", {{"abilitato", true}, {"intervalloMinuti", 15}});
+        Core::Scheduler sched(config, jsonPath);
+        sched.start();
+        Core::QueueStore coda(Core::SeriesRepository::dbPathFor(jsonPath));
+        bool visto = false;
+        for (int i = 0; i < 100 && !visto; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            Core::Database db(Core::SeriesRepository::dbPathFor(jsonPath));
+            auto sel = db.prepare("SELECT COUNT(*) FROM tasks WHERE stato = 'fallito';");
+            visto = sel.step() && !sel.hasError() && sel.columnInt(0) == 1;
+        }
+        sched.stop();
+        CHECK(visto);
+        CHECK(coda.pendingCount() == 0);
+        // Secondo giro non riaccodato subito (ultimo_giro aggiornato).
+        CHECK(coda.pendingCount("check") == 0);
+    }
+
+    fs::remove_all(dir, ec);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -1116,6 +1288,8 @@ int main(int argc, char** argv) {
     testDbImporter();
     testShadowMode();
     testConcurrentWrites();
+    testQueueStore();
+    testScheduler();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";

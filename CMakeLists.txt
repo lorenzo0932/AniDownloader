@@ -133,6 +133,9 @@ set(HEADERS
     include/core/LogUtils.hpp
     include/core/Database.hpp
     include/core/DbImporter.hpp
+    include/core/CheckRunner.hpp
+    include/core/QueueStore.hpp
+    include/core/Scheduler.hpp
     include/core/SeriesUtils.hpp
     include/web/WebServer.hpp
     ${EMBEDDED_HPP}
@@ -165,9 +168,12 @@ endif()
 
 set(SOURCES
     src/main.cpp
+    src/core/CheckRunner.cpp
     src/core/Database.cpp
     src/core/DbImporter.cpp
-    src/core/SeriesRepository.cpp
+    src/core/ExecutionEngine.cpp
+    src/core/QueueStore.cpp
+    src/core/Scheduler.cpp
     src/core/Series.cpp
     src/core/PlanningService.cpp
     src/core/MediaProcessor.cpp
@@ -176,7 +182,6 @@ set(SOURCES
     src/scrapers/ScraperUtils.cpp
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
-    src/core/ExecutionEngine.cpp
     src/core/InstanceLock.cpp
     src/core/Logger.cpp
     src/core/ProcessUtils.cpp
@@ -184,6 +189,7 @@ set(SOURCES
     src/core/UpdateChecker.cpp
     src/core/FileUtils.cpp
     src/core/LogUtils.cpp
+    src/core/SeriesRepository.cpp
     src/core/SeriesUtils.cpp
     src/core/ThumbCache.cpp
     src/web/WebServer.cpp
@@ -213,10 +219,17 @@ add_executable(test_core
     tests/test_core.cpp
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
+    src/core/CheckRunner.cpp
     src/core/Database.cpp
     src/core/DbImporter.cpp
+    src/core/ExecutionEngine.cpp
+    src/core/QueueStore.cpp
+    src/core/Scheduler.cpp
     src/core/FileUtils.cpp
     src/core/InstanceLock.cpp
+    src/core/MediaProbe.cpp
+    src/core/MediaProcessor.cpp
+    src/core/PlanningService.cpp
     src/core/ProcessUtils.cpp
     src/core/ThumbCache.cpp
     src/core/UpdateChecker.cpp
@@ -224,12 +237,15 @@ add_executable(test_core
     src/core/Series.cpp
     src/core/SeriesRepository.cpp
     src/core/SeriesUtils.cpp
+    src/scrapers/AnimeUScraper.cpp
+    src/scrapers/AnimeWScraper.cpp
     src/scrapers/ScraperUtils.cpp
 )
 target_include_directories(test_core PRIVATE include)
 target_link_libraries(test_core PRIVATE
     nlohmann_json::nlohmann_json
     cpr::cpr
+    httplib::httplib
     vendor_sqlite
     Threads::Threads
 )
