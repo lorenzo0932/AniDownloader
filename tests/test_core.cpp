@@ -1,6 +1,7 @@
 // Unit test per le funzioni pure del core (nessuna dipendenza da processi esterni).
 // Eseguire con: ctest --test-dir build  (oppure ./build/test_core)
 #include "config/AppConfigManager.hpp"
+#include "core/Database.hpp"
 #include "core/FileUtils.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/ProcessUtils.hpp"
@@ -775,6 +776,100 @@ static void testSortAdded() {
     CHECK(d[2].value("name", "") == "media");
 }
 
+// Database: open/migrate idempotente, statement bind/step, transazioni
+// commit/rollback. Fixture in tmp con cleanup sempre.
+static void testDatabase() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_db";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    // Open + migrate: schema v1, journal WAL.
+    Core::Database db(dir / "test.db");
+    CHECK(db.isOpen());
+    CHECK(db.schemaVersion() == Core::Database::kSchemaVersion);
+    {
+        // Statement chiuso prima delle transazioni: un cursore di lettura
+        // aperto bloccherebbe l'upgrade del lock al COMMIT.
+        auto mode = db.prepare("PRAGMA journal_mode;");
+        CHECK(mode.valid() && mode.step() && !mode.hasError());
+        CHECK(mode.columnText(0) == "wal");
+    }
+
+    // Riapertura idempotente: stesso schema, nessun errore.
+    {
+        Core::Database reopen(dir / "test.db");
+        CHECK(reopen.isOpen());
+        CHECK(reopen.schemaVersion() == 1);
+        std::string error;
+        CHECK(reopen.migrate(&error));
+    }
+
+    // SQL errato: false + messaggio utile.
+    {
+        std::string error;
+        CHECK(!db.execute("QUESTA NON E SQL VALIDO", &error));
+        CHECK(!error.empty());
+    }
+
+    // Statement: insert con bind + select con colonne tipizzate.
+    {
+        auto ins = db.prepare("INSERT INTO kv(key, value) VALUES (?, ?);");
+        CHECK(ins.valid());
+        CHECK(ins.bindText(1, "chiave"));
+        CHECK(ins.bindText(2, "valore"));
+        CHECK(!ins.step());
+        CHECK(!ins.hasError());
+    }
+    {
+        auto sel = db.prepare("SELECT key, value FROM kv WHERE key = ?;");
+        CHECK(sel.valid());
+        CHECK(sel.bindText(1, "chiave"));
+        CHECK(sel.step());
+        CHECK(sel.columnCount() == 2);
+        CHECK(sel.columnName(0) == "key");
+        CHECK(sel.columnText(1) == "valore");
+        CHECK(!sel.step());
+        CHECK(!sel.hasError());
+    }
+
+    // Rollback: la riga scritta nel tx abortito non esiste.
+    {
+        Core::Transaction tx(db);
+        CHECK(tx.active());
+        CHECK(db.execute("INSERT INTO kv(key, value) VALUES ('fantasma', 'x');"));
+    }
+    {
+        auto sel = db.prepare("SELECT COUNT(*) FROM kv WHERE key = 'fantasma';");
+        CHECK(sel.step());
+        CHECK(sel.columnInt(0) == 0);
+    }
+
+    // Commit: la riga resta.
+    {
+        Core::Transaction tx(db);
+        CHECK(tx.active());
+        CHECK(db.execute("INSERT INTO kv(key, value) VALUES ('reale', 'y');"));
+        CHECK(tx.commit());
+        CHECK(!tx.active());
+    }
+    {
+        auto sel = db.prepare("SELECT value FROM kv WHERE key = 'reale';");
+        CHECK(sel.step() && sel.columnText(0) == "y");
+    }
+
+    // Tabella series: insert minimo + vincolo chiave primaria.
+    {
+        std::string error;
+        CHECK(db.execute("INSERT INTO series(name, service) VALUES ('Serie X', 'animew');", &error));
+        CHECK(!db.execute("INSERT INTO series(name) VALUES ('Serie X');", &error));
+    }
+
+    fs::remove_all(dir, ec);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -799,6 +894,7 @@ int main(int argc, char** argv) {
     testFileOps();
     testThumbCache();
     testSortAdded();
+    testDatabase();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";

@@ -1,0 +1,11 @@
+SQLite — Public Domain
+
+The SQLite source code (amalgamation: sqlite3.c, sqlite3.h) is in the
+Public Domain. Instead of a license, SQLite offers a blessing:
+
+    May you do good and not evil.
+    May you find forgiveness for yourself and forgive others.
+    May you share freely, never taking more than you give.
+
+Source: https://www.sqlite.org/copyright.html
+Vendored amalgamation version 3.53.4, see third_party/sqlite/.
