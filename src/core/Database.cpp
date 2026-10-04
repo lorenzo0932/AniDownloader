@@ -2,6 +2,8 @@
 
 #include "sqlite3.h"
 
+#include <chrono>
+#include <thread>
 #include <utility>
 
 namespace Core {
@@ -163,39 +165,59 @@ CREATE TABLE IF NOT EXISTS kv (
     }
 
     Database::Database(const std::filesystem::path& dbPath) : m_impl(std::make_unique<Impl>()) {
+        // Retry sui lock transitori: chiude la race d'apertura simultanea
+        // (vedi openOnce). Errori veri (permessi, disco) escono subito.
+        for (int tentativo = 0; tentativo < kOpenRetries; ++tentativo) {
+            bool errBusy = false;
+            if (openOnce(dbPath, errBusy))
+                return;
+            if (!errBusy || tentativo + 1 == kOpenRetries)
+                return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(kOpenRetryMs));
+        }
+    }
+
+    bool Database::openOnce(const std::filesystem::path& dbPath, bool& errBusy) {
+        errBusy = false;
         std::error_code ec;
         if (!dbPath.parent_path().empty())
             std::filesystem::create_directories(dbPath.parent_path(), ec);
         if (ec) {
             m_impl->lastError = "creazione directory: " + ec.message();
-            return;
+            return false;
         }
         if (sqlite3_open_v2(dbPath.string().c_str(), &m_impl->db,
                             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK) {
+            errBusy = sqlite3_errcode(m_impl->db) == SQLITE_BUSY;
             m_impl->lastError = m_impl->db ? sqlite3_errmsg(m_impl->db) : "apertura fallita";
             if (m_impl->db) {
                 sqlite3_close(m_impl->db);
                 m_impl->db = nullptr;
             }
-            return;
+            return false;
         }
+        // busy-timeout SUBITO dopo open, prima di qualunque PRAGMA.
+        sqlite3_busy_timeout(m_impl->db, kBusyTimeoutMs);
         std::string error;
         // WAL: lettori non bloccano lo scrittore (web UI + worker convivono).
         // synchronous=NORMAL sotto WAL è crash-safe senza fsync a ogni commit.
+        // NOTA: PRAGMA journal_mode su file fresco con aperture simultanee
+        // può rispondere SQLITE_BUSY senza invocare il busy handler: il retry
+        // del costruttore copre il caso, qui basta segnalarlo (errBusy).
+        auto fallito = [&](const std::string& fase) {
+            errBusy = sqlite3_errcode(m_impl->db) == SQLITE_BUSY;
+            m_impl->lastError = fase + ": " + error;
+            sqlite3_close(m_impl->db);
+            m_impl->db = nullptr;
+            return false;
+        };
         if (!execute("PRAGMA journal_mode=WAL;", &error) ||
             !execute("PRAGMA synchronous=NORMAL;", &error) ||
-            !execute("PRAGMA foreign_keys=ON;", &error)) {
-            m_impl->lastError = error;
-            sqlite3_close(m_impl->db);
-            m_impl->db = nullptr;
-            return;
-        }
-        sqlite3_busy_timeout(m_impl->db, kBusyTimeoutMs);
-        if (!migrate(&error)) {
-            m_impl->lastError = error;
-            sqlite3_close(m_impl->db);
-            m_impl->db = nullptr;
-        }
+            !execute("PRAGMA foreign_keys=ON;", &error))
+            return fallito("pragma");
+        if (!migrate(&error))
+            return fallito("migrate");
+        return true;
     }
 
     Database::~Database() {

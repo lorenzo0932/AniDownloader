@@ -85,7 +85,9 @@ namespace Web {
           m_configJsonPath(Config::PathHelper::getConfigDir() / "config.json"),
           m_seriesRepository([&]() {
               std::string p = configManager.get<std::string>("json_file_path", "");
-              return p.empty() ? Config::PathHelper::getSeriesJsonPath() : std::filesystem::path(p);
+              std::filesystem::path jsonPath =
+                  p.empty() ? Config::PathHelper::getSeriesJsonPath() : std::filesystem::path(p);
+              return Core::SeriesRepository(jsonPath, Core::SeriesRepository::dbPathFor(jsonPath));
           }()) {
         // Ogni client SSE occupa un thread del pool per l'intera connessione:
         // pool dinamico proporzionale alla macchina (coerente con lo stile del
