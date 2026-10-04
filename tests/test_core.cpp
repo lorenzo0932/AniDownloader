@@ -179,6 +179,55 @@ static void testSeriesRepository() {
     std::filesystem::remove_all(dir);
 }
 
+// Scrittura esterna vista senza forceReload: la cache si invalida su
+// mismatch (mtime,size); il save aggiorna il tracking.
+static void testCacheMtimeReload() {
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_repo_mtime";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    auto jsonPath = dir / "series_data.json";
+
+    Core::SeriesRepository repo(jsonPath);
+    Core::Series s;
+    s.name = "M1";
+    s.service = "animew";
+    s.seriesPageUrl = "https://example.com/m1";
+    s.lastDownloadedEpisode = 2;
+    repo.saveSeriesData({s});
+
+    // load senza force: popola la cache
+    CHECK(repo.loadSeriesData()[0].lastDownloadedEpisode == 2);
+    // file invariato: la cache resta valida (nessun reload)
+    CHECK(repo.loadSeriesData()[0].lastDownloadedEpisode == 2);
+
+    // scrittore "esterno" (seconda istanza, come altro processo)
+    Core::SeriesRepository writer(jsonPath);
+    Core::Series ext = s;
+    ext.lastDownloadedEpisode = 9;
+    writer.saveSeriesData({ext});
+    // mtime esplicito in avanti: non dipende dalla grana del FS
+    std::error_code ec;
+    auto cur = std::filesystem::last_write_time(jsonPath, ec);
+    CHECK(!ec);
+    std::filesystem::last_write_time(jsonPath, cur + std::chrono::seconds(10), ec);
+    CHECK(!ec);
+
+    // senza force deve vedere la modifica esterna
+    CHECK(repo.loadSeriesData()[0].lastDownloadedEpisode == 9);
+
+    // save proprio aggiorna il tracking: load senza force vede il salvato
+    Core::Series upd = ext;
+    upd.lastDownloadedEpisode = 10;
+    repo.saveSeriesData({upd});
+    CHECK(repo.loadSeriesData()[0].lastDownloadedEpisode == 10);
+
+    // invalidateCache resetta anche il tracking: reload implicito
+    repo.invalidateCache();
+    CHECK(repo.loadSeriesData()[0].lastDownloadedEpisode == 10);
+
+    std::filesystem::remove_all(dir);
+}
+
 // Lock esclusivo di processo con subprocess reale: il test esegue se stesso
 // con --try-lock via ProcessUtils (cross-platform, esercita sia il ramo
 // POSIX/flock sia quello Windows/CreateFile). O_CLOEXEC (POSIX) e handle non
@@ -736,6 +785,7 @@ int main(int argc, char** argv) {
     testSeriesJsonRoundtrip();
     testScraperUtils();
     testSeriesRepository();
+    testCacheMtimeReload();
     testConfigMigration();
     testInstanceLock(argv[0]);
     testPublishNoReplace();

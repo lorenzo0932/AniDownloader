@@ -37,13 +37,45 @@ namespace Core {
 
     } // namespace
 
+    namespace {
+
+        struct FileSnapshot {
+            std::filesystem::file_time_type mtime{};
+            std::uintmax_t size{0};
+            bool valid{false};
+        };
+
+        // Stat con error_code: mai eccezioni (file cancellato in corsa -> invalid).
+        FileSnapshot snapshotFile(const std::filesystem::path& p) {
+            FileSnapshot s;
+            std::error_code ec;
+            auto t = std::filesystem::last_write_time(p, ec);
+            if (ec)
+                return s;
+            auto sz = std::filesystem::file_size(p, ec);
+            if (ec)
+                return s;
+            s.mtime = t;
+            s.size = sz;
+            s.valid = true;
+            return s;
+        }
+
+    } // namespace
+
     SeriesRepository::SeriesRepository(const std::filesystem::path& jsonFilePath)
         : m_jsonFilePath(jsonFilePath) {}
 
     const std::vector<Series>& SeriesRepository::loadSeriesData(bool forceReload) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        if (!forceReload && m_cache.has_value()) {
+        if (!forceReload && m_cache.has_value() && m_haveStat) {
+            auto cur = snapshotFile(m_jsonFilePath);
+            if (cur.valid && cur.mtime == m_lastWrite && cur.size == m_lastSize) {
+                return m_cache.value(); // file invariato: cache valida
+            }
+            // mismatch (o stat fallito): ricade nel reload qui sotto
+        } else if (!forceReload && m_cache.has_value()) {
             return m_cache.value();
         }
 
@@ -54,6 +86,11 @@ namespace Core {
             std::ofstream outFile(m_jsonFilePath);
             outFile << "[]";
             m_cache = std::vector<Series>{};
+            if (auto s = snapshotFile(m_jsonFilePath); s.valid) {
+                m_lastWrite = s.mtime;
+                m_lastSize = s.size;
+                m_haveStat = true;
+            }
             return m_cache.value();
         }
 
@@ -67,6 +104,11 @@ namespace Core {
             static const std::vector<Series> emptyFallback;
             return emptyFallback;
         }
+        if (auto s = snapshotFile(m_jsonFilePath); s.valid) {
+            m_lastWrite = s.mtime;
+            m_lastSize = s.size;
+            m_haveStat = true;
+        }
         return m_cache.value();
     }
 
@@ -79,6 +121,11 @@ namespace Core {
             // su crash a metà scrittura.
             writeJsonAtomic(m_jsonFilePath, jsonArray, 4);
             m_cache = seriesData; // Aggiorna la cache solo dopo il successo
+            if (auto s = snapshotFile(m_jsonFilePath); s.valid) {
+                m_lastWrite = s.mtime;
+                m_lastSize = s.size;
+                m_haveStat = true;
+            }
         } catch (const std::exception& e) {
             Logger::error("Errore salvataggio dati: " + std::string(e.what()));
         }
@@ -87,6 +134,7 @@ namespace Core {
     void SeriesRepository::invalidateCache() {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_cache.reset();
+        m_haveStat = false;
     }
 
     bool SeriesRepository::applyDownloadedEpisodes(const std::map<std::string, int>& maxEpisodes,
