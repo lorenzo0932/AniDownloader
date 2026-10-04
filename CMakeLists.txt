@@ -136,6 +136,7 @@ set(HEADERS
     include/core/CheckRunner.hpp
     include/core/QueueStore.hpp
     include/core/Scheduler.hpp
+    include/core/WorkerPool.hpp
     include/core/SeriesUtils.hpp
     include/web/WebServer.hpp
     ${EMBEDDED_HPP}
@@ -174,6 +175,7 @@ set(SOURCES
     src/core/ExecutionEngine.cpp
     src/core/QueueStore.cpp
     src/core/Scheduler.cpp
+    src/core/WorkerPool.cpp
     src/core/Series.cpp
     src/core/PlanningService.cpp
     src/core/MediaProcessor.cpp
@@ -225,6 +227,7 @@ add_executable(test_core
     src/core/ExecutionEngine.cpp
     src/core/QueueStore.cpp
     src/core/Scheduler.cpp
+    src/core/WorkerPool.cpp
     src/core/FileUtils.cpp
     src/core/InstanceLock.cpp
     src/core/MediaProbe.cpp
