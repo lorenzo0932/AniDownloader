@@ -16,7 +16,7 @@ $ShortcutDir= "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\$AppName"
 $ConfigDir  = "$env:APPDATA\$AppName"
 $IconSource = "resources\logo.png"
 $IconDest   = "$InstallDir\anidownloader_logo.png"
-$TaskName   = "AniDownloader_AutoCheck"
+$TaskName   = "AniDownloader_AutoCheck" # legacy pre-3.0: solo rimozione, mai ricreato
 $WebTaskName= "AniDownloader_WebServer"
 
 # ─── 0. Verifica dipendenze ───
@@ -80,34 +80,27 @@ Scegli cosa installare:
      Solo il binario. Avvia manualmente con --burst
      o --web. Nessun servizio in background.
 
-  2) Binario + Timer automatico
-     Aggiunge un'Attività Pianificata che controlla nuovi
-     episodi ogni 15 minuti e al login.
-     Consigliato per download automatici in background.
-
-  3) Binario + Web UI
-     Aggiunge il server web always-on (porta 8989).
+  2) Binario + Demone all'avvio (consigliato)
+     Server web always-on + controlli automatici
+     (scheduler interno, default ogni 15 min).
      Gestisci tutto dal browser: download, progresso live (SSE).
-
-  4) Tutto (Binario + Timer + Web UI)
-     Timer automatico + server web. Massima flessibilità.
 
   0) Annulla
 
 "@
 
-$choice = Read-Host "Scelta [0-4] (default: 2)"
+$choice = Read-Host "Scelta [0-2] (default: 2)"
 if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "2" }
 
-$WITH_TIMER = $false
 $WITH_WEB = $false
 
 switch ($choice) {
     "0" { Write-Host "Annullato."; exit 0 }
     "1" {  }
-    "2" { $WITH_TIMER = $true }
-    "3" { $WITH_WEB = $true }
-    "4" { $WITH_TIMER = $true; $WITH_WEB = $true }
+    # Scelte legacy (pre-3.0: timer separato): il demone fa tutto.
+    "2" { $WITH_WEB = $true }
+    "3" { Write-Host "Nota: opzione timer rimossa, installo il demone."; $WITH_WEB = $true }
+    "4" { Write-Host "Nota: opzione timer rimossa, installo il demone."; $WITH_WEB = $true }
     default { Write-Host "Scelta non valida." -ForegroundColor Red; exit 1 }
 }
 
@@ -209,34 +202,13 @@ if ($WITH_WEB) {
     $browserLink.Save()
 }
 
-# ─── 11. Task Scheduler ───
-if ($WITH_TIMER) {
-    Write-Host "Registrazione Attività Pianificata (timer)..." -ForegroundColor Yellow
-    $targetExe = "$InstallDir\$BinName"
-    $action = New-ScheduledTaskAction -Execute $targetExe -WorkingDirectory $env:USERPROFILE
-    $triggerInterval = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-        -RepetitionInterval (New-TimeSpan -Minutes 15) `
-        -RepetitionDuration (New-TimeSpan -Days 9999)
-    $triggerLogin = New-ScheduledTaskTrigger -AtLogOn
-    $settings = New-ScheduledTaskSettingsSet
-    $settings.DisallowStartIfOnBatteries = $false
-    $settings.StopIfGoingOnBatteries = $false
-    $settings.ExecutionTimeLimit = "PT30M"
-    $settings.RestartCount = 3
-    $settings.RestartInterval = [System.TimeSpan]::FromMinutes(5)
-    Register-ScheduledTask -TaskName $TaskName `
-        -Action $action `
-        -Trigger @($triggerInterval, $triggerLogin) `
-        -Settings $settings `
-        -Description "AniDownloader - Controllo automatico ogni 15 min" `
-        -RunLevel Limited | Out-Null
-    Write-Host "  Timer attivo: ogni 15 min + al login"
-}
-
+# ─── 11. Task Scheduler: solo demone (web + scheduler interno) ───
+# Il task timer legacy AniDownloader_AutoCheck (pre-3.0) è già stato rimosso
+# al punto 2 (unregister); qui non viene più ricreato (ADR-004).
 if ($WITH_WEB) {
-    Write-Host "Registrazione Attività Pianificata (web)..." -ForegroundColor Yellow
+    Write-Host "Registrazione Attività Pianificata (demone)..." -ForegroundColor Yellow
     $targetExe = "$InstallDir\$BinName"
-    $action = New-ScheduledTaskAction -Execute $targetExe -Argument "--web" -WorkingDirectory $env:USERPROFILE
+    $action = New-ScheduledTaskAction -Execute $targetExe -Argument "--web --silent" -WorkingDirectory $env:USERPROFILE
     $triggerLogin = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet
     $settings.DisallowStartIfOnBatteries = $false
@@ -248,9 +220,9 @@ if ($WITH_WEB) {
         -Action $action `
         -Trigger $triggerLogin `
         -Settings $settings `
-        -Description "AniDownloader - Server Web Always-On" `
+        -Description "AniDownloader - Demone (Web UI + controlli automatici)" `
         -RunLevel Limited | Out-Null
-    Write-Host "  Web task attivo: http://localhost:8989"
+    Write-Host "  Demone attivo al login: http://localhost:8989"
 }
 
 # ─── 12. Uninstaller ───
@@ -265,10 +237,8 @@ Write-Host ""
 Write-Host "  Binario:       $InstallDir\$BinName"
 Write-Host "  Config:        $ConfigDir"
 Write-Host ""
-if ($WITH_TIMER) {
-    Write-Host "  Timer:         attivo (ogni 15 min + login)" -ForegroundColor Cyan
-}
 if ($WITH_WEB) {
+    Write-Host "  Demone:        attivo al login (Web UI + controlli automatici)" -ForegroundColor Cyan
     Write-Host "  Web UI:        http://localhost:8989" -ForegroundColor Cyan
 }
 Write-Host ""
