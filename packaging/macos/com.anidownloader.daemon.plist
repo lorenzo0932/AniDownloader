@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- AniDownloader demone (web + scheduler interno, ADR-004). Solo autostart:
+     niente timer/CalendarInterval, i controlli periodici sono interni.
+     Installazione manuale (testing HW reale differito, vedi docs/DISTRIBUZIONE.md):
+       1. copia il binario in /usr/local/bin/anidownloaderd (o adatta ProgramArguments)
+       2. cp packaging/macos/com.anidownloader.daemon.plist ~/Library/LaunchAgents/
+       3. launchctl load ~/Library/LaunchAgents/com.anidownloader.daemon.plist
+     Rimozione: launchctl unload ~/Library/LaunchAgents/com.anidownloader.daemon.plist -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.anidownloader.daemon</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/anidownloaderd</string>
+        <string>--web</string>
+        <string>--silent</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/com.anidownloader.daemon.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.anidownloader.daemon.err.log</string>
+</dict>
+</plist>

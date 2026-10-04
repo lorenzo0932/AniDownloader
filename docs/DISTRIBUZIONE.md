@@ -81,7 +81,17 @@ Restart=on-failure
 ## Installer Windows — `install.ps1`
 
 Equivalente PowerShell dell'installer Linux. Installa in `%LOCALAPPDATA%`
-e crea shortcut nel menu Start.
+e crea shortcut nel menu Start. Dal 3.0 il task timer legacy
+`AniDownloader_AutoCheck` non viene più creato (rimosso su upgrade):
+resta solo il task `AniDownloader_WebServer` (AtLogOn, `--web --silent`).
+
+## Autostart demone (solo autostart, niente timer — ADR-004)
+
+| OS | Meccanismo | Stato |
+|----|------------|-------|
+| Linux | `anidownloaderd.service` (systemd user) via `install.sh` | reale |
+| Windows | Task `AniDownloader_WebServer` (AtLogOn) via `install.ps1` | ? (da verificare su macchina reale) |
+| macOS | `packaging/macos/com.anidownloader.daemon.plist` (installazione manuale con `launchctl`, vedi commento nel file) | gap (testing HW differito) |
 
 ## Matrice di parità Linux / Windows / macOS
 
@@ -94,8 +104,7 @@ Stato verificato (`CI` = compilazione+smoke in GitHub Actions;
 | Build + smoke web (`--web` home 200) | CI | CI | CI |
 | Test C++ completi | CI reale | — (solo build) | — (solo build) |
 | Installer interattivo | `install.sh` reale | `install.ps1` ? | gap (`install-mac.sh` da scrivere, Fase 1) |
-| Check automatico 15' | systemd timer reale | ScheduledTask `AutoCheck` ? | gap (plist da scrivere, Fase 1) |
-| Web UI all'avvio sessione | systemd service reale | Task AtLogOn ? | gap (Fase 1) |
+| Demone all'avvio (web + scheduler) | systemd service reale | Task AtLogOn ? | plist manuale (gap testing reale) |
 | Notifiche desktop | ? | ? (delta da verificare, Fase 2) | gap |
 | Uninstall | `uninstall.sh` reale | `uninstall.ps1` ? | gap |
 
