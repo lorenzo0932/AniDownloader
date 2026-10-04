@@ -6,7 +6,8 @@ namespace Core {
 
     static std::string toLower(const std::string& s) {
         std::string r = s;
-        std::transform(r.begin(), r.end(), r.begin(), ::tolower);
+        std::transform(r.begin(), r.end(), r.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return r;
     }
 
