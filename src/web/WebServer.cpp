@@ -6,6 +6,7 @@
 #include "core/Logger.hpp"
 #include "core/MediaProcessor.hpp"
 #include "core/PlanningService.hpp"
+#include "core/QueueStore.hpp"
 #include "core/SeriesUtils.hpp"
 #include "core/ThumbCache.hpp"
 #include "scrapers/ScraperUtils.hpp"
@@ -99,6 +100,19 @@ namespace Web {
         // Il default httplib è max(8, hw-1): qui hw*2 dà headroom per gli SSE.
         auto hw = std::thread::hardware_concurrency();
         m_svr.new_task_queue = [hw] { return new httplib::ThreadPool((std::max)(16u, hw * 2)); };
+        // Eventi coda (B6) verso il bus SSE esistente: nessun canale nuovo,
+        // la futura UI coda leggerà questi eventi.
+        m_scheduler.onEvento([this](const std::string& tipo, const Core::QueueTask& task) {
+            nlohmann::json ev = {{"type", "queue"},
+                                 {"evento", tipo},
+                                 {"task",
+                                  {{"id", task.id},
+                                   {"kind", task.kind},
+                                   {"serie", task.serie},
+                                   {"episodio", task.episodio},
+                                   {"tentativi", task.tentativi}}}};
+            broadcastSseEvent(ev.dump());
+        });
     }
 
     WebServer::~WebServer() { stop(); }
@@ -258,6 +272,26 @@ namespace Web {
                            {"downloadRunning", m_downloadRunning.load()},
                            {"port", m_port}});
         });
+
+        // ---- SCHEDULER (B6): stato + pausa, eventi via SSE ----
+        m_svr.Get("/api/scheduler/status", [this](const httplib::Request&, httplib::Response& res) {
+            const auto s = m_scheduler.stato();
+            sendJson(res, successJson({{"attivo", s.attivo},
+                                       {"inPausa", s.inPausa},
+                                       {"checkInCoda", s.checkInCoda},
+                                       {"ultimoGiro", s.ultimoGiro}}));
+        });
+        m_svr.Put("/api/scheduler/pausa",
+                  [this](const httplib::Request& req, httplib::Response& res) {
+                      try {
+                          const auto body = req.body.empty() ? nlohmann::json::object()
+                                                             : nlohmann::json::parse(req.body);
+                          m_scheduler.pausa(body.value("pausa", true));
+                          sendJson(res, successJson({{"inPausa", m_scheduler.stato().inPausa}}));
+                      } catch (const std::exception&) {
+                          sendJson(res, errorJson("Invalid pausa data"), 400);
+                      }
+                  });
 
         // ---- LOG ----
         m_svr.Get("/api/log", [this](const httplib::Request& req, httplib::Response& res) {

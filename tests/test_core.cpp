@@ -15,6 +15,7 @@
 #include "core/SeriesUtils.hpp"
 #include "core/ThumbCache.hpp"
 #include "core/UpdateChecker.hpp"
+#include "core/WorkerPool.hpp"
 #include "scrapers/ScraperUtils.hpp"
 
 #include <nlohmann/json.hpp>
@@ -29,7 +30,9 @@
 #include <future>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 static int g_failures = 0;
@@ -1260,6 +1263,144 @@ static void testScheduler() {
     fs::remove_all(dir, ec);
 }
 
+// WorkerPool: backoff progressivo poi resa, pausa, eventi, stop che attende
+// il task in corso, niente doppio claim tra thread. Handler fake: mai rete.
+static void testWorkerPool() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_pool";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+    const std::string db = (dir / "p.db").string();
+
+    auto statoTask = [&](std::int64_t id) {
+        Core::Database d(dir / "p.db");
+        auto sel = d.prepare("SELECT stato, tentativi FROM tasks WHERE id = ?;");
+        sel.bindInt(1, id);
+        sel.step();
+        return std::pair<std::string, int>(sel.columnText(0), static_cast<int>(sel.columnInt(1)));
+    };
+    auto attendiStato = [&](std::int64_t id, const std::string& stato) {
+        for (int i = 0; i < 100; ++i) {
+            if (statoTask(id).first == stato)
+                return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        return false;
+    };
+
+    // Backoff: una riprova riprogramma a ~5' con tentativi=1; a tentativi
+    // esauriti (3) la successiva riprova diventa fallito definitivo.
+    // (I 5'/15'/1h reali non si attendono: l'escalation è guidata via SQL.)
+    {
+        Core::QueueStore coda(dir / "p.db");
+        const auto id = coda.enqueue("lavoro", "", 0, "{}", 0);
+        CHECK(id > 0);
+        Core::WorkerPool pool(db, 1);
+        pool.onKind("lavoro", [](const Core::QueueTask&) { return Core::EsitoTask::Riprova; });
+        pool.start();
+        bool riprogrammato = false;
+        for (int i = 0; i < 100 && !riprogrammato; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            const auto st = statoTask(id);
+            riprogrammato = (st.first == "attesa" && st.second == 1);
+        }
+        CHECK(riprogrammato);
+        pool.stop();
+        // Prossima esecuzione ~300s nel futuro (primo scaglione).
+        {
+            Core::Database d(dir / "p.db");
+            auto sel = d.prepare("SELECT prossima_esecuzione FROM tasks WHERE id = ?;");
+            sel.bindInt(1, id);
+            CHECK(sel.step());
+            const auto ora = std::chrono::duration_cast<std::chrono::seconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
+            CHECK(sel.columnInt(0) > ora + 200);
+            CHECK(sel.columnInt(0) < ora + 400);
+        }
+        // Simulo 3 tentativi consumati: la prossima riprova chiude fallito.
+        {
+            Core::Database d(dir / "p.db");
+            CHECK(d.execute("UPDATE tasks SET tentativi = 3, prossima_esecuzione = 0, "
+                            "stato = 'attesa' WHERE id = " +
+                            std::to_string(id) + ";"));
+        }
+        pool.start();
+        CHECK(attendiStato(id, "fallito"));
+        pool.stop();
+        CHECK(statoTask(id).second == 3);
+    }
+
+    // Pausa: niente claim da fermo; resume riprende. Eventi osservati.
+    {
+        Core::QueueStore coda(dir / "p.db");
+        const auto id = coda.enqueue("lavoro", "", 0, "{}", 0);
+        std::vector<std::string> eventi;
+        std::mutex mutexEventi;
+        Core::WorkerPool pool(db, 1);
+        pool.onKind("lavoro", [](const Core::QueueTask&) { return Core::EsitoTask::Completato; });
+        pool.onEvento([&](const std::string& tipo, const Core::QueueTask&) {
+            std::lock_guard<std::mutex> l(mutexEventi);
+            eventi.push_back(tipo);
+        });
+        pool.pausa(true);
+        pool.start();
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        CHECK(statoTask(id).first == "attesa"); // fermo in pausa
+        pool.pausa(false);
+        CHECK(attendiStato(id, "fatto"));
+        pool.stop();
+        std::lock_guard<std::mutex> l(mutexEventi);
+        CHECK(std::find(eventi.begin(), eventi.end(), "avviato") != eventi.end());
+        CHECK(std::find(eventi.begin(), eventi.end(), "completato") != eventi.end());
+    }
+
+    // Due thread: 10 task, mai doppio claim, tutti fatti una volta.
+    {
+        Core::QueueStore coda(dir / "p.db");
+        for (int i = 0; i < 10; ++i)
+            coda.enqueue("lavoro", "", 0, "{}", 0);
+        std::atomic<int> eseguiti{0};
+        Core::WorkerPool pool(db, 2);
+        pool.onKind("lavoro", [&](const Core::QueueTask& t) {
+            (void)t;
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            ++eseguiti;
+            return Core::EsitoTask::Completato;
+        });
+        pool.start();
+        for (int i = 0; i < 100 && eseguiti.load() < 10; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        pool.stop();
+        CHECK(eseguiti.load() == 10);
+        CHECK(coda.pendingCount() == 0);
+    }
+
+    // Stop cooperativo: attende il task in corso (2s) invece di ucciderlo.
+    {
+        Core::QueueStore coda(dir / "p.db");
+        const auto id = coda.enqueue("lento", "", 0, "{}", 0);
+        Core::WorkerPool pool(db, 1);
+        pool.onKind("lento", [](const Core::QueueTask&) {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            return Core::EsitoTask::Completato;
+        });
+        pool.start();
+        CHECK(attendiStato(id, "attivo") || statoTask(id).first == "fatto");
+        const auto inizio = std::chrono::steady_clock::now();
+        pool.stop();
+        const auto atteso = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::steady_clock::now() - inizio)
+                                .count();
+        CHECK(statoTask(id).first == "fatto");
+        (void)atteso; // lo stop ha atteso: il task è fatto, non orfano
+    }
+
+    fs::remove_all(dir, ec);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -1290,6 +1431,7 @@ int main(int argc, char** argv) {
     testConcurrentWrites();
     testQueueStore();
     testScheduler();
+    testWorkerPool();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";

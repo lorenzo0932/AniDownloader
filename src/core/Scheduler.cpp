@@ -50,30 +50,71 @@ namespace Core {
 
     Scheduler::Scheduler(Config::AppConfigManager& config, const std::string& jsonPath)
         : m_config(config), m_jsonPath(jsonPath),
-          m_dbPath(SeriesRepository::dbPathFor(jsonPath).string()) {}
+          m_dbPath(SeriesRepository::dbPathFor(jsonPath).string()),
+          m_pool(m_dbPath, kWorkerThread) {
+        m_pool.onKind("check", [this](const QueueTask& task) {
+            (void)task;
+            std::atomic<bool> maiAbortito{false}; // 2-bis: il giro non si interrompe
+            CheckOutcome esito = CheckRunner::runOnce(m_config, m_jsonPath, false, maiAbortito);
+            if (!esito.eseguito) {
+                // CLI manuale in corso: si rimanda (backoff del pool).
+                if (esito.salto == CheckOutcome::Salto::Occupato)
+                    return EsitoTask::Riprova;
+                Logger::error("Scheduler: giro fallito: " + esito.nota);
+                return EsitoTask::Fallito;
+            }
+            // Giro eseguito anche a reports vuoti (serie già aggiornate).
+            Logger::info("Scheduler: " + esito.nota);
+            return EsitoTask::Completato;
+        });
+        m_pool.onEvento([this](const std::string& tipo, const QueueTask& task) {
+            if (m_onEvento)
+                m_onEvento(tipo, task);
+        });
+    }
 
     Scheduler::~Scheduler() { stop(); }
 
     void Scheduler::start() {
         if (m_attivo.exchange(true))
             return;
-        if (!m_dbPath.empty()) {
-            QueueStore coda(m_dbPath);
-            if (!coda.resetOrfani())
-                Logger::error("Scheduler: reset orfani fallito: " + coda.lastError());
-        }
+        m_pool.start(); // reset orfani + worker
         m_thread = std::thread([this] { ciclo(); });
     }
 
     void Scheduler::stop() {
         if (!m_attivo.exchange(false))
             return;
-        // Il giro in corso (se c'è) finisce da solo: join senza abortire.
+        // Prima il tick (niente più enqueue), poi i worker (il giro in
+        // corso finisce da solo: join senza abortire).
         if (m_thread.joinable())
             m_thread.join();
+        m_pool.stop();
+    }
+
+    void Scheduler::pausa(bool inPausa) {
+        m_pausa.store(inPausa);
+        m_pool.pausa(inPausa);
+    }
+
+    void
+    Scheduler::onEvento(std::function<void(const std::string& tipo, const QueueTask& task)> cb) {
+        m_onEvento = std::move(cb);
     }
 
     bool Scheduler::running() const noexcept { return m_attivo.load(); }
+
+    SchedulerStato Scheduler::stato() const {
+        SchedulerStato s;
+        s.attivo = m_attivo.load();
+        s.inPausa = m_pausa.load();
+        if (!m_dbPath.empty()) {
+            QueueStore coda(m_dbPath);
+            s.checkInCoda = coda.pendingCount("check");
+            s.ultimoGiro = leggiUltimoGiro(m_dbPath);
+        }
+        return s;
+    }
 
     bool Scheduler::checkMaturo(std::int64_t ora) {
         if (m_dbPath.empty())
@@ -85,51 +126,20 @@ namespace Core {
             return false;
         const int minuti = std::clamp(sched.value("intervalloMinuti", kDefaultIntervalloMinuti),
                                       kMinIntervalloMinuti, kMaxIntervalloMinuti);
-        const std::int64_t ultimo = m_dbPath.empty() ? 0 : leggiUltimoGiro(m_dbPath);
+        const std::int64_t ultimo = leggiUltimoGiro(m_dbPath);
         if (ora - ultimo < static_cast<std::int64_t>(minuti) * 60)
             return false;
         // Mai due check in coda: se il precedente deve ancora girare, il
         // prossimo giro slitta (niente accumulo dopo sleep lunghi).
-        if (!m_dbPath.empty()) {
-            QueueStore coda(m_dbPath);
-            if (coda.pendingCount("check") > 0)
-                return false;
-            if (coda.enqueue("check", "", 0, "{}", 0) == 0) {
-                Logger::error("Scheduler: enqueue check fallito: " + coda.lastError());
-                return false;
-            }
-        }
-        if (!m_dbPath.empty())
-            scriviUltimoGiro(m_dbPath, ora);
-        return true;
-    }
-
-    void Scheduler::eseguiTask() {
-        if (m_dbPath.empty())
-            return;
         QueueStore coda(m_dbPath);
-        auto task = coda.claim();
-        if (!task.has_value())
-            return;
-        std::atomic<bool> maiAbortito{false}; // 2-bis: il giro non si interrompe
-        CheckOutcome esito = CheckRunner::runOnce(m_config, m_jsonPath, false, maiAbortito);
-        if (!esito.eseguito) {
-            if (esito.salto == CheckOutcome::Salto::Occupato) {
-                // CLI manuale in corso: si rimanda senza consumare il task.
-                if (!coda.failRetry(task->id, kRetryOccupatoSecondi))
-                    Logger::error("Scheduler: retry occupato fallito: " + coda.lastError());
-                return;
-            }
-            if (!coda.failDead(task->id))
-                Logger::error("Scheduler: failDead fallito: " + coda.lastError());
-            Logger::error("Scheduler: giro fallito: " + esito.nota);
-            return;
+        if (coda.pendingCount("check") > 0)
+            return false;
+        if (coda.enqueue("check", "", 0, "{}", 0) == 0) {
+            Logger::error("Scheduler: enqueue check fallito: " + coda.lastError());
+            return false;
         }
-        // Giro eseguito anche a reports vuoti (serie già aggiornate): il
-        // task ha fatto il suo dovere.
-        if (!coda.complete(task->id))
-            Logger::error("Scheduler: complete fallito: " + coda.lastError());
-        Logger::info("Scheduler: " + esito.nota);
+        scriviUltimoGiro(m_dbPath, ora);
+        return true;
     }
 
     void Scheduler::ciclo() {
@@ -137,9 +147,9 @@ namespace Core {
         while (m_attivo.load()) {
             // Catch-up: al primo tick dopo avvio/sleep, se l'intervallo è
             // passato parte subito un giro (mai arretrati accumulati).
-            if (checkMaturo(oraEpoch()))
+            // In pausa: niente nuovi check, la coda esistente resta ferma.
+            if (!m_pausa.load() && checkMaturo(oraEpoch()))
                 Logger::info("Scheduler: check schedulato accodato");
-            eseguiTask();
             for (int i = 0; i < kTickSecondi && m_attivo.load(); ++i)
                 std::this_thread::sleep_for(std::chrono::seconds(1));
         }

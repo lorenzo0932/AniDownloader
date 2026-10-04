@@ -38,6 +38,30 @@ Stato dell'applicazione.
 }
 ```
 
+### `GET /api/scheduler/status` (dal 3.0)
+
+Stato dello scheduler interno (ADR-004).
+
+```json
+{
+    "success": true,
+    "attivo": true,
+    "inPausa": false,
+    "checkInCoda": 0,
+    "ultimoGiro": 1720000000
+}
+```
+
+### `PUT /api/scheduler/pausa` (dal 3.0)
+
+Mette in pausa o riprende scheduler e worker (i task restano in coda).
+
+```json
+{
+    "pausa": true
+}
+```
+
 ---
 
 ### `GET /api/series`
@@ -461,6 +485,15 @@ data: {"type":"skipped","series":"One Piece","reason":"Già aggiornata"}
 
 event: done
 data: {"type":"done"}
+```
+
+Eventi coda (dal 3.0, scheduler interno):
+
+```
+data: {"type":"queue","evento":"avviato","task":{"id":1,"kind":"check","serie":"","episodio":0,"tentativi":0}}
+data: {"type":"queue","evento":"completato","task":{...}}
+data: {"type":"queue","evento":"riprova","task":{...}}
+data: {"type":"queue","evento":"fallito","task":{...}}
 ```
 
 Il client si connette con `EventSource` nativo del browser.
