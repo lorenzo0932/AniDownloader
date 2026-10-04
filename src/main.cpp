@@ -223,7 +223,8 @@ int main(int argc, char* argv[]) {
     Config::AppConfigManager configManager;
     Core::Logger::init(configManager.get<std::string>(
         "log_file_path", Config::PathHelper::getLogFilePath().string()));
-    SeriesRepository repo(configManager.get<std::string>("json_file_path", ""));
+    const std::string jsonPath = configManager.get<std::string>("json_file_path", "");
+    SeriesRepository repo(jsonPath, SeriesRepository::dbPathFor(jsonPath));
     auto seriesList = repo.loadSeriesData();
 
     if (seriesList.empty()) {

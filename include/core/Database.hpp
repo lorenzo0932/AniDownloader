@@ -72,6 +72,10 @@ namespace Core {
       public:
         static constexpr int kBusyTimeoutMs = 5000;
         static constexpr int kSchemaVersion = 1;
+        // Apertura concorrente sullo stesso file fresco: PRAGMA journal_mode
+        // può rispondere SQLITE_BUSY senza invocare il busy handler.
+        static constexpr int kOpenRetries = 30;
+        static constexpr int kOpenRetryMs = 50;
 
         explicit Database(const std::filesystem::path& dbPath);
         Database(const Database&) = delete;
@@ -92,6 +96,11 @@ namespace Core {
         friend class Transaction;
         struct Impl;
         std::unique_ptr<Impl> m_impl;
+
+        // Un tentativo di apertura + PRAGMA + migrazioni. Ritorna false con
+        // lastError() valorizzato; errBusy=true se il fallimento è un lock
+        // transitorio (SQLITE_BUSY) che merita un nuovo tentativo.
+        bool openOnce(const std::filesystem::path& dbPath, bool& errBusy);
     };
 
 } // namespace Core

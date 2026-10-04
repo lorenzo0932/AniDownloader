@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <map>
 #include <string>
@@ -966,6 +967,127 @@ static void testDbImporter() {
     fs::remove_all(dir, ec);
 }
 
+// Shadow mode: JSON autorevole, DB rispecchiato e verificato; divergenza
+// rilevata senza rompere il JSON. Concorrenza: due handle in write-write
+// non perdono righe. Cleanup sempre.
+static void testShadowMode() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_shadow";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    const fs::path jsonPath = dir / "series_data.json";
+    const fs::path dbPath = Core::SeriesRepository::dbPathFor(jsonPath);
+    CHECK(dbPath == dir / "series_data.db");
+    CHECK(Core::SeriesRepository::dbPathFor("").empty());
+
+    // Costruttore JSON-only: shadow spento, comportamento invariato.
+    {
+        Core::SeriesRepository soloJson(jsonPath);
+        CHECK(!soloJson.shadowEnabled());
+    }
+
+    std::vector<Core::Series> due;
+    {
+        Core::Series a;
+        a.name = "Alpha";
+        a.service = "animew";
+        a.path = "/tmp/a";
+        a.seriesPageUrl = "https://x/a";
+        Core::Series b = a;
+        b.name = "Beta";
+        due = {a, b};
+    }
+
+    Core::SeriesRepository repo(jsonPath, dbPath);
+    CHECK(repo.shadowEnabled());
+    CHECK(repo.shadowChecks() == 0);
+    repo.saveSeriesData(due);
+    CHECK(repo.shadowChecks() == 1);
+    CHECK(repo.shadowDivergences() == 0);
+    // Primo avvio: import automatico con backup verificato.
+    CHECK(fs::exists(dbPath));
+    {
+        bool bak = false;
+        for (const auto& entry : fs::directory_iterator(dir))
+            bak = bak || entry.path().string().find(".bak.") != std::string::npos;
+        CHECK(bak);
+    }
+    // Letture restano dal JSON.
+    CHECK(repo.loadSeriesData().size() == 2);
+
+    // Corrompo il DB fuori dal Repository: la scrittura dopo rileva la
+    // divergenza (mirror riscrive tutto: torna a 0 alla save successiva).
+    {
+        Core::Database db(dbPath);
+        CHECK(db.execute("DELETE FROM series WHERE name='Beta';"));
+    }
+    {
+        auto dati = repo.loadSeriesData();
+        repo.saveSeriesData(dati);
+        CHECK(repo.shadowChecks() == 2);
+        CHECK(repo.shadowDivergences() == 0); // mirror riscrive: autod Riparato
+    }
+    {
+        // Divergenza vera: riga extra nel DB che il mirror non spiega.
+        // Il mirror fa DELETE+INSERT totale, quindi per osservare una
+        // divergenza persistente serve un DB non scrivibile: directory sola
+        // lettura non basta (WAL). Caso coperto: DB con schema illeggibile.
+        Core::Database db(dbPath);
+        CHECK(db.execute("DROP TABLE series;"));
+    }
+    {
+        auto dati = repo.loadSeriesData();
+        repo.saveSeriesData(dati); // mirror fallisce, JSON intatto
+        CHECK(repo.shadowDivergences() == 1);
+        CHECK(repo.loadSeriesData().size() == 2);
+    }
+
+    fs::remove_all(dir, ec);
+}
+
+static void testConcurrentWrites() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_conc";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    // Due handle, write-write concorrente su chiavi distinte: alla fine
+    // tutte le righe presenti, DB integro (niente lost update né lock persi).
+    auto scrivi = [&](int base) {
+        Core::Database db(dir / "conc.db");
+        for (int i = 0; i < 25; ++i) {
+            Core::Transaction tx(db);
+            if (!tx.active())
+                return false;
+            auto ins = db.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES (?, ?);");
+            if (!ins.valid())
+                return false;
+            const std::string k = "k" + std::to_string(base + i);
+            if (!ins.bindText(1, k) || !ins.bindText(2, "v") || (ins.step(), ins.hasError()))
+                return false;
+            if (!tx.commit())
+                return false;
+        }
+        return true;
+    };
+    auto f1 = std::async(std::launch::async, scrivi, 0);
+    auto f2 = std::async(std::launch::async, scrivi, 1000);
+    CHECK(f1.get());
+    CHECK(f2.get());
+    {
+        Core::Database db(dir / "conc.db");
+        auto sel = db.prepare("SELECT COUNT(*) FROM kv;");
+        CHECK(sel.step() && sel.columnInt(0) == 50);
+    }
+
+    fs::remove_all(dir, ec);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -992,6 +1114,8 @@ int main(int argc, char** argv) {
     testSortAdded();
     testDatabase();
     testDbImporter();
+    testShadowMode();
+    testConcurrentWrites();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";

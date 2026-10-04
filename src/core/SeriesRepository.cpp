@@ -1,4 +1,5 @@
 #include "core/SeriesRepository.hpp"
+#include "core/DbImporter.hpp"
 #include "core/Logger.hpp"
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -66,6 +67,163 @@ namespace Core {
     SeriesRepository::SeriesRepository(const std::filesystem::path& jsonFilePath)
         : m_jsonFilePath(jsonFilePath) {}
 
+    // (jsonFilePath, dbPath) segue l'ordine "sorgente + destinazione"; lo scambio e' coperto dai
+    // test. NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+    SeriesRepository::SeriesRepository(const std::filesystem::path& jsonFilePath,
+                                       const std::filesystem::path& dbPath)
+        : m_jsonFilePath(jsonFilePath), m_dbPath(dbPath) {
+        m_shadowLastInfo = "shadow configurato, in attesa della prima scrittura";
+    }
+
+    std::filesystem::path SeriesRepository::dbPathFor(const std::filesystem::path& jsonFilePath) {
+        if (jsonFilePath.empty() || !jsonFilePath.has_filename())
+            return {};
+        auto dbPath = jsonFilePath;
+        return dbPath.replace_extension(".db");
+    }
+
+    bool SeriesRepository::shadowEnabled() const noexcept { return !m_dbPath.empty(); }
+
+    std::size_t SeriesRepository::shadowChecks() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_shadowChecks;
+    }
+
+    std::size_t SeriesRepository::shadowDivergences() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_shadowDivergences;
+    }
+
+    std::string SeriesRepository::shadowLastInfo() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_shadowLastInfo;
+    }
+
+    bool SeriesRepository::ensureShadowImported() {
+        if (m_shadowReady)
+            return true;
+        m_db.emplace(m_dbPath);
+        if (!m_db->isOpen()) {
+            m_shadowLastInfo = "apertura DB: " + m_db->lastError();
+            Logger::error("Shadow DB: " + m_shadowLastInfo);
+            m_db.reset();
+            return false;
+        }
+        // Conta le righe: DB vuoto + JSON popolato = primo avvio.
+        std::size_t righe = 0;
+        {
+            auto count = m_db->prepare("SELECT COUNT(*) FROM series;");
+            if (count.valid() && count.step() && !count.hasError())
+                righe = static_cast<std::size_t>(count.columnInt(0));
+        }
+        if (righe == 0 && m_cache.has_value() && !m_cache->empty()) {
+            auto res = DbImporter::importJson(m_jsonFilePath, m_dbPath);
+            if (!res.ok) {
+                m_shadowLastInfo = "import iniziale: " + res.error;
+                Logger::error("Shadow DB: " + m_shadowLastInfo);
+                return false;
+            }
+            Logger::info("Shadow DB: importate " + std::to_string(res.stats.importate) +
+                         " serie (backup " + res.backupPath.filename().string() + ")");
+        }
+        m_shadowReady = true;
+        return true;
+    }
+
+    bool SeriesRepository::writeShadow(const std::vector<Series>& data) {
+        // Ogni scrittura è una verifica: qualunque fallimento del mirror
+        // (DB illeggibile, tabella mancante, hash diverso) è una divergenza
+        // tra JSON e DB e va contata come tale.
+        ++m_shadowChecks;
+        bool ok = ensureShadowImported();
+        std::string dettaglio;
+        if (!ok) {
+            dettaglio = m_shadowLastInfo;
+        } else if (!m_db.has_value()) {
+            // Difensivo: ensureShadowImported riuscito implica DB aperto.
+            ok = false;
+            dettaglio = "DB non aperto dopo import";
+        } else {
+            // Transazione unica mirror + verifica: o tutto o niente.
+            Transaction tx(*m_db);
+            if (!tx.active()) {
+                ok = false;
+                dettaglio = "BEGIN: " + m_db->lastError();
+            } else {
+                std::string error;
+                if (!m_db->execute("DELETE FROM series;", &error)) {
+                    ok = false;
+                    dettaglio = "mirror DELETE: " + error;
+                } else {
+                    auto insert = m_db->prepare(
+                        "INSERT INTO series(name, service, path, continue_series, "
+                        "is_high_priority, "
+                        "passed_episodes, series_page_url, episode_list_selector, "
+                        "download_link_selector, last_downloaded_at, last_downloaded_episode, "
+                        "alternate_sources) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+                    if (!insert.valid()) {
+                        ok = false;
+                        dettaglio = "mirror prepare: " + insert.lastError();
+                    } else {
+                        for (const auto& s : data) {
+                            if (!DbImporter::bindSeries(insert, s) ||
+                                (insert.step(), insert.hasError()) || !insert.reset()) {
+                                ok = false;
+                                dettaglio = "mirror insert '" + s.name + "': " + insert.lastError();
+                                break;
+                            }
+                        }
+                    }
+                }
+                // Verifica dentro la transazione: conteggi + hash su rilettura.
+                std::vector<Series> rilette;
+                if (ok) {
+                    auto sel = m_db->prepare(
+                        "SELECT name, service, path, continue_series, is_high_priority, "
+                        "passed_episodes, "
+                        "series_page_url, episode_list_selector, download_link_selector, "
+                        "last_downloaded_at, last_downloaded_episode, alternate_sources FROM "
+                        "series;");
+                    if (!sel.valid()) {
+                        ok = false;
+                        dettaglio = "verifica prepare: " + sel.lastError();
+                    } else {
+                        while (sel.step())
+                            rilette.push_back(DbImporter::readSeries(sel));
+                        if (sel.hasError()) {
+                            ok = false;
+                            dettaglio = "verifica lettura: " + sel.lastError();
+                        }
+                    }
+                }
+                if (ok) {
+                    const std::string hashJson = DbImporter::seriesHash(data);
+                    const std::string hashDb = DbImporter::seriesHash(rilette);
+                    if (rilette.size() != data.size() || hashDb != hashJson) {
+                        ok = false;
+                        dettaglio = "DIVERGENZA n=" + std::to_string(data.size()) + " vs " +
+                                    std::to_string(rilette.size()) + " hash " + hashJson + " vs " +
+                                    hashDb;
+                    } else if (!tx.commit()) {
+                        ok = false;
+                        dettaglio = "COMMIT: " + m_db->lastError();
+                    } else {
+                        dettaglio = "ok n=" + std::to_string(data.size()) + " hash " + hashDb;
+                    }
+                }
+            }
+        }
+        if (!ok) {
+            ++m_shadowDivergences;
+            m_shadowLastInfo = dettaglio;
+            Logger::error("Shadow DB: " + m_shadowLastInfo);
+            return false;
+        }
+        m_shadowLastInfo = dettaglio + " (verifiche " + std::to_string(m_shadowChecks) +
+                           ", divergenze " + std::to_string(m_shadowDivergences) + ")";
+        return true;
+    }
+
     const std::vector<Series>& SeriesRepository::loadSeriesData(bool forceReload) {
         std::lock_guard<std::mutex> lock(m_mutex);
 
@@ -126,6 +284,10 @@ namespace Core {
                 m_lastSize = s.size;
                 m_haveStat = true;
             }
+            // Shadow dopo il successo JSON: un suo fallimento non tocca mai
+            // il salvataggio appena riuscito (log + contatori, niente throw).
+            if (shadowEnabled())
+                writeShadow(seriesData);
         } catch (const std::exception& e) {
             Logger::error("Errore salvataggio dati: " + std::string(e.what()));
         }
