@@ -2,6 +2,7 @@
 // Eseguire con: ctest --test-dir build  (oppure ./build/test_core)
 #include "config/AppConfigManager.hpp"
 #include "core/Database.hpp"
+#include "core/DbImporter.hpp"
 #include "core/FileUtils.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/ProcessUtils.hpp"
@@ -871,6 +872,100 @@ static void testDatabase() {
     fs::remove_all(dir, ec);
 }
 
+// DbImporter: fixture JSON → DB → ricontrollo totale; dry-run; JSON
+// malformato; file mancante. Cleanup sempre.
+static void testDbImporter() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_import";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    const fs::path jsonPath = dir / "series_data.json";
+    {
+        // Fixture: 3 serie, una con fonti alternate e una con unicode.
+        std::ofstream f(jsonPath);
+        f << R"([
+{"name": "Serie B", "service": "animew", "path": "/tmp/b",
+ "continue": true, "is_high_priority": true, "passed_episodes": 2,
+ "series_page_url": "https://x/b", "episode_list_selector": "l",
+ "download_link_selector": "d", "last_downloaded_at": "2026-01-01",
+ "last_downloaded_episode": 5,
+ "alternate_sources": [{"service": "animeu", "series_page_url": "https://u/b"}]},
+{"name": "Serie A", "service": "animeu", "path": "/tmp/a",
+ "continue": false, "is_high_priority": false, "passed_episodes": 0,
+ "series_page_url": "https://x/a", "episode_list_selector": "",
+ "download_link_selector": "", "last_downloaded_at": "",
+ "last_downloaded_episode": 0},
+{"name": "Série C — àccénti", "service": "animew", "path": "/tmp/c",
+ "continue": true, "is_high_priority": false, "passed_episodes": 0,
+ "series_page_url": "https://x/c", "episode_list_selector": "",
+ "download_link_selector": "", "last_downloaded_at": "",
+ "last_downloaded_episode": 0}
+])";
+    }
+
+    const fs::path dbPath = dir / "test.db";
+    auto res = Core::DbImporter::importJson(jsonPath, dbPath);
+    CHECK(res.ok);
+    CHECK(res.error.empty());
+    CHECK(res.stats.lette == 3);
+    CHECK(res.stats.importate == 3);
+    CHECK(res.stats.hashJson == res.stats.hashDb);
+    CHECK(!res.backupPath.empty() && fs::exists(res.backupPath));
+    {
+        // Backup byte-identico all'originale.
+        std::error_code sec;
+        CHECK(fs::file_size(res.backupPath, sec) == fs::file_size(jsonPath, sec));
+    }
+    {
+        // Rilettura diretta: fonti alternate sopravvissute al round-trip.
+        Core::Database db(dbPath);
+        CHECK(db.isOpen());
+        auto sel = db.prepare("SELECT alternate_sources FROM series WHERE name='Serie B';");
+        CHECK(sel.step());
+        CHECK(sel.columnText(0).find("animeu") != std::string::npos);
+    }
+
+    // Dry-run: valida ma non scrive nulla (né DB né backup).
+    {
+        const fs::path dryJson = dir / "dry.json";
+        {
+            std::ofstream f(dryJson);
+            f << R"([{"name": "Solo", "service": "s", "path": "p", "series_page_url": "u"}])";
+        }
+        auto dry = Core::DbImporter::importJson(dryJson, dir / "dry.db", true);
+        CHECK(dry.ok);
+        CHECK(dry.stats.lette == 1);
+        CHECK(dry.backupPath.empty());
+        CHECK(!fs::exists(dir / "dry.db"));
+    }
+
+    // JSON malformato: errore, nessun backup, nessun DB.
+    {
+        const fs::path badJson = dir / "bad.json";
+        {
+            std::ofstream f(badJson);
+            f << R"([{"name": "rotta",)";
+        }
+        auto bad = Core::DbImporter::importJson(badJson, dir / "bad.db");
+        CHECK(!bad.ok);
+        CHECK(!bad.error.empty());
+        CHECK(bad.backupPath.empty());
+        CHECK(!fs::exists(dir / "bad.db"));
+    }
+
+    // File mancante: errore pulito.
+    {
+        auto missing = Core::DbImporter::importJson(dir / "inesistente.json", dir / "m.db");
+        CHECK(!missing.ok);
+        CHECK(!missing.error.empty());
+    }
+
+    fs::remove_all(dir, ec);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -896,6 +991,7 @@ int main(int argc, char** argv) {
     testThumbCache();
     testSortAdded();
     testDatabase();
+    testDbImporter();
 
     if (g_failures == 0) {
         std::cout << "test_core: tutti i test superati\n";
