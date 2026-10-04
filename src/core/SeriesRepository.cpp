@@ -40,7 +40,7 @@ namespace Core {
     namespace {
 
         struct FileSnapshot {
-            std::filesystem::file_time_type mtime{};
+            std::filesystem::file_time_type mtime;
             std::uintmax_t size{0};
             bool valid{false};
         };
