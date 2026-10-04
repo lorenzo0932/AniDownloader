@@ -447,11 +447,23 @@ else
         HEADLESS_ASSET="anidownloaderd-${VERSION}-linux-${ARCH}.tar.gz"
         HEADLESS_TMP=$(mktemp -d)
         if download_asset "$VERSION" "$HEADLESS_ASSET" "$HEADLESS_TMP/headless.tar.gz"; then
-            tar -xzf "$HEADLESS_TMP/headless.tar.gz" -C "$HEADLESS_DIR"
-            HEADLESS_BIN=$(find "$HEADLESS_DIR" -name "anidownloaderd" -type f 2>/dev/null | head -1)
-            if [ -n "$HEADLESS_BIN" ]; then
-                chmod +x "$HEADLESS_BIN"
+            # Estrai in temp e installa su path FISSO: con residui di versioni
+            # precedenti, `find` su HEADLESS_DIR pescava il binario vecchio
+            # (caso reale: installata la 2.2.0 al posto della 3.0.0-dev.3).
+            tar -xzf "$HEADLESS_TMP/headless.tar.gz" -C "$HEADLESS_TMP"
+            FRESH_BIN=$(find "$HEADLESS_TMP" -name "anidownloaderd" -type f 2>/dev/null | head -1)
+            if [ -n "$FRESH_BIN" ]; then
+                cp -f "$FRESH_BIN" "$HEADLESS_DIR/anidownloaderd"
+                chmod +x "$HEADLESS_DIR/anidownloaderd"
+                HEADLESS_BIN="$HEADLESS_DIR/anidownloaderd"
+                FRESH_WEB="$(dirname "$FRESH_BIN")/web"
+                if [ -d "$FRESH_WEB" ]; then
+                    rm -rf "$HEADLESS_DIR/web"
+                    cp -r "$FRESH_WEB" "$HEADLESS_DIR/web"
+                fi
                 ln -sf "$HEADLESS_BIN" "$INSTALL_DIR/anidownloaderd"
+                # Pulizia residui versionati di installazioni precedenti.
+                find "$HEADLESS_DIR" -maxdepth 1 -name "anidownloaderd-*" -exec rm -rf {} + 2>/dev/null || true
             else
                 echo "  Binary anidownloaderd non trovato nell'archivio"
             fi
