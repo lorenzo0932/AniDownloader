@@ -132,6 +132,7 @@ set(HEADERS
     include/core/FileUtils.hpp
     include/core/LogUtils.hpp
     include/core/Database.hpp
+    include/core/DbImporter.hpp
     include/core/SeriesUtils.hpp
     include/web/WebServer.hpp
     ${EMBEDDED_HPP}
@@ -165,6 +166,7 @@ endif()
 set(SOURCES
     src/main.cpp
     src/core/Database.cpp
+    src/core/DbImporter.cpp
     src/core/SeriesRepository.cpp
     src/core/Series.cpp
     src/core/PlanningService.cpp
@@ -212,6 +214,7 @@ add_executable(test_core
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
     src/core/Database.cpp
+    src/core/DbImporter.cpp
     src/core/FileUtils.cpp
     src/core/InstanceLock.cpp
     src/core/ProcessUtils.cpp
