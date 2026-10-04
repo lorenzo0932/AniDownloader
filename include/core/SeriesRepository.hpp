@@ -1,5 +1,6 @@
 #pragma once
 #include "Series.hpp"
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <mutex>
@@ -24,5 +25,11 @@ namespace Core {
         std::filesystem::path m_jsonFilePath;
         std::optional<std::vector<Series>> m_cache; // Re-inserito optional
         mutable std::mutex m_mutex;
+        // Snapshot del file al momento dell'ultimo load/save riuscito: se a
+        // una load senza force lo stat differisce, il file è cambiato fuori
+        // dal processo (es. altro daemon) e la cache va ricaricata.
+        std::filesystem::file_time_type m_lastWrite{};
+        std::uintmax_t m_lastSize{0};
+        bool m_haveStat{false};
     };
 } // namespace Core
