@@ -204,6 +204,7 @@ add_executable(test_core
     src/core/Logger.cpp
     src/core/Series.cpp
     src/core/SeriesRepository.cpp
+    src/core/SeriesUtils.cpp
     src/scrapers/ScraperUtils.cpp
 )
 target_include_directories(test_core PRIVATE include)

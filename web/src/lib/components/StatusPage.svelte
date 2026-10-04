@@ -1,10 +1,12 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { fly } from 'svelte/transition';
-  import { api, posterUrl } from '../api.js';
+  import { api, BASE, posterUrl, posterSrcSet } from '../api.js';
   import ConfirmModal from './ConfirmModal.svelte';
+  import DetailModal from './DetailModal.svelte';
   import OverallHeader from './OverallHeader.svelte';
   import ProgressList from './ProgressList.svelte';
+  import RecentSeriesRow from './RecentSeriesRow.svelte';
 
   let seriesList = $state([]);
   let downloadRunning = $state(false);
@@ -195,6 +197,34 @@
     api.download.stop().catch(e => addLog({ type: 'error', message: e.message }));
   }
 
+  // Dettaglio read-only dalle righe home (stesso DetailModal di Gestione,
+  // senza azioni: gestire resta compito di Gestione).
+  let homeDetailIdx = $state(-1);
+  let homeDescriptions = $state({});
+
+  async function openHomeDetail(fileIdx) {
+    homeDetailIdx = fileIdx;
+    const item = seriesList.find(s => s._file_index === fileIdx);
+    if (!item?.path) return;
+    try {
+      const res = await fetch(BASE + `/api/description?path=${encodeURIComponent(item.path)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.description) homeDescriptions = { ...homeDescriptions, [fileIdx]: data.description };
+      }
+    } catch {}
+  }
+
+  // Lock scroll di sfondo finche un modale home e aperto (dettaglio o
+  // conferma stop), con ripristino in cleanup.
+  const anyHomeModal = $derived(homeDetailIdx >= 0 || showStopConfirm);
+  $effect(() => {
+    if (!anyHomeModal) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  });
+
   function connectSse() {
     sse = api.sse();
     sseConnected = true;
@@ -340,14 +370,8 @@
         <div class="group-label">Ultime serie aggiunte</div>
         <div class="series-list">
           {#if recentAdded.length > 0}
-            {#each recentAdded as s (s.name)}
-              <div class="series-row">
-                <img class="poster-thumb" src={posterUrl(s.path, 96)} alt="" loading="lazy" decoding="async" width="40" height="56" />
-                <div class="series-info">
-                  <span class="series-name">{s.name}</span>
-                  <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
-                </div>
-              </div>
+            {#each recentAdded as s, idx (s._file_index ?? s.name)}
+              <RecentSeriesRow item={s} index={idx} onopen={openHomeDetail} />
             {/each}
           {:else}
             <p class="empty-text">Nessuna serie aggiunta</p>
@@ -358,14 +382,8 @@
         <div class="group-label">Ultime serie scaricate</div>
         <div class="series-list">
           {#if recentlyDownloaded.length > 0}
-            {#each recentlyDownloaded as s (s.name)}
-              <div class="series-row">
-                <img class="poster-thumb" src={posterUrl(s.path, 96)} alt="" loading="lazy" decoding="async" width="40" height="56" />
-                <div class="series-info">
-                  <span class="series-name">{s.name}</span>
-                  <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
-                </div>
-              </div>
+            {#each recentlyDownloaded as s, idx (s._file_index ?? s.name)}
+              <RecentSeriesRow item={s} index={idx} onopen={openHomeDetail} />
             {/each}
           {:else}
             <p class="empty-text">Ancora nessun episodio scaricato</p>
@@ -379,14 +397,8 @@
         <div class="group-label">Ultime serie aggiunte</div>
         <div class="series-list">
           {#if recentAdded.length > 0}
-            {#each recentAdded as s (s.name)}
-              <div class="series-row">
-                <img class="poster-thumb" src={posterUrl(s.path, 96)} alt="" loading="lazy" decoding="async" width="40" height="56" />
-                <div class="series-info">
-                  <span class="series-name">{s.name}</span>
-                  <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
-                </div>
-              </div>
+            {#each recentAdded as s, idx (s._file_index ?? s.name)}
+              <RecentSeriesRow item={s} index={idx} onopen={openHomeDetail} />
             {/each}
           {:else}
             <p class="empty-text">Nessuna serie aggiunta</p>
@@ -397,14 +409,8 @@
         <div class="group-label">Ultime serie scaricate</div>
         <div class="series-list">
           {#if recentlyDownloaded.length > 0}
-            {#each recentlyDownloaded as s (s.name)}
-              <div class="series-row">
-                <img class="poster-thumb" src={posterUrl(s.path, 96)} alt="" loading="lazy" decoding="async" width="40" height="56" />
-                <div class="series-info">
-                  <span class="series-name">{s.name}</span>
-                  <span class="service-badge">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
-                </div>
-              </div>
+            {#each recentlyDownloaded as s, idx (s._file_index ?? s.name)}
+              <RecentSeriesRow item={s} index={idx} onopen={openHomeDetail} />
             {/each}
           {:else}
             <p class="empty-text">Ancora nessun episodio scaricato</p>
@@ -431,6 +437,21 @@
     onConfirm={doStop}
     onCancel={() => showStopConfirm = false}
   />
+
+  {#if homeDetailIdx >= 0}
+    {@const hs = seriesList.find(item => item._file_index === homeDetailIdx)}
+    {#if hs}
+      <DetailModal
+        series={hs}
+        description={homeDescriptions[homeDetailIdx] ?? ''}
+        poster={posterUrl(hs.path)}
+        srcset={posterSrcSet(hs.path)}
+        fullPoster={posterUrl(hs.path, 1080)}
+        actions={false}
+        onclose={() => homeDetailIdx = -1}
+      />
+    {/if}
+  {/if}
 
   {#if logEvents.length > 0}
     <div class="log-section">
@@ -529,18 +550,9 @@
     text-transform: uppercase; letter-spacing: 0.05em;
     padding: 0.75rem 0 0.25rem; border-bottom: 1px solid var(--border-color); margin-bottom: 0.25rem;
   }
-  .series-row {
-    display: flex; align-items: center; gap: 0.75rem;
-    background: var(--bg-secondary); border-radius: 8px; padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-color);
-    animation: rowIn 0.3s ease-out both;
+  .empty-text {
+    text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.85rem;
   }
-  .poster-thumb {
-    width: 40px; height: 56px; border-radius: 4px; object-fit: contain;
-    background: var(--bg-tertiary); flex-shrink: 0;
-  }
-  .series-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
-  .series-name { font-size: 0.85rem; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .log-section { margin-top: 0.5rem; }
   .log-toggle {
@@ -560,21 +572,12 @@
   .done-msg { color: var(--success); }
   :global(.type-finished) { color: var(--success); }
 
-  @keyframes rowIn {
-    from { opacity: 0; transform: translateX(-8px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
-
   @media (max-width: 768px) {
     .summary-box { flex-direction: column; align-items: stretch; gap: 0.75rem; }
     .summary-actions { flex-direction: column; align-items: stretch; }
     .summary-actions .btn-primary,
     .summary-actions .btn-secondary { width: 100%; justify-content: center; }
     .summary-icon { display: none; }
-
-    .series-row { padding: 0.4rem 0.5rem; gap: 0.5rem; flex-wrap: nowrap; }
-    .poster-thumb { width: 32px; height: 44px; }
-    .series-name { font-size: 0.8rem; }
 
     .log-view { font-size: 0.65rem; max-height: 150px; }
   }
