@@ -39,6 +39,31 @@ download_asset() {
     }
 }
 
+# Job di compilazione dai core FISICI (non i thread di nproc): con SMT nproc
+# conta il doppio e 32 job di rustc/link LTO esplodono la RAM. Clamp 2..32.
+detect_jobs() {
+    local phys=""
+    if [ -r /proc/cpuinfo ]; then
+        phys=$(awk '/^physical id/{p=$4} /^core id/{c=$4; print p":"c}' /proc/cpuinfo 2>/dev/null | sort -u | wc -l | tr -d ' ')
+    fi
+    case "$phys" in
+        ''|*[!0-9]*|0) phys="" ;;
+    esac
+    if [ -z "$phys" ]; then
+        if command -v sysctl &>/dev/null && sysctl -n hw.physicalcpu &>/dev/null; then
+            phys=$(sysctl -n hw.physicalcpu 2>/dev/null || true)
+        else
+            phys=$(nproc 2>/dev/null || echo 4)
+        fi
+    fi
+    case "$phys" in
+        ''|*[!0-9]*) phys=4 ;;
+    esac
+    if [ "$phys" -lt 2 ]; then phys=2; fi
+    if [ "$phys" -gt 32 ]; then phys=32; fi
+    printf '%s' "$phys"
+}
+
 # ──────────────────────────────────────────────
 # 0. Verifica dipendenze
 # ──────────────────────────────────────────────
@@ -124,14 +149,19 @@ echo ""
 # ──────────────────────────────────────────────
 FORCE_LOCAL=false
 FORCE_DEV=false
+CLEAN_BUILD=false
+FLATPAK_EPHEMERAL=false
 VERSION=""
 for arg in "$@"; do
     case "$arg" in
         --local) FORCE_LOCAL=true ;;
         --dev) FORCE_DEV=true ;;
+        --clean) CLEAN_BUILD=true ;;
         *) VERSION="$arg" ;;
     esac
 done
+JOBS="$(detect_jobs)"
+echo "Job di compilazione: $JOBS (core fisici; --clean per build pulita)"
 
 # ──────────────────────────────────────────────
 # 2. Determina versione
@@ -247,8 +277,21 @@ if $BUILD_LOCAL; then
     python3 scripts/embed_web.py web dist "$PWD/include/web/embedded_web.hpp"
 
     mkdir -p "$BUILD_DIR"
-    cmake -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE=Release
-    cmake --build "$BUILD_DIR"
+    # ccache dimezza i rebuild (solo se installato; il primo rebuild dopo
+    # l'abilitazione e' full una tantum per cambio compiler).
+    CMAKE_LAUNCHER_ARGS=""
+    if command -v ccache &>/dev/null; then
+        CMAKE_LAUNCHER_ARGS="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+    fi
+    if $CLEAN_BUILD; then
+        echo "Build pulita richiesta (--clean): rimuovo $BUILD_DIR"
+        rm -rf "$BUILD_DIR"
+        mkdir -p "$BUILD_DIR"
+    fi
+    # Espansione non quotata voluta (word splitting sugli argomenti).
+    # shellcheck disable=SC2086
+    cmake -B "$BUILD_DIR" -G "$GENERATOR" -DCMAKE_BUILD_TYPE=Release $CMAKE_LAUNCHER_ARGS
+    cmake --build "$BUILD_DIR" -j "$JOBS"
 
     # Copia sempre il binary C++ raw in INSTALL_DIR per la CLI
     cp "$BUILD_DIR/$APP_NAME" "$INSTALL_DIR/AniDownloader"
@@ -268,15 +311,49 @@ if $BUILD_LOCAL; then
             echo "  ❌ cartella flatpak/ non trovata (serve il repo completo)"
             INSTALL_DESKTOP=false
         else
-            FLATPAK_TMP=$(mktemp -d)
+            # Workdir per la build Flatpak: PERSISTENTE (fuori repo, in cache).
+            # L'incrementalità la dà la cache di stato (.flatpak-builder nel
+            # CWD, mai cancellata), NON il riuso della app dir: --force-clean
+            # SEMPRE (svuota solo flatpak/build e ricompone dai moduli in
+            # cache con "Cache hit, skipping build"). Senza --force-clean il
+            # builder si rifiuta se l'app dir esiste. --clean cancella anche
+            # lo stato → rebuild totale vero. Solo senza rsync (niente sync
+            # delta affidabile) si usa una dir effimera.
+            FLATPAK_WORK="${XDG_CACHE_HOME:-$HOME/.cache}/anidownloader-flatpak-build"
+            FLATPAK_EPHEMERAL=false
+            if ! command -v rsync &>/dev/null; then
+                echo "  ⚠️  rsync assente: uso build pulita effimera (lenta)"
+                FLATPAK_TMP=$(mktemp -d)
+                FLATPAK_EPHEMERAL=true
+            else
+                if $CLEAN_BUILD; then
+                    echo "  Build Flatpak PULITA (--clean): cancello anche la cache di stato"
+                    rm -rf "$FLATPAK_WORK"
+                else
+                    echo "  Build Flatpak incrementale (--clean per ripartire da zero)"
+                fi
+                mkdir -p "$FLATPAK_WORK"
+                FLATPAK_TMP="$FLATPAK_WORK"
+            fi
             FLATPAK_LOG="$FLATPAK_TMP/flatpak-build.log"
-            # Copia pulita dal commit corrente: il manifest usa `type: dir` con
-            # `path: ..` → serve la ROOT del repo (web/, src/, scripts/, ...),
-            # non solo flatpak/. Con git archive otteniamo i file tracciati
-            # (niente target/ node_modules/ build/ multi-GB dal workspace).
-            # Fallback (repo senza .git, es. tarball di release): copia della
-            # root con rsync, escludendo gli artefatti di build.
-            if git archive HEAD 2>/dev/null | tar -x -C "$FLATPAK_TMP" 2>/dev/null; then
+            # Copia dei sorgenti nel workdir: il manifest usa `type: dir` con
+            # `path: ..` → serve la ROOT del repo (web/, src/, scripts/, ...).
+            # In modo incrementale si usa rsync --delete sul worktree (include
+            # anche modifiche non committate: per build locali è il
+            # comportamento giusto, come la parte headless) con gli stessi
+            # exclude + log di build (anche i file rimossi dal repo spariscono
+            # dalla copia, niente stato stantio). Solo nel fallback effimero
+            # (mktemp) si usa git archive o copia selettiva.
+            if [ "$FLATPAK_EPHEMERAL" = false ]; then
+                rsync -a --delete --exclude '.git' --exclude 'build' --exclude 'node_modules' \
+                    --exclude 'src-tauri/target' --exclude 'src-tauri/binaries' \
+                    --exclude 'web/dist' --exclude 'web/node_modules' \
+                    --exclude 'flatpak/build' --exclude 'flatpak/build-repo' \
+                    --exclude '.flatpak-builder/' --exclude 'flatpak-build.log' \
+                    --exclude 'plan/' --exclude '.opencode/' \
+                    --exclude 'AniDownloader.flatpak' --exclude '*.AppImage' \
+                    . "$FLATPAK_TMP/" || { echo "  ❌ rsync verso $FLATPAK_TMP fallito"; exit 1; }
+            elif git archive HEAD 2>/dev/null | tar -x -C "$FLATPAK_TMP" 2>/dev/null; then
                 :
             elif command -v rsync &>/dev/null; then
                 rsync -a --exclude '.git' --exclude 'build' --exclude 'node_modules' \
@@ -295,8 +372,25 @@ if $BUILD_LOCAL; then
                     uninstall.sh uninstall.ps1 CHANGELOG.md THIRD_PARTY_NOTICES.md \
                     src-tauri "$FLATPAK_TMP/" 2>/dev/null
             fi
+            # Smonta eventuali mount FUSE orfani di build interrotte (bloccano
+            # rm -rf e inquinano i mount visti dal picker): best-effort, mai
+            # fatale per l'installazione. Il "|| true" finale è obbligatorio:
+            # con pipefail, findmnt che non trova nulla sotto il path
+            # ritorna 1 e set -e ucciderebbe lo script in silenzio.
+            if command -v findmnt &>/dev/null; then
+                findmnt -R -o TARGET -n "$FLATPAK_TMP" 2>/dev/null | while IFS= read -r mnt; do
+                    if command -v fusermount3 &>/dev/null; then
+                        fusermount3 -u "$mnt" 2>/dev/null || true
+                    else
+                        umount "$mnt" 2>/dev/null || true
+                    fi
+                done || true
+            fi
             pushd "$FLATPAK_TMP" >/dev/null
-            if flatpak-builder --user --force-clean --jobs="$(nproc)" --ccache \
+            # --force-clean sempre: svuota solo la app dir, i moduli restano
+            # in cache di stato ("Cache hit, skipping build"). --keep-build-dirs
+            # conserva gli alberi di build (costa GB, serve all'incrementale).
+            if flatpak-builder --user --force-clean --keep-build-dirs --jobs="$JOBS" --ccache \
                 --repo=flatpak/build-repo flatpak/build \
                 flatpak/com.anidownloader.desktop.yml >"$FLATPAK_LOG" 2>&1; then
                 flatpak build-bundle flatpak/build-repo \
@@ -310,7 +404,9 @@ if $BUILD_LOCAL; then
                 echo "  ❌ Build flatpak fallita (vedi $FLATPAK_LOG)"
                 INSTALL_DESKTOP=false
             fi
-            rm -rf "$FLATPAK_TMP"
+            if $FLATPAK_EPHEMERAL; then
+                rm -rf "$FLATPAK_TMP"
+            fi
         fi
     fi
 
