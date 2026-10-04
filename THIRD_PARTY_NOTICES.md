@@ -12,6 +12,7 @@ are in the `licenses/` directory.
 | cpp-httplib (HTTP/WebSocket server) | v0.18.1 | https://github.com/yhirose/cpp-httplib | MIT | yhirose |
 | cpr (HTTP client) | 1.10.5 | https://github.com/libcpr/cpr | MIT | cpr developers |
 | nlohmann-json | 3.11.3 | https://github.com/nlohmann/json | MIT | Niels Lohmann and contributors |
+| SQLite (amalgamation, vendored in `third_party/sqlite/`) | 3.53.4 | https://www.sqlite.org | Public Domain | D. Richard Hipp |
 | libcurl (system package) | distro-provided | https://curl.se | curl | Daniel Stenberg and contributors |
 | OpenSSL / libcrypto (AES-256-GCM, PBKDF2) | distro-provided | https://www.openssl.org | Apache-2.0 | OpenSSL Software Foundation |
 | Tauri (desktop wrapper) | 2.x | https://github.com/tauri-apps/tauri | MIT / Apache-2.0 | Tauri contributors |
@@ -40,3 +41,4 @@ directory:
 - `licenses/curl.txt`
 - `licenses/gpl-2.0.txt`
 - `licenses/lgpl-2.1.txt`
+- `licenses/sqlite.txt` (Public Domain blessing)

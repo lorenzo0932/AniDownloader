@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.17)
-project(AniDownloaderCpp LANGUAGES CXX)
+project(AniDownloaderCpp LANGUAGES C CXX)
 
 # Versione di prodotto. `project(... VERSION ...)` non accetta prerelease
 # semver (es. 2.1.3-dev.1), quindi è una variabile dedicata, aggiornata da
@@ -107,6 +107,18 @@ FetchContent_MakeAvailable(httplib)
 # Threads
 find_package(Threads REQUIRED)
 
+# SQLite vendored (ADR-004): amalgamation in third_party/, niente system dep.
+# OMIT_LOAD_EXTENSION: il demone non carica mai estensioni dinamiche.
+add_library(vendor_sqlite STATIC third_party/sqlite/sqlite3.c)
+target_include_directories(vendor_sqlite PUBLIC third_party/sqlite)
+target_compile_definitions(vendor_sqlite PRIVATE SQLITE_OMIT_LOAD_EXTENSION SQLITE_THREADSAFE=1)
+if(MSVC)
+    target_compile_options(vendor_sqlite PRIVATE /w)
+else()
+    target_compile_options(vendor_sqlite PRIVATE -w)
+endif()
+target_link_libraries(vendor_sqlite PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+
 # --- EMBEDDED FRONTEND ---
 set(EMBEDDED_HPP ${CMAKE_SOURCE_DIR}/include/web/embedded_web.hpp)
 set(EMBEDDED_CPP ${CMAKE_SOURCE_DIR}/src/web/embedded_web_data.cpp)
@@ -119,6 +131,7 @@ set(HEADERS
     include/core/UpdateChecker.hpp
     include/core/FileUtils.hpp
     include/core/LogUtils.hpp
+    include/core/Database.hpp
     include/core/SeriesUtils.hpp
     include/web/WebServer.hpp
     ${EMBEDDED_HPP}
@@ -151,6 +164,7 @@ endif()
 
 set(SOURCES
     src/main.cpp
+    src/core/Database.cpp
     src/core/SeriesRepository.cpp
     src/core/Series.cpp
     src/core/PlanningService.cpp
@@ -183,6 +197,7 @@ target_link_libraries(AniDownloader
     nlohmann_json::nlohmann_json
     cpr::cpr
     httplib::httplib
+    vendor_sqlite
     Threads::Threads
 )
 
@@ -196,6 +211,7 @@ add_executable(test_core
     tests/test_core.cpp
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
+    src/core/Database.cpp
     src/core/FileUtils.cpp
     src/core/InstanceLock.cpp
     src/core/ProcessUtils.cpp
@@ -211,6 +227,7 @@ target_include_directories(test_core PRIVATE include)
 target_link_libraries(test_core PRIVATE
     nlohmann_json::nlohmann_json
     cpr::cpr
+    vendor_sqlite
     Threads::Threads
 )
 add_test(NAME test_core COMMAND test_core)
