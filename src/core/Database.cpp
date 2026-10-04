@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS kv (
     bool Statement::bindText(int index, const std::string& value) {
         if (!valid())
             return false;
-        // SQLITE_TRANSIENT: SQLite copia il buffer, il std::string può morire.
+        // SQLITE_TRANSIENT è l'API documentata di SQLite (macro = (void*)-1):
+        // NOLINTNEXTLINE(performance-no-int-to-ptr)
         if (sqlite3_bind_text(m_impl->stmt, index, value.c_str(), -1, SQLITE_TRANSIENT) !=
             SQLITE_OK) {
             m_impl->error = true;
