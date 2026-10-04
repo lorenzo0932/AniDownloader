@@ -90,6 +90,25 @@ Persistent=true
 Equivalente PowerShell dell'installer Linux. Installa in `%LOCALAPPDATA%`
 e crea shortcut nel menu Start.
 
+## Matrice di parità Linux / Windows / macOS
+
+Stato verificato (`CI` = compilazione+smoke in GitHub Actions;
+`reale` = testato su macchina fisica; `gap` = da implementare;
+`?` = da verificare):
+
+| Funzionalità | Linux | Windows | macOS |
+|--------------|-------|---------|-------|
+| Build + smoke web (`--web` home 200) | CI | CI | CI |
+| Test C++ completi | CI reale | — (solo build) | — (solo build) |
+| Installer interattivo | `install.sh` reale | `install.ps1` ? | gap (`install-mac.sh` da scrivere, Fase 1) |
+| Check automatico 15' | systemd timer reale | ScheduledTask `AutoCheck` ? | gap (plist da scrivere, Fase 1) |
+| Web UI all'avvio sessione | systemd service reale | Task AtLogOn ? | gap (Fase 1) |
+| Notifiche desktop | ? | ? (delta da verificare, Fase 2) | gap |
+| Uninstall | `uninstall.sh` reale | `uninstall.ps1` ? | gap |
+
+> Mai dichiarare parità senza check su macchina reale: le celle `?`
+> richiedono testing utente con checklist (Fasi 1–2 del piano).
+
 ## GitHub Releases
 
 Trigger: push di tag `v*` → GitHub Actions produce e carica:
