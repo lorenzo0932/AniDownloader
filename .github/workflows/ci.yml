@@ -85,6 +85,34 @@ jobs:
         if: runner.os == 'Linux'
         run: ctest --test-dir build --output-on-failure
 
+      # Smoke per-OS: parsing args + avvio reale del web server.
+      # Verifica solo avvio e home 200 (niente scheduler/servizi, non
+      # testabili in CI): la parità runtime resta da checklist su macchine
+      # reali (vedi docs/DISTRIBUZIONE.md, matrice di parità).
+      - name: Smoke web startup
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) BIN=./build/Debug/AniDownloader.exe ;;
+            *) BIN=./build/AniDownloader ;;
+          esac
+          # parsing args: porta invalida -> exit 1 senza effetti collaterali
+          if "$BIN" --port abc >/dev/null 2>&1; then
+            echo "atteso exit 1 con --port invalida"; exit 1
+          fi
+          "$BIN" --web --port 18989 --silent &
+          SRV=$!
+          trap "kill $SRV 2>/dev/null" EXIT
+          for i in $(seq 1 30); do
+            sleep 1
+            if curl -sf -o /dev/null http://127.0.0.1:18989/; then
+              echo "SMOKE_OK (tentativo $i)"
+              exit 0
+            fi
+          done
+          echo "SMOKE_FAIL: home non risponde dopo 30s"
+          exit 1
+
   # ─── Frontend: unit test Vitest + build di produzione (unico check con npm ci) ───
   frontend:
     runs-on: ubuntu-24.04
