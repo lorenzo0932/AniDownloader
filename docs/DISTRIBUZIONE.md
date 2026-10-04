@@ -47,8 +47,9 @@ install.sh
   │   └── AniDownloader-Web.desktop     (browser + helper, solo headless)
   │
   ├── 8. Servizio systemd (solo headless)
-  │   ├── anidownloaderd.service        (web server persistente)
-  │   └── anidownloader-check.{service,timer} (check ogni 15 min)
+  │   └── anidownloaderd.service        (web server + scheduler interno)
+  │       (il timer legacy anidownloader-check.* è rimosso dal 3.0:
+  │        i controlli periodici sono interni al demone, vedi ADR-004)
   │
   └── 9. Riepilogo
 ```
@@ -66,24 +67,16 @@ install.sh
 
 ### Systemd
 
-**`anidownloaderd.service`** — server web persistente:
+**`anidownloaderd.service`** — demone persistente (web + scheduler interno):
 ```
 ExecStart=anidownloaderd --web --silent
 Restart=on-failure
 ```
 
-**`anidownloader-check.service`** — controllo one-shot:
-```
-ExecStart=anidownloaderd
-Type=oneshot
-```
-
-**`anidownloader-check.timer`** — esecuzione periodica:
-```
-OnBootSec=5min
-OnUnitActiveSec=15min
-Persistent=true
-```
+> Dal 3.0 il timer legacy `anidownloader-check.*` non esiste più: i controlli
+> periodici sono interni al demone (intervallo da Impostazioni → Controlli
+> Automatici, default 15 min). L'installer rimuove le unità del timer su
+> upgrade (ADR-004).
 
 ## Installer Windows — `install.ps1`
 

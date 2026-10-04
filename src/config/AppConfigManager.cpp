@@ -50,7 +50,7 @@ namespace Config {
     }
 
     nlohmann::json AppConfigManager::getDefaultConfig() {
-        return {
+        nlohmann::json cfg = {
             {"json_file_path", PathHelper::getSeriesJsonPath().string()},
             {"output_dir", PathHelper::getVideosDir().string()},
             {"log_file_path", PathHelper::getLogFilePath().string()},
@@ -64,6 +64,19 @@ namespace Config {
             {"max_network_retries", 3}, // Retry HTTP/aria2c
             {"retry_delay_ms", 2000}    // Delay iniziale tra retry (exponential backoff)
         };
+        // Scheduler interno (B4, ADR-004 §2 + 2-bis): default ON/15' =
+        // comportamento storico del timer. Toggle + 5'-24h da UI.
+        // Notifiche (ADR-004 §6): master default OFF; sorgente solo UI /
+        // solo backend / entrambi. B4 persiste le scelte, l'invio reale
+        // arriva con la feature dedicata.
+        // NOTA: assegnazioni esplicite, mai graffe annidate nel literal sopra:
+        // il mix {"chiave", stringa} dentro oggetti annidati rompe la
+        // deduzione di initializer_list<json> (errore "expected }").
+        cfg["scheduling"]["abilitato"] = true;
+        cfg["scheduling"]["intervalloMinuti"] = 15;
+        cfg["notifiche"]["abilitate"] = false;
+        cfg["notifiche"]["sorgente"] = "entrambi";
+        return cfg;
     }
 
     void AppConfigManager::loadConfig() {

@@ -2,6 +2,7 @@
 
 #include "config/AppConfigManager.hpp"
 #include "core/ExecutionEngine.hpp"
+#include "core/Scheduler.hpp"
 #include "core/SeriesRepository.hpp"
 
 #include <atomic>
@@ -38,6 +39,9 @@ namespace Web {
 
         httplib::Server m_svr;
         Core::SeriesRepository m_seriesRepository;
+        // Scheduler interno (B4): parte con start(), si ferma con stop().
+        // Vive quanto il server: in --web il demone è web + scheduler.
+        Core::Scheduler m_scheduler;
 
         std::atomic<bool> m_downloadRunning{false};
         std::atomic<bool> m_stopSignal{false};

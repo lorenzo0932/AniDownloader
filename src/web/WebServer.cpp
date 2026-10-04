@@ -78,17 +78,21 @@ namespace Web {
             }
         }
 
+        // Path JSON effettivo: config o default. Un solo punto per non
+        // divergere tra Repository e Scheduler.
+        std::filesystem::path resolveJsonPath(Config::AppConfigManager& configManager) {
+            std::string p = configManager.get<std::string>("json_file_path", "");
+            return p.empty() ? Config::PathHelper::getSeriesJsonPath() : std::filesystem::path(p);
+        }
+
     } // namespace
 
     WebServer::WebServer(Config::AppConfigManager& configManager, int port)
         : m_configManager(configManager), m_port(port),
           m_configJsonPath(Config::PathHelper::getConfigDir() / "config.json"),
-          m_seriesRepository([&]() {
-              std::string p = configManager.get<std::string>("json_file_path", "");
-              std::filesystem::path jsonPath =
-                  p.empty() ? Config::PathHelper::getSeriesJsonPath() : std::filesystem::path(p);
-              return Core::SeriesRepository(jsonPath, Core::SeriesRepository::dbPathFor(jsonPath));
-          }()) {
+          m_seriesRepository(resolveJsonPath(configManager),
+                             Core::SeriesRepository::dbPathFor(resolveJsonPath(configManager))),
+          m_scheduler(configManager, resolveJsonPath(configManager).string()) {
         // Ogni client SSE occupa un thread del pool per l'intera connessione:
         // pool dinamico proporzionale alla macchina (coerente con lo stile del
         // resto del codice, es. getExecutionStrategy), minimo garantito 16.
@@ -962,11 +966,17 @@ namespace Web {
             Core::Logger::info(std::format("LAN:    http://{}:{}", lanIp, m_port));
         }
 
+        // Scheduler interno (B4): parte solo a bind riuscito, vive quanto il
+        // server. In --web il demone è web + scheduler (ADR-004 §8).
+        m_scheduler.start();
         m_svr.listen_after_bind();
         return true;
     }
 
     void WebServer::stop() {
+        // Prima lo scheduler (attende il giro in corso, 2-bis), poi i
+        // download manuali, poi le socket: chiusura dentro-fuori.
+        m_scheduler.stop();
         m_stopSignal.store(true);
         if (m_downloadThread.joinable()) {
             m_downloadThread.join();

@@ -162,8 +162,8 @@ anidownloaderd --burst      # Massima concorrenza + dashboard ANSI
 
 L'installer configura automaticamente:
 
-- `anidownloaderd.service` — server web persistente
-- `anidownloader-check.timer` — controllo nuovi episodi ogni 15 minuti
+- `anidownloaderd.service` — demone persistente (web + scheduler interno,
+  default controllo ogni 15 minuti, configurabile da Impostazioni)
 
 ```bash
 journalctl --user -u anidownloaderd.service -f

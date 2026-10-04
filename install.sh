@@ -222,14 +222,17 @@ if $HAS_SYSTEMD; then
     # Ferma servizi nuovi
     systemctl --user stop anidownloaderd.service 2>/dev/null || true
     # Ferma e disabilita servizi VECCHI (retrocompatibilità)
-    for old in AniDownloader.service AniDownloader.timer AniDownloaderWeb.service; do
+    for old in AniDownloader.service AniDownloader.timer AniDownloaderWeb.service \
+               anidownloader-check.service anidownloader-check.timer; do
         systemctl --user stop "$old" 2>/dev/null || true
         systemctl --user disable "$old" 2>/dev/null || true
     done
     # Rimuovi file vecchi
     rm -f "$SYSTEMD_DIR/AniDownloader.service" \
           "$SYSTEMD_DIR/AniDownloader.timer" \
-          "$SYSTEMD_DIR/AniDownloaderWeb.service"
+          "$SYSTEMD_DIR/AniDownloaderWeb.service" \
+          "$SYSTEMD_DIR/anidownloader-check.service" \
+          "$SYSTEMD_DIR/anidownloader-check.timer"
     systemctl --user daemon-reload
 fi
 sleep 1
@@ -607,43 +610,16 @@ StandardError=journal
 WantedBy=default.target
 EOF
 
-    # Crea anche un timer per download automatici (silent mode)
+    # Timer legacy (pre-3.0): lo scheduler è interno al demone (ADR-004).
+    # Su upgrade: ferma, disabilita e rimuove le unità del timer.
+    systemctl --user stop anidownloader-check.timer anidownloader-check.service 2>/dev/null || true
+    systemctl --user disable anidownloader-check.timer anidownloader-check.service 2>/dev/null || true
     rm -f "$SYSTEMD_DIR/anidownloader-check.service" "$SYSTEMD_DIR/anidownloader-check.timer"
-
-    cat << EOF > "$SYSTEMD_DIR/anidownloader-check.service"
-[Unit]
-Description=AniDownloader check nuovi episodi
-After=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=$HEADLESS_BIN
-StandardOutput=journal
-StandardError=journal
-EOF
-
-    cat << EOF > "$SYSTEMD_DIR/anidownloader-check.timer"
-[Unit]
-Description=AniDownloader check periodico
-Requires=anidownloader-check.service
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=15min
-OnClockChange=true
-OnTimezoneChange=true
-Persistent=true
-
-[Install]
-WantedBy=default.target
-EOF
 
     systemctl --user daemon-reload
     systemctl --user enable --now anidownloaderd.service
-    systemctl --user enable --now anidownloader-check.timer
 
-    echo "  anidownloaderd.service: attivo (web UI su http://localhost:8989)"
-    echo "  anidownloader-check.timer: attivo (check ogni 15 min in modalitá silenziosa)"
+    echo "  anidownloaderd.service: attivo (web UI su http://localhost:8989 + scheduler interno)"
 fi
 
 if $INSTALL_HEADLESS && ! $HAS_SYSTEMD; then

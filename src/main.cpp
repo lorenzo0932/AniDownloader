@@ -13,6 +13,7 @@
 #endif
 #include "config/AppConfigManager.hpp"
 #include "config/PathHelper.hpp"
+#include "core/CheckRunner.hpp"
 #include "core/ExecutionEngine.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/Logger.hpp"
@@ -224,18 +225,10 @@ int main(int argc, char* argv[]) {
     Core::Logger::init(configManager.get<std::string>(
         "log_file_path", Config::PathHelper::getLogFilePath().string()));
     const std::string jsonPath = configManager.get<std::string>("json_file_path", "");
-    SeriesRepository repo(jsonPath, SeriesRepository::dbPathFor(jsonPath));
-    auto seriesList = repo.loadSeriesData();
-
-    if (seriesList.empty()) {
-        std::cout << "Nessuna serie trovata nel database JSON.\n";
-        return 0;
-    }
 
     if (burstMode)
         std::cout << "\033[2J\033[H";
 
-    ExecutionEngine engine(configManager);
     std::atomic<bool> stop(false);
     g_stopPtr = &stop;
 #ifndef _WIN32
@@ -255,19 +248,10 @@ int main(int argc, char* argv[]) {
 
     startCleanupWatchdog();
 
-    // Feature 11: lock transazionale — copre snapshot/planning → download →
-    // commit dello stato (applyDownloadedEpisodes sotto). Rilasciato dal
-    // distruttore a fine main, o dal kernel alla morte del processo.
-    std::filesystem::path execLockPath = Config::PathHelper::getConfigDir() / "exec.lock";
-    Core::InstanceLock execLock(execLockPath.string());
-    if (!execLock.acquired()) {
-        std::cout << "\n⚠️  Un'altra esecuzione è già in corso (lock: " << execLockPath
-                  << "). Riprova a fine esecuzione.\n";
-        return 1;
-    }
-
-    engine.run(
-        seriesList, burstMode, stop,
+    // Un giro completo via CheckRunner (stessa pipeline del demone): lock,
+    // engine, commit stato. I callback alimentano la dashboard ANSI.
+    CheckOutcome esito = CheckRunner::runOnce(
+        configManager, jsonPath, burstMode, stop,
         [&](const std::string& n, int ep, const std::string& m) {
             {
                 std::lock_guard<std::mutex> l(g_statusMutex);
@@ -286,33 +270,16 @@ int main(int argc, char* argv[]) {
             }
             if (burstMode)
                 refreshTerminal(burstMode);
-        },
-        [&](const TaskReport& r) {
-            {
-                std::lock_guard<std::mutex> l(g_statusMutex);
-                g_reports.push_back(r);
-            }
-        },
-        [&](const std::string&, const std::string&) {}, nullptr);
+        });
+    g_reports = esito.reports;
 
-    // Salvataggio unico post-esecuzione: lastDownloadedEpisode per serie
-    {
-        std::map<std::string, int> maxEpisodes;
-        for (const auto& r : g_reports) {
-            if (r.success && r.episodeNumber > 0) {
-                maxEpisodes[r.name] = (std::max)(maxEpisodes[r.name], r.episodeNumber);
-            }
+    if (!esito.eseguito) {
+        if (esito.salto == CheckOutcome::Salto::Vuoto) {
+            std::cout << "Nessuna serie trovata nel database JSON.\n";
+            return 0;
         }
-
-        if (!maxEpisodes.empty()) {
-            auto now = std::chrono::system_clock::now();
-            auto tt = std::chrono::system_clock::to_time_t(now);
-            auto tm = *std::gmtime(&tt);
-            char ts[24] = {};
-            std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%SZ", &tm);
-
-            repo.applyDownloadedEpisodes(maxEpisodes, ts);
-        }
+        std::cout << "\n⚠️  " << esito.nota << ". Riprova a fine esecuzione.\n";
+        return 1;
     }
 
     // Visualizzazione finale resoconto: il refresh forzato garantisce che

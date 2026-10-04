@@ -71,7 +71,7 @@ namespace Core {
     class Database {
       public:
         static constexpr int kBusyTimeoutMs = 5000;
-        static constexpr int kSchemaVersion = 1;
+        static constexpr int kSchemaVersion = 2;
         // Apertura concorrente sullo stesso file fresco: PRAGMA journal_mode
         // può rispondere SQLITE_BUSY senza invocare il busy handler.
         static constexpr int kOpenRetries = 30;
