@@ -92,7 +92,8 @@ CREATE TABLE IF NOT EXISTS kv (
         if (!valid())
             return false;
         // SQLITE_TRANSIENT: SQLite copia il buffer, il std::string può morire.
-        if (sqlite3_bind_text(m_impl->stmt, index, value.c_str(), -1, SQLITE_TRANSIENT) != SQLITE_OK) {
+        if (sqlite3_bind_text(m_impl->stmt, index, value.c_str(), -1, SQLITE_TRANSIENT) !=
+            SQLITE_OK) {
             m_impl->error = true;
             return false;
         }
@@ -169,7 +170,7 @@ CREATE TABLE IF NOT EXISTS kv (
             return;
         }
         if (sqlite3_open_v2(dbPath.string().c_str(), &m_impl->db,
-                             SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK) {
+                            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK) {
             m_impl->lastError = m_impl->db ? sqlite3_errmsg(m_impl->db) : "apertura fallita";
             if (m_impl->db) {
                 sqlite3_close(m_impl->db);
@@ -180,7 +181,8 @@ CREATE TABLE IF NOT EXISTS kv (
         std::string error;
         // WAL: lettori non bloccano lo scrittore (web UI + worker convivono).
         // synchronous=NORMAL sotto WAL è crash-safe senza fsync a ogni commit.
-        if (!execute("PRAGMA journal_mode=WAL;", &error) || !execute("PRAGMA synchronous=NORMAL;", &error) ||
+        if (!execute("PRAGMA journal_mode=WAL;", &error) ||
+            !execute("PRAGMA synchronous=NORMAL;", &error) ||
             !execute("PRAGMA foreign_keys=ON;", &error)) {
             m_impl->lastError = error;
             sqlite3_close(m_impl->db);
@@ -234,7 +236,8 @@ CREATE TABLE IF NOT EXISTS kv (
             return stmt;
         stmt.m_impl = std::make_unique<Statement::Impl>();
         stmt.m_impl->db = m_impl->db;
-        if (sqlite3_prepare_v2(m_impl->db, sql.c_str(), -1, &stmt.m_impl->stmt, nullptr) != SQLITE_OK)
+        if (sqlite3_prepare_v2(m_impl->db, sql.c_str(), -1, &stmt.m_impl->stmt, nullptr) !=
+            SQLITE_OK)
             stmt.m_impl->error = true;
         return stmt;
     }
@@ -254,7 +257,8 @@ CREATE TABLE IF NOT EXISTS kv (
         if (!execute(kSchemaV1, error))
             return false;
         auto insert = prepare("INSERT OR IGNORE INTO migrations(version) VALUES (?);");
-        if (!insert.valid() || !insert.bindInt(1, kSchemaVersion) || (insert.step(), insert.hasError())) {
+        if (!insert.valid() || !insert.bindInt(1, kSchemaVersion) ||
+            (insert.step(), insert.hasError())) {
             if (error)
                 *error = insert.lastError();
             return false;

@@ -863,7 +863,8 @@ static void testDatabase() {
     // Tabella series: insert minimo + vincolo chiave primaria.
     {
         std::string error;
-        CHECK(db.execute("INSERT INTO series(name, service) VALUES ('Serie X', 'animew');", &error));
+        CHECK(
+            db.execute("INSERT INTO series(name, service) VALUES ('Serie X', 'animew');", &error));
         CHECK(!db.execute("INSERT INTO series(name) VALUES ('Serie X');", &error));
     }
 
