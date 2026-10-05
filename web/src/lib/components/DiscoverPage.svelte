@@ -61,6 +61,16 @@
   let form = $state({ service: 'animeW_scraper', name: '', path: '', url: '', continue: false, highPriority: false, passedEpisodes: 0 });
   let notice = $state('');
 
+  // Lock dello scroll di sfondo finche un modale e aperto
+  // (dettaglio / form / browser): ripristino in cleanup.
+  const anyModalOpen = $derived(detail !== null || showForm || showBrowser);
+  $effect(() => {
+    if (!anyModalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  });
+
   function buildOpts(p) {
     const opts = { page: p, sort: ordine };
     if (keyword.trim()) opts.keyword = keyword.trim();
