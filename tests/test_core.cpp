@@ -1401,6 +1401,51 @@ static void testWorkerPool() {
     fs::remove_all(dir, ec);
 }
 
+static void testNfoPosterOnce() {
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_nfo";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir / "Serie Pro&va <test>");
+
+    std::string serie = (dir / "Serie Pro&va <test>").string();
+    Core::NfoData nfo;
+    nfo.trama = "Trama con & e <tag>.";
+    nfo.anno = "2007";
+    nfo.stato = "Finito";
+    nfo.generi = {"Azione", "Avventura"};
+
+    // Prima scrittura: ok, file Kodi valido con escape XML
+    CHECK(Core::writeTvshowNfoOnce(serie, "Serie Pro&va <test>", nfo));
+    std::string content;
+    {
+        std::ifstream f(dir / "Serie Pro&va <test>" / "tvshow.nfo");
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        content = ss.str();
+    }
+    CHECK(content.find("<title>Serie Pro&amp;va &lt;test&gt;</title>") != std::string::npos);
+    CHECK(content.find("<plot>Trama con &amp; e &lt;tag&gt;.</plot>") != std::string::npos);
+    CHECK(content.find("<genre>Azione</genre>") != std::string::npos);
+    CHECK(content.find("<year>2007</year>") != std::string::npos);
+    CHECK(content.find("<status>Finito</status>") != std::string::npos);
+    CHECK(content.find("<studio>AnimeWorld</studio>") != std::string::npos);
+    // Roundtrip via lettore esistente
+    CHECK(Core::readNfoDescription(serie) == "Trama con & e <tag>.");
+
+    // Seconda scrittura: mai sovrascrivere (contenuto intatto)
+    Core::NfoData altro;
+    altro.trama = "Altra trama";
+    CHECK(!Core::writeTvshowNfoOnce(serie, "Altro", altro));
+    CHECK(Core::readNfoDescription(serie) == "Trama con & e <tag>.");
+
+    // Poster: scrive una volta sola
+    CHECK(Core::savePosterOnce(serie, std::string(2048, 'J')));
+    CHECK(std::filesystem::file_size(dir / "Serie Pro&va <test>" / "folder.jpg") == 2048);
+    CHECK(!Core::savePosterOnce(serie, std::string(10, 'X')));
+    CHECK(std::filesystem::file_size(dir / "Serie Pro&va <test>" / "folder.jpg") == 2048);
+
+    std::filesystem::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -1423,6 +1468,7 @@ int main(int argc, char** argv) {
     testIsWindowsDriveRoot();
     testListMounts();
     testFileOps();
+    testNfoPosterOnce();
     testThumbCache();
     testSortAdded();
     testDatabase();

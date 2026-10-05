@@ -74,6 +74,10 @@ namespace Web {
 
         void runDownloads(const std::vector<Core::Series>& seriesList, bool burst);
 
+        // Metadati una tantum all'aggiunta (solo AnimeWorld): scarica poster
+        // + scrive tvshow.nfo se assenti. Best-effort, mai sovrascrive.
+        void fetchSeriesMetadataOnce(const Core::Series& series);
+
         void serveEmbeddedFrontend();
 
         static std::string corsOrigin();

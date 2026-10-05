@@ -106,6 +106,98 @@ namespace Core {
         return "";
     }
 
+    // ---- METADATI SERIE ----
+    // Normalizza spazi (il markup ha newline + indentazione) e decodifica le
+    // poche entità HTML che il sito usa nei testi.
+    static std::string cleanMetaText(std::string v) {
+        // strip tag annidati (es. <div class="watchlist-tag">Anime</div> nel Tipo)
+        static const std::regex tagRegex(R"(<[^>]*>)");
+        v = std::regex_replace(v, tagRegex, "");
+        const std::pair<const char*, const char*> table[] = {
+            {"&amp;", "&"}, {"&quot;", "\""}, {"&#039;", "'"}, {"&#x27;", "'"},
+            {"&apos;", "'"}, {"&lt;", "<"}, {"&gt;", ">"}, {"&nbsp;", " "}};
+        for (const auto& [ent, ch] : table) {
+            size_t pos = 0;
+            while ((pos = v.find(ent, pos)) != std::string::npos)
+                v.replace(pos, strlen(ent), ch);
+        }
+        std::string out;
+        bool space = false;
+        for (char c : v) {
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+                if (!out.empty() && !space) {
+                    out += ' ';
+                    space = true;
+                }
+            } else {
+                out += c;
+                space = false;
+            }
+        }
+        if (!out.empty() && out.back() == ' ')
+            out.pop_back();
+        return out;
+    }
+
+    // Contenuto grezzo del <dd> che segue <dt>Etichetta:</dt>.
+    static std::string dtDdBlock(const std::string& html, const std::string& label) {
+        std::regex re("<dt>\\s*" + label + ":\\s*</dt>\\s*<dd>([\\s\\S]*?)</dd>",
+                      std::regex_constants::icase);
+        std::smatch m;
+        if (!std::regex_search(html, m, re))
+            return "";
+        return m[1].str();
+    }
+
+    AnimeWScraper::SeriesMetadata AnimeWScraper::parseSeriesMetadata(const std::string& html) {
+        SeriesMetadata meta;
+        if (html.empty())
+            return meta;
+
+        static const std::regex ogImageRegex(
+            R"raw(<meta[^>]+og:image"[^>]*content="([^"]+)")raw",
+            std::regex_constants::icase);
+        static const std::regex descRegex(R"raw(<div\s+class="desc">([\s\S]*?)</div>)raw",
+                                          std::regex_constants::icase);
+        static const std::regex genreLinkRegex(R"raw(<a[^>]*>([^<]+)</a>)raw",
+                                               std::regex_constants::icase);
+        std::smatch m;
+        if (std::regex_search(html, m, ogImageRegex))
+            meta.posterUrl = m[1].str();
+        if (std::regex_search(html, m, descRegex))
+            meta.trama = cleanMetaText(m[1].str());
+        meta.stato = cleanMetaText(dtDdBlock(html, "Stato"));
+        meta.anno = cleanMetaText(dtDdBlock(html, "Anno"));
+        std::string generiBlock = dtDdBlock(html, "Generi");
+        if (!generiBlock.empty()) {
+            for (auto it = std::sregex_iterator(generiBlock.begin(), generiBlock.end(),
+                                                genreLinkRegex);
+                 it != std::sregex_iterator(); ++it)
+                meta.generi.push_back(cleanMetaText((*it)[1].str()));
+        }
+        return meta;
+    }
+
+    AnimeWScraper::SeriesMetadata
+    AnimeWScraper::fetchSeriesMetadata(const std::string& pageUrl) {
+        SeriesMetadata meta;
+        if (pageUrl.empty())
+            return meta;
+        cpr::Header headers = {{"User-Agent", ScraperUtils::platformUserAgent()},
+                               {"Referer", kAnimeWorldBaseUrl + "/"}};
+        try {
+            cpr::Response r = ScraperUtils::httpGetWithRetry(cpr::Url{pageUrl}, headers, 3, 2000);
+            if (r.status_code == 200 && !r.text.empty())
+                meta = parseSeriesMetadata(r.text);
+            else
+                Core::Logger::warn(std::format("Metadati: fetch {} fallito (status {})", pageUrl,
+                                               r.status_code));
+        } catch (const std::exception& e) {
+            Core::Logger::warn(std::format("Metadati: errore fetch {}: {}", pageUrl, e.what()));
+        }
+        return meta;
+    }
+
     std::vector<EpisodeCandidate> AnimeWScraper::getCandidates(const Series& series) {
         std::vector<EpisodeCandidate> results;
 

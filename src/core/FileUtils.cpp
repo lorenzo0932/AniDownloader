@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -110,6 +111,16 @@ namespace Core {
             return {};
         std::string desc = m[1].str();
         desc = std::regex_replace(desc, std::regex("^\\s+|\\s+$"), "");
+        // Unescape XML: i writer Kodi-compatibili (incluso il nostro)
+        // salvano &amp; &lt; ecc., il frontend mostra testo puro.
+        const std::pair<const char*, const char*> table[] = {
+            {"&lt;", "<"}, {"&gt;", ">"}, {"&quot;", "\""}, {"&#039;", "'"},
+            {"&#x27;", "'"}, {"&apos;", "'"}, {"&amp;", "&"}};
+        for (const auto& [ent, ch] : table) {
+            size_t pos = 0;
+            while ((pos = desc.find(ent, pos)) != std::string::npos)
+                desc.replace(pos, strlen(ent), ch);
+        }
         return desc;
     }
 
@@ -122,6 +133,83 @@ namespace Core {
         if (std::filesystem::exists(poster))
             return poster.string();
         return {};
+    }
+
+    // Escape XML per i testi NFO (&, <, >).
+    static std::string xmlEscape(const std::string& s) {
+        std::string out;
+        out.reserve(s.size());
+        for (char c : s) {
+            switch (c) {
+            case '&': out += "&amp;"; break;
+            case '<': out += "&lt;"; break;
+            case '>': out += "&gt;"; break;
+            default: out += c; break;
+            }
+        }
+        return out;
+    }
+
+    bool writeTvshowNfoOnce(const std::string& seriesPath, const std::string& titolo,
+                            const NfoData& data) {
+        if (seriesPath.empty() || titolo.empty())
+            return false;
+        std::error_code ec;
+        std::filesystem::path dir(seriesPath);
+        auto nfoPath = dir / "tvshow.nfo";
+        // Mai sovrascrivere: né in cartella né nel parent (stesse posizioni del lettore).
+        if (std::filesystem::exists(nfoPath, ec) ||
+            std::filesystem::exists(dir.parent_path() / "tvshow.nfo", ec))
+            return false;
+        if (!std::filesystem::is_directory(dir, ec)) {
+            if (!std::filesystem::create_directories(dir, ec) || ec)
+                return false;
+        }
+        std::ostringstream xml;
+        xml << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<tvshow>\n";
+        xml << "  <title>" << xmlEscape(titolo) << "</title>\n";
+        if (!data.trama.empty())
+            xml << "  <plot>" << xmlEscape(data.trama) << "</plot>\n";
+        for (const auto& g : data.generi) {
+            if (!g.empty())
+                xml << "  <genre>" << xmlEscape(g) << "</genre>\n";
+        }
+        // Solo anno reale (niente premiered inventate senza mese/giorno).
+        if (!data.anno.empty())
+            xml << "  <year>" << xmlEscape(data.anno) << "</year>\n";
+        if (!data.stato.empty())
+            xml << "  <status>" << xmlEscape(data.stato) << "</status>\n";
+        xml << "  <studio>AnimeWorld</studio>\n</tvshow>\n";
+        // Il pre-check sopra basta nel contesto server (nessuna scrittura
+        // concorrente sullo stesso path): qui scrittura semplice.
+        std::ofstream f(nfoPath, std::ios::out | std::ios::binary | std::ios::trunc);
+        if (!f)
+            return false;
+        f << xml.str();
+        f.close();
+        return static_cast<bool>(f);
+    }
+
+    bool savePosterOnce(const std::string& seriesPath, const std::string& bytes) {
+        if (seriesPath.empty() || bytes.empty())
+            return false;
+        std::error_code ec;
+        std::filesystem::path dir(seriesPath);
+        auto posterPath = dir / "folder.jpg";
+        // Mai sovrascrivere (stesse posizioni del lettore).
+        if (std::filesystem::exists(posterPath, ec) ||
+            std::filesystem::exists(dir.parent_path() / "folder.jpg", ec))
+            return false;
+        if (!std::filesystem::is_directory(dir, ec)) {
+            if (!std::filesystem::create_directories(dir, ec) || ec)
+                return false;
+        }
+        std::ofstream f(posterPath, std::ios::out | std::ios::binary);
+        if (!f)
+            return false;
+        f.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        f.close();
+        return static_cast<bool>(f);
     }
 
     std::string expandUserPath(const std::string& dirPath) {

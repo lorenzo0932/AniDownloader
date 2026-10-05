@@ -11,10 +11,12 @@
 #include "core/ThumbCache.hpp"
 #include "scrapers/AnimeWScraper.hpp"
 #include "scrapers/ScraperUtils.hpp"
+#include "scrapers/AnimeWScraper.hpp"
 #include "web/embedded_web.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -320,6 +322,38 @@ namespace Web {
     }
 
     // ---- SERIES ----
+    void WebServer::fetchSeriesMetadataOnce(const Core::Series& series) {
+        if (series.path.empty() || series.seriesPageUrl.empty())
+            return;
+        std::string urlLower = series.seriesPageUrl;
+        std::transform(urlLower.begin(), urlLower.end(), urlLower.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        if (urlLower.find("animeworld") == std::string::npos)
+            return; // solo AnimeWorld: altri servizi senza metadati noti
+
+        auto meta = Core::AnimeWScraper::fetchSeriesMetadata(series.seriesPageUrl);
+        if (!meta.posterUrl.empty()) {
+            try {
+                cpr::Header imgHeaders = {{"User-Agent", Core::ScraperUtils::platformUserAgent()},
+                                          {"Referer", "https://www.animeworld.ac/"}};
+                cpr::Response r = Core::ScraperUtils::httpGetWithRetry(
+                    cpr::Url{meta.posterUrl}, imgHeaders, 2, 2000);
+                if (r.status_code == 200 && r.text.size() > 1024)
+                    Core::savePosterOnce(series.path, r.text);
+            } catch (const std::exception& e) {
+                Core::Logger::warn("Metadati: poster saltato: " + std::string(e.what()));
+            }
+        }
+        if (!meta.trama.empty() || !meta.generi.empty()) {
+            Core::NfoData nfo;
+            nfo.trama = meta.trama;
+            nfo.anno = meta.anno;
+            nfo.stato = meta.stato;
+            nfo.generi = meta.generi;
+            Core::writeTvshowNfoOnce(series.path, series.name, nfo);
+        }
+    }
+
     void WebServer::setupSeriesRoutes() {
         // ---- SERIES ----
         m_svr.Get("/api/series", [this](const httplib::Request& req, httplib::Response& res) {
@@ -351,6 +385,17 @@ namespace Web {
                 auto vec = m_seriesRepository.loadSeriesData();
                 vec.push_back(series);
                 m_seriesRepository.saveSeriesData(vec);
+                // Metadati una tantum (solo AnimeWorld, solo se spuntato nel
+                // form): poster + tvshow.nfo, best-effort — l'aggiunta riesce
+                // comunque. Mai sovrascritture.
+                if (body.value("fetch_metadata", true)) {
+                    try {
+                        fetchSeriesMetadataOnce(series);
+                    } catch (const std::exception& e) {
+                        Core::Logger::warn("Metadati all'aggiunta saltati: " +
+                                           std::string(e.what()));
+                    }
+                }
                 sendJson(res, successJson({{"index", vec.size() - 1}}));
             } catch (const std::exception& e) {
                 sendJson(res, errorJson("Invalid series data: " + std::string(e.what())), 400);
