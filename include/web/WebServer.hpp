@@ -57,6 +57,7 @@ namespace Web {
         void setupInfoRoutes();
         void setupSeriesRoutes();
         void setupBrowseRoutes();
+        void setupDiscoverRoutes();
         void setupConfigRoutes();
         void setupDownloadRoutes();
 
