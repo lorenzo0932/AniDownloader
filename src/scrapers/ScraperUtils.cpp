@@ -157,12 +157,13 @@ namespace Core {
     }
 
     cpr::Response ScraperUtils::httpGetWithRetry(const cpr::Url& url, const cpr::Header& headers,
-                                                 int maxRetries, int retryDelayMs) {
+                                                  int maxRetries, int retryDelayMs,
+                                                  const cpr::Parameters& params) {
         cpr::Response lastResponse;
         for (int attempt = 1; attempt <= maxRetries; ++attempt) {
             try {
                 cpr::Response r =
-                    cpr::Get(url, headers, cpr::VerifySsl{false}, cpr::Timeout{10000});
+                    cpr::Get(url, headers, params, cpr::VerifySsl{false}, cpr::Timeout{10000});
                 bool retryableStatus =
                     (r.status_code == 429 || r.status_code == 500 || r.status_code == 502 ||
                      r.status_code == 503 || r.status_code == 504);

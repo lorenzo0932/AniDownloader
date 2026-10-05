@@ -93,5 +93,23 @@ export const api = {
     clearThumbs: () => request('DELETE', '/api/cache/thumbs'),
   },
 
+  // Scopri: ricerca/filtri su AnimeWorld (una pagina del sito alla volta).
+  discover: {
+    page: (opts = {}) => {
+      const params = [];
+      for (const k of ['keyword', 'genre', 'genre_mode', 'season', 'year', 'type',
+                       'status', 'studio', 'language', 'dub', 'sort', 'page']) {
+        const v = opts[k];
+        if (v === undefined || v === '' || v === null) continue;
+        // array (es. generi multipli) -> parametro ripetuto ?genre=1&genre=4
+        for (const one of (Array.isArray(v) ? v : [v]))
+          params.push(k + '=' + encodeURIComponent(one));
+      }
+      const qs = params.length ? '?' + params.join('&') : '';
+      return request('GET', '/api/discover' + qs);
+    },
+    tooltip: (id) => request('GET', '/api/discover/tooltip?id=' + encodeURIComponent(id)),
+  },
+
   sse: () => new EventSource(BASE + '/api/download/events'),
 };

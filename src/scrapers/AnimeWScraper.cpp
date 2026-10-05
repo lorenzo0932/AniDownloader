@@ -3,6 +3,7 @@
 #include "scrapers/ScraperUtils.hpp"
 #include <cpr/cpr.h>
 #include <cstdlib>
+#include <cstring>
 #include <format>
 #include <nlohmann/json.hpp>
 #include <regex>
@@ -151,6 +152,172 @@ namespace Core {
 
         Core::Logger::info(std::format("{}: final candidates={}", series.name, results.size()));
         return results;
+    }
+
+    // ---- SCOPRI ----
+    // Decodifica minima entità HTML nei titoli/trame (il sito usa UTF-8 diretto,
+    // ma qualche alt/title contiene &amp; &quot; &#039;).
+    static std::string decodeEntities(std::string s) {
+        const std::pair<const char*, const char*> table[] = {
+            {"&amp;", "&"}, {"&quot;", "\""}, {"&#039;", "'"}, {"&apos;", "'"},
+            {"&lt;", "<"}, {"&gt;", ">"}, {"&nbsp;", " "}};
+        for (const auto& [ent, ch] : table) {
+            size_t pos = 0;
+            while ((pos = s.find(ent, pos)) != std::string::npos)
+                s.replace(pos, strlen(ent), ch);
+        }
+        return s;
+    }
+
+    AnimeWScraper::DiscoverPage AnimeWScraper::parseDiscoverPage(const std::string& html) {
+        DiscoverPage page;
+        if (html.empty())
+            return page;
+
+        // Card: <a href="/play/..." class="poster" data-tip="api/tooltip/NNNN"><img src="..." alt="...">
+        // ... <a ... class="name">Titolo</a>
+        static const std::regex cardRegex(
+            R"raw(<a\s+href="(/play/[^"]+)"\s+class="poster"\s+data-tip="api/tooltip/(\d+)">\s*<img[^>]*src="([^"]+)"[^>]*alt="([^"]*)")raw",
+            std::regex_constants::icase);
+        static const std::regex nameRegex(
+            R"raw(<a\s+href="[^"]+"\s+(?:data-jtitle="[^"]*"\s+)?class="name">([^<]*)</a>)raw",
+            std::regex_constants::icase);
+
+        struct Raw {
+            std::string pageUrl, tooltipId, posterUrl, alt;
+            size_t pos;
+        };
+        std::vector<Raw> posters;
+        for (auto it = std::sregex_iterator(html.begin(), html.end(), cardRegex);
+             it != std::sregex_iterator(); ++it) {
+            posters.push_back({(*it)[1].str(), (*it)[2].str(), (*it)[3].str(),
+                               (*it)[4].str(), static_cast<size_t>(it->position())});
+        }
+
+        // Il titolo testuale (name) segue il poster: primo match dopo ogni poster.
+        for (const auto& p : posters) {
+            std::string tail = html.substr(p.pos);
+            std::smatch m;
+            std::string titolo = p.alt;
+            if (std::regex_search(tail, m, nameRegex) && m.position() < 2000)
+                titolo = m[1].str();
+            if (titolo.empty())
+                continue;
+            DiscoverItem item;
+            item.titolo = decodeEntities(titolo);
+            item.pageUrl = p.pageUrl;
+            item.posterUrl = p.posterUrl;
+            item.tooltipId = p.tooltipId;
+            page.items.push_back(std::move(item));
+        }
+
+        static const std::regex maxPageRegex(
+            R"raw(paginationMaxPage\s*=\s*parseInt\("(\d+)"\))raw");
+        std::smatch mm;
+        if (std::regex_search(html, mm, maxPageRegex)) {
+            try {
+                page.maxPage = std::max(1, std::stoi(mm[1].str()));
+            } catch (const std::exception&) {
+                page.maxPage = 1;
+            }
+        }
+        return page;
+    }
+
+    // Estrae il contenuto di <div class="meta"><label>Etichetta:</label> ... <span>valore</span>
+    static std::string metaValue(const std::string& html, const std::string& label) {
+        std::regex re("<label>\\s*" + label + ":\\s*</label>\\s*<span>\\s*([\\s\\S]*?)\\s*</span>",
+                      std::regex_constants::icase);
+        std::smatch m;
+        if (!std::regex_search(html, m, re))
+            return "";
+        std::string v = m[1].str();
+        // normalizza spazi interni (il markup ha newline + indentazione)
+        std::string out;
+        bool space = false;
+        for (char c : v) {
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+                if (!out.empty() && !space) {
+                    out += ' ';
+                    space = true;
+                }
+            } else {
+                out += c;
+                space = false;
+            }
+        }
+        if (!out.empty() && out.back() == ' ')
+            out.pop_back();
+        return decodeEntities(out);
+    }
+
+    AnimeWScraper::DiscoverDetail AnimeWScraper::parseTooltip(const std::string& html) {
+        DiscoverDetail d;
+        if (html.empty())
+            return d;
+        static const std::regex descRegex(R"raw(<p\s+class="desc">([\s\S]*?)</p>)raw",
+                                          std::regex_constants::icase);
+        std::smatch m;
+        if (std::regex_search(html, m, descRegex))
+            d.trama = decodeEntities(m[1].str());
+        d.nomiAlternativi = metaValue(html, "Nome alternativo");
+        d.voto = metaValue(html, "Voto");
+        d.stato = metaValue(html, "Stato");
+        d.dataUscita = metaValue(html, "Data di uscita");
+
+        static const std::regex genreBlockRegex(
+            R"raw(<label>\s*Genere:\s*</label>([\s\S]*?)</div>)raw",
+            std::regex_constants::icase);
+        static const std::regex genreLinkRegex(R"raw(<a[^>]*>([^<]+)</a>)raw",
+                                               std::regex_constants::icase);
+        if (std::regex_search(html, m, genreBlockRegex)) {
+            std::string block = m[1].str();
+            for (auto it = std::sregex_iterator(block.begin(), block.end(), genreLinkRegex);
+                 it != std::sregex_iterator(); ++it)
+                d.generi.push_back(decodeEntities((*it)[1].str()));
+        }
+        return d;
+    }
+
+    AnimeWScraper::DiscoverPage AnimeWScraper::fetchDiscoverPage(
+        const std::string& path,
+        const std::vector<std::pair<std::string, std::string>>& params) {
+        DiscoverPage page;
+        cpr::Header headers = {{"User-Agent", ScraperUtils::platformUserAgent()},
+                               {"Referer", kAnimeWorldBaseUrl + "/"}};
+        cpr::Parameters cprParams;
+        for (const auto& [k, v] : params)
+            cprParams.Add({k, v});
+        try {
+            cpr::Response r = ScraperUtils::httpGetWithRetry(
+                cpr::Url{playerApiBase() + path}, headers, 3, 2000, cprParams);
+            if (r.status_code == 200 && !r.text.empty())
+                page = parseDiscoverPage(r.text);
+            else
+                Core::Logger::warn(
+                    std::format("Scopri: fetch {} fallito (status {})", path, r.status_code));
+        } catch (const std::exception& e) {
+            Core::Logger::warn(std::format("Scopri: errore fetch {}: {}", path, e.what()));
+        }
+        return page;
+    }
+
+    AnimeWScraper::DiscoverDetail AnimeWScraper::fetchTooltip(const std::string& tooltipId) {
+        DiscoverDetail d;
+        if (tooltipId.empty() ||
+            tooltipId.find_first_not_of("0123456789") != std::string::npos)
+            return d;
+        cpr::Header headers = {{"User-Agent", ScraperUtils::platformUserAgent()},
+                               {"Referer", kAnimeWorldBaseUrl + "/"}};
+        try {
+            cpr::Response r = ScraperUtils::httpGetWithRetry(
+                cpr::Url{playerApiBase() + "/api/tooltip/" + tooltipId}, headers, 2, 2000);
+            if (r.status_code == 200 && !r.text.empty())
+                d = parseTooltip(r.text);
+        } catch (const std::exception& e) {
+            Core::Logger::warn(std::format("Scopri: errore tooltip {}: {}", tooltipId, e.what()));
+        }
+        return d;
     }
 
     std::vector<DownloadTask> AnimeWScraper::planSeriesTask(const Series& series,

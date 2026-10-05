@@ -9,6 +9,7 @@
 #include "core/QueueStore.hpp"
 #include "core/SeriesUtils.hpp"
 #include "core/ThumbCache.hpp"
+#include "scrapers/AnimeWScraper.hpp"
 #include "scrapers/ScraperUtils.hpp"
 #include "web/embedded_web.hpp"
 
@@ -24,6 +25,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <unordered_set>
 
 #ifdef _WIN32
 #include <iphlpapi.h>
@@ -256,6 +258,7 @@ namespace Web {
         setupInfoRoutes();
         setupSeriesRoutes();
         setupBrowseRoutes();
+        setupDiscoverRoutes();
         setupConfigRoutes();
         setupDownloadRoutes();
 
@@ -458,6 +461,114 @@ namespace Web {
                 }
             } catch (...) {
                 sendJson(res, errorJson("Poster not available"), 404);
+            }
+        });
+    }
+
+    // ---- SCOPRI ----
+    void WebServer::setupDiscoverRoutes() {
+        // GET /api/discover?keyword=&genre=1,4&genre_mode=&season=&year=&type=&status=&studio=&dub=&sort=&page=1
+        // Con keyword si interroga /search (full-text server-side), altrimenti /filter.
+        // Risponde una pagina del sito (~40 card) + maxPage; il frontend pagina con "carica altri".
+        m_svr.Get("/api/discover", [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                std::string keyword = req.has_param("keyword") ? req.get_param_value("keyword") : "";
+                if (keyword.size() > 100)
+                    keyword = keyword.substr(0, 100);
+
+                int page = 1;
+                try {
+                    if (req.has_param("page"))
+                        page = std::stoi(req.get_param_value("page"));
+                } catch (const std::exception&) {
+                    // page non numerico: default 1, segnalato nel log
+                    Core::Logger::warn("/api/discover: parametro 'page' non valido, uso 1");
+                }
+                page = std::clamp(page, 1, 500);
+
+                // Solo cifre e virgole per i filtri a id (generi multipli "1,4").
+                static const std::regex idsRegex(R"(^[0-9,]+$)");
+                static const std::regex seasonRegex(
+                    R"(^(winter|spring|summer|fall|unknown)(,(winter|spring|summer|fall|unknown))*$)");
+                static const std::regex langRegex(R"(^(jp|it|ch|kr|en|fr)(,(jp|it|ch|kr|en|fr))*$)");
+                std::vector<std::pair<std::string, std::string>> params;
+                params.emplace_back("page", std::to_string(page));
+                if (!keyword.empty()) {
+                    params.emplace_back("keyword", keyword);
+                } else {
+                    // Valori multipli: httplib espone i params come multimappa;
+                    // il sito vuole i generi ripetuti (?genre=1&genre=4), non
+                    // uniti da virgola. Si inoltrano tutti i valori validi.
+                    static const std::unordered_set<std::string> allowedKeys = {
+                        "genre",  "genre_mode", "season", "year", "type",
+                        "status", "studio",     "language", "dub", "sort"};
+                    for (const auto& [key, v] : req.params) {
+                        std::string k(key);
+                        if (allowedKeys.find(k) == allowedKeys.end())
+                            continue; // page/keyword gestiti a parte, resto ignorato
+                        if (v.empty() || v.size() > 80)
+                            continue;
+                        bool ok = false;
+                        if (k == "genre_mode")
+                            ok = (v == "and" || v == "or");
+                        else if (k == "season")
+                            ok = std::regex_match(v, seasonRegex);
+                        else if (k == "language")
+                            ok = std::regex_match(v, langRegex);
+                        else if (k == "studio")
+                            ok = true; // testo libero (nomi con spazi, &, '), encodato da cpr
+                        else
+                            ok = std::regex_match(v, idsRegex);
+                        if (!ok) {
+                            Core::Logger::warn(
+                                std::format("/api/discover: parametro '{}' non valido, ignorato", key));
+                            continue;
+                        }
+                        params.emplace_back(key, v);
+                    }
+                }
+
+                std::string path = keyword.empty() ? "/filter" : "/search";
+                auto result = Core::AnimeWScraper::fetchDiscoverPage(path, params);
+
+                nlohmann::json items = nlohmann::json::array();
+                for (const auto& it : result.items) {
+                    nlohmann::json e;
+                    e["titolo"] = it.titolo;
+                    e["pageUrl"] = it.pageUrl;
+                    e["posterUrl"] = it.posterUrl;
+                    e["tooltipId"] = it.tooltipId;
+                    items.push_back(std::move(e));
+                }
+                sendJson(res, successJson({{"items", std::move(items)},
+                                           {"page", page},
+                                           {"maxPage", result.maxPage}}));
+            } catch (const std::exception& e) {
+                sendJson(res, errorJson("Discover failed: " + std::string(e.what())), 500);
+            }
+        });
+
+        // GET /api/discover/tooltip?id=NNNN — dettaglio lazy di una card.
+        m_svr.Get("/api/discover/tooltip", [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                std::string id = req.has_param("id") ? req.get_param_value("id") : "";
+                static const std::regex idRegex(R"(^\d{1,10}$)");
+                if (!std::regex_match(id, idRegex)) {
+                    sendJson(res, errorJson("Parametro 'id' non valido"), 400);
+                    return;
+                }
+                auto d = Core::AnimeWScraper::fetchTooltip(id);
+                nlohmann::json generi = nlohmann::json::array();
+                for (const auto& g : d.generi)
+                    generi.push_back(g);
+                sendJson(res, successJson({{"trama", d.trama},
+                                           {"voto", d.voto},
+                                           {"stato", d.stato},
+                                           {"dataUscita", d.dataUscita},
+                                           {"nomiAlternativi", d.nomiAlternativi},
+                                           {"generi", std::move(generi)}}));
+            } catch (const std::exception& e) {
+                sendJson(res, errorJson("Tooltip failed: " + std::string(e.what())), 500);
             }
         });
     }

@@ -234,6 +234,64 @@ Risposta:
 
 ---
 
+### `GET /api/discover` (dal 3.0)
+
+Pagina Scopri: ricerca e filtri sul catalogo AnimeWorld, una pagina del sito
+(~40 card) alla volta. Con `keyword` interroga `/search` (full-text
+server-side), altrimenti `/filter` (i due modi del sito sono separati: se
+c'è la keyword i filtri vengono ignorati).
+
+**Parametri query:**
+- `keyword` (opzionale) — testo libero, max 100 caratteri
+- `genre` (ripetibile) — id genere, es. `?genre=1&genre=4` (la forma
+  `?genre=1,4` il sito la ignora: zero risultati)
+- `genre_mode` — `and`/`or` (solo con più generi)
+- `season` — `winter|spring|summer|fall|unknown`
+- `year` — es. `2026`
+- `type` — 0 Anime, 4 Movie, 1 OVA, 2 ONA, 3 Special, 5 Music
+- `status` — 0 In corso, 1 Finito, 2 Non rilasciato, 3 Droppato
+- `studio` — testo libero (es. `MAPPA`)
+- `language` — `jp|it|ch|kr|en|fr`
+- `dub` — `1` solo doppiati
+- `sort` — 0 Standard, 1 Ultime aggiunte, 2 A-Z, 3 Z-A, 4 Più vecchi,
+  5 Più recenti, 6 Più visti, 7 Meglio valutati
+- `page` — pagina da leggere (default 1, max 500)
+
+Risposta:
+
+```json
+{
+    "success": true, "page": 1, "maxPage": 122,
+    "items": [
+        {"titolo": "Naruto Shippuden", "pageUrl": "/play/naruto-shippuden.v3U8a",
+         "posterUrl": "https://img.animeworld.ac/locandine/01ec....png", "tooltipId": "193"}
+    ]
+}
+```
+
+I poster sono URL diretti (`img.animeworld.ac`): il frontend li carica senza proxy.
+
+---
+
+### `GET /api/discover/tooltip` (dal 3.0)
+
+Dettaglio lazy di una card Scopri (trama, voto, stato, generi).
+
+**Parametri query:**
+- `id` — id numerico del tooltip (campo `tooltipId` di `/api/discover`)
+
+Risposta:
+
+```json
+{
+    "success": true, "trama": "...", "voto": "8.5", "stato": "Finito",
+    "dataUscita": "01 Gennaio 2020", "nomiAlternativi": "...",
+    "generi": ["Azione", "Avventura"]
+}
+```
+
+---
+
 ### `GET /api/browse`
 
 Elenco del contenuto di una directory per il file picker.

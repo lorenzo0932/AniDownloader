@@ -131,9 +131,59 @@ static void testExtractSeriesTitle() {
     CHECK(ScraperUtils::extractSeriesTitle("<title>AnimeWorld -   </title>").empty());
 }
 
+static void testAnimeWParseDiscoverPage() {
+    using Core::AnimeWScraper;
+
+    // Fixture reale (2 card da /filter + paginationMaxPage=7)
+    auto page = AnimeWScraper::parseDiscoverPage(readFixture("discover_page.html"));
+    CHECK(page.items.size() == 2);
+    CHECK(page.maxPage == 7);
+    if (page.items.size() == 2) {
+        CHECK(page.items[0].titolo == "Ghost Meets Gal!");
+        CHECK(page.items[0].pageUrl == "/play/ghost-meets-gal.0H0eO");
+        CHECK(page.items[0].posterUrl == "https://img.animeworld.ac/locandine/0H0eO.png");
+        CHECK(page.items[0].tooltipId == "7169");
+        CHECK(page.items[1].titolo == "Keroro Gunsou☆");
+        CHECK(page.items[1].pageUrl == "/play/keroro-gunsou.qpFOr");
+        CHECK(page.items[1].tooltipId == "7160");
+    }
+
+    // HTML senza card -> lista vuota, maxPage 1, nessun throw
+    auto vuota = AnimeWScraper::parseDiscoverPage("<html><body>nessun risultato</body></html>");
+    CHECK(vuota.items.empty());
+    CHECK(vuota.maxPage == 1);
+    CHECK(AnimeWScraper::parseDiscoverPage("").items.empty());
+}
+
+static void testAnimeWParseTooltip() {
+    using Core::AnimeWScraper;
+
+    // Fixture reale da /api/tooltip/7169
+    auto d = AnimeWScraper::parseTooltip(readFixture("discover_tooltip.html"));
+    CHECK(d.trama ==
+          "Spin-off di Cardfight!! Vanguard incentrato su due ragazze che aspirano a diventare idol.");
+    CHECK(d.voto == "5.44");
+    CHECK(d.stato == "In corso");
+    CHECK(d.dataUscita == "05 Settembre 2026");
+    CHECK(d.nomiAlternativi == "Ghost Meets Gal!; - Ghost Meets Gal!");
+    CHECK(d.generi.size() == 2);
+    if (d.generi.size() == 2) {
+        CHECK(d.generi[0] == "Commedia");
+        CHECK(d.generi[1] == "Parodia");
+    }
+
+    // Tooltip vuoto/parziale -> campi vuoti, nessun throw
+    auto vuoto = AnimeWScraper::parseTooltip("<div class=\"inner\"></div>");
+    CHECK(vuoto.trama.empty());
+    CHECK(vuoto.generi.empty());
+    CHECK(AnimeWScraper::parseTooltip("").voto.empty());
+}
+
 int main() {
     testAnimeWParseSeriesPage();
     testAnimeWParseEpisodeInfo();
+    testAnimeWParseDiscoverPage();
+    testAnimeWParseTooltip();
     testAnimeUParseSeriesPage();
     testAnimeUParseEpisodeAndEmbed();
     testExtractSeriesTitle();
