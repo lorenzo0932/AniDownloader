@@ -10,6 +10,23 @@ namespace Core {
     std::string readNfoDescription(const std::string& seriesPath);
     std::string findPosterPath(const std::string& seriesPath);
 
+    // Dati minimi per tvshow.nfo stile Kodi (solo campi reali da AnimeWorld).
+    struct NfoData {
+        std::string trama;
+        std::string anno; // solo anno ("2007"), vuoto se ignoto
+        std::string stato;
+        std::vector<std::string> generi;
+    };
+
+    // Scrive seriesPath/tvshow.nfo (stile Kodi) SOLO se non esiste gia'
+    // (ne' li' ne' nel parent, come il lettore). true se scritto, false se
+    // esisteva gia' o in caso di errore. Mai sovrascrive.
+    bool writeTvshowNfoOnce(const std::string& seriesPath, const std::string& titolo,
+                            const NfoData& data);
+    // Scrive seriesPath/folder.jpg SOLO se non esiste gia' (stesse posizioni
+    // del lettore). true se scritto, false altrimenti. Mai sovrascrive.
+    bool savePosterOnce(const std::string& seriesPath, const std::string& bytes);
+
     struct DirEntry {
         std::string name;
         std::string path;

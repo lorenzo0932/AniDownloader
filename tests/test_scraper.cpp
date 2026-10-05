@@ -131,9 +131,36 @@ static void testExtractSeriesTitle() {
     CHECK(ScraperUtils::extractSeriesTitle("<title>AnimeWorld -   </title>").empty());
 }
 
+static void testAnimeWParseSeriesMetadata() {
+    using Core::AnimeWScraper;
+
+    // Fixture reale compatta (og:image + div.desc + dt/dd Stato/Generi/Anno)
+    auto meta = AnimeWScraper::parseSeriesMetadata(readFixture("serie_metadata.html"));
+    CHECK(meta.posterUrl ==
+          "https://img.animeworld.ac/copertine/3f283002b47c62b1e5d311c45f95c97e1670624488_full.jpg");
+    CHECK(meta.trama ==
+          "Nel Villaggio della Foglia, la squadra di Konohamaru è stata promossa a Genin.");
+    CHECK(meta.stato == "Finito");
+    CHECK(meta.anno == "2007");
+    CHECK(meta.generi.size() == 3);
+    if (meta.generi.size() == 3) {
+        CHECK(meta.generi[0] == "Arti Marziali");
+        CHECK(meta.generi[1] == "Avventura");
+        CHECK(meta.generi[2] == "Azione");
+    }
+
+    // Pagina senza metadati -> campi vuoti, nessun throw
+    auto vuota = AnimeWScraper::parseSeriesMetadata("<html><body>serie sconosciuta</body></html>");
+    CHECK(vuota.posterUrl.empty());
+    CHECK(vuota.trama.empty());
+    CHECK(vuota.generi.empty());
+    CHECK(AnimeWScraper::parseSeriesMetadata("").stato.empty());
+}
+
 int main() {
     testAnimeWParseSeriesPage();
     testAnimeWParseEpisodeInfo();
+    testAnimeWParseSeriesMetadata();
     testAnimeUParseSeriesPage();
     testAnimeUParseEpisodeAndEmbed();
     testExtractSeriesTitle();
