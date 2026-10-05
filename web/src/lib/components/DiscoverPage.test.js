@@ -85,6 +85,32 @@ describe('DiscoverPage', () => {
     expect(global.fetch).toHaveBeenCalled();
   });
 
+  it('Aggiungi senza spunta metadati: POST con fetch_metadata=false', async () => {
+    const postBodies = [];
+    global.fetch = vi.fn(async (url, opts) => {
+      if (typeof url === 'string' && url.includes('/api/discover/tooltip'))
+        return { ok: true, status: 200, text: async () => JSON.stringify(tooltip) };
+      if (opts && opts.method === 'POST') {
+        postBodies.push(JSON.parse(opts.body));
+        return { ok: true, status: 200, text: async () => JSON.stringify({ success: true }) };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify(pagina1) };
+    });
+    render(DiscoverPage);
+    await waitFor(() => expect(screen.getByText('Naruto Shippuden')).toBeTruthy());
+    await fireEvent.click(screen.getByText('Naruto Shippuden'));
+    await waitFor(() => expect(screen.getByText('Trama di prova')).toBeTruthy());
+    await fireEvent.click(screen.getByText('Aggiungi'));
+    await waitFor(() => expect(screen.getByText('Aggiungi Nuova Serie')).toBeTruthy());
+    // toglie la spunta (default attiva) e salva con path compilato a mano
+    await fireEvent.click(screen.getByRole('checkbox', { name: /Scarica locandina e metadati/ }));
+    const pathInput = screen.getByPlaceholderText('/path/to/series');
+    await fireEvent.input(pathInput, { target: { value: '/tmp/serie-prova' } });
+    await fireEvent.click(screen.getByRole('button', { name: /Salva Modifiche/ }));
+    await waitFor(() => expect(postBodies.length).toBe(1));
+    expect(postBodies[0].fetch_metadata).toBe(false);
+  });
+
   it('errore rete: messaggio dedicato, niente crash', async () => {
     global.fetch = vi.fn(async () => {
       throw new Error('rete giù');
