@@ -382,13 +382,16 @@ namespace Web {
                 auto vec = m_seriesRepository.loadSeriesData();
                 vec.push_back(series);
                 m_seriesRepository.saveSeriesData(vec);
-                // Metadati una tantum (solo AnimeWorld): poster + tvshow.nfo,
-                // best-effort — l'aggiunta riesce comunque. Mai sovrascritture.
-                try {
-                    fetchSeriesMetadataOnce(series);
-                } catch (const std::exception& e) {
-                    Core::Logger::warn("Metadati all'aggiunta saltati: " +
-                                       std::string(e.what()));
+                // Metadati una tantum (solo AnimeWorld, solo se spuntato nel
+                // form): poster + tvshow.nfo, best-effort — l'aggiunta riesce
+                // comunque. Mai sovrascritture.
+                if (body.value("fetch_metadata", true)) {
+                    try {
+                        fetchSeriesMetadataOnce(series);
+                    } catch (const std::exception& e) {
+                        Core::Logger::warn("Metadati all'aggiunta saltati: " +
+                                           std::string(e.what()));
+                    }
                 }
                 sendJson(res, successJson({{"index", vec.size() - 1}}));
             } catch (const std::exception& e) {

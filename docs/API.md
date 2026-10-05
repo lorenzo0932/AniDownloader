@@ -108,9 +108,15 @@ Aggiunge una nuova serie.
     "continue": true,
     "is_high_priority": false,
     "passed_episodes": 0,
-    "alternate_sources": []
+    "alternate_sources": [],
+    "fetch_metadata": true
 }
 ```
+
+`fetch_metadata` (opzionale, default `true`): con URL AnimeWorld scarica
+una tantum `folder.jpg` (locandina HD) e `tvshow.nfo` (trama, generi, anno,
+stato) nella cartella serie — solo se non esistono già, mai sovrascritture.
+Best-effort: se fallisce, l'aggiunta riesce comunque.
 
 Risposta:
 

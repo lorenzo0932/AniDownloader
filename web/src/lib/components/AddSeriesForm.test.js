@@ -46,6 +46,22 @@ describe('AddSeriesForm', () => {
     expect(screen.getByRole('button', { name: /Elimina Serie/ })).toBeTruthy();
   });
 
+  it('aggiunta: spunta metadati presente e attiva di default', () => {
+    render(AddSeriesForm, { ...baseProps, show: true });
+    const box = screen.getByRole('checkbox', { name: /Scarica locandina e metadati/ });
+    expect(box.checked).toBe(true);
+  });
+
+  it('modifica: spunta metadati nascosta (fetch solo all\u2019aggiunta)', () => {
+    render(AddSeriesForm, {
+      ...baseProps,
+      show: true,
+      editing: 0,
+      form: formFixture({ name: 'Existing' }),
+    });
+    expect(screen.queryByRole('checkbox', { name: /Scarica locandina e metadati/ })).toBeNull();
+  });
+
   it('click Annulla: invoca onclose', () => {
     const onclose = vi.fn();
     render(AddSeriesForm, { ...baseProps, show: true, onclose });

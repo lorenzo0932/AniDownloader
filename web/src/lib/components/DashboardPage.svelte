@@ -198,6 +198,7 @@
       passed_episodes: form.passedEpisodes,
       episode_list_selector: '',
       download_link_selector: '',
+      fetch_metadata: form.fetchMetadata !== false,
     };
     try {
       if (editing >= 0) {

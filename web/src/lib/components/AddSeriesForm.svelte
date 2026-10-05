@@ -94,6 +94,12 @@
                 <input type="checkbox" bind:checked={form.highPriority} />
                 Alta Priorit&agrave;
               </label>
+              {#if editing < 0}
+                <label class="checkbox-inline" title="Scarica locandina (folder.jpg) e trama/generi (tvshow.nfo) dalla pagina AnimeWorld, solo se non esistono già">
+                  <input type="checkbox" checked={form.fetchMetadata !== false} onchange={(e) => form.fetchMetadata = e.target.checked} />
+                  Scarica locandina e metadati
+                </label>
+              {/if}
             </div>
 
             <div class="field-group">
