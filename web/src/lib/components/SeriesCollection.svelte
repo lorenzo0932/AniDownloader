@@ -89,9 +89,12 @@
     }
   }
   @media (max-width: 560px) {
-    /* Telefono: 2 colonne da 220px non ci stanno (l'auto-fill crollerebbe
-       a 1 colonna = card giganti bandite), quindi la large resta 2 colonne
-       come la griglia. Identita voluta e dichiarata, non un bug. */
-    .series-grid.grid-large { grid-template-columns: repeat(2, 1fr); }
+    /* Telefono, vista grande: una colonna sola cappata e centrata —
+       locandine visibilmente più grandi della griglia senza diventare
+       giganti a tutto schermo (una colonna libera = card enormi). */
+    .series-grid.grid-large {
+      grid-template-columns: minmax(0, 300px);
+      justify-content: center;
+    }
   }
 </style>
