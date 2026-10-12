@@ -428,6 +428,14 @@ namespace Web {
                               sendJson(res, errorJson("Index out of range"), 404);
                               return;
                           }
+                          // Precedenza storica: indice fuori range → 404 anche
+                          // con body invalido (l'update atomico resta l'autorità
+                          // finale contro le gare).
+                          if (static_cast<size_t>(idx) >=
+                              m_seriesRepository.snapshotSeriesData().size()) {
+                              sendJson(res, errorJson("Index out of range"), 404);
+                              return;
+                          }
                           auto body = nlohmann::json::parse(req.body);
                           auto serie = body.get<Core::Series>();
                           auto esito = m_seriesRepository.updateSeries(
