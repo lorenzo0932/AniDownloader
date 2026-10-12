@@ -4,7 +4,12 @@
   // contenitori, griglie e animazioni di lista. Contenuti via snippet:
   // `card(item, idx)` per la griglia, `row(item, idx)` per la tabella.
   // Caricamento/ordinamento restano nel parent: qui solo presentazione.
-  // Il cambio vista usa il reflow CSS, senza animazioni di relayout.
+  // FLIP anima il relayout senza ricreare le card.
+  import { flip } from 'svelte/animate';
+
+  function relayoutDuration() {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 260;
+  }
 
   let {
     items = [],
@@ -18,6 +23,12 @@
   // 'large' = stessa griglia con colonne grandi (220px, poster ~330px).
   // $derived: const calcolerebbe una volta sola e il toggle sembrerebbe morto.
   let large = $derived(viewMode === 'large');
+  // FLIP misura gli elementi quando si aggiorna il blocco each. Il toggle
+  // cambia solo il CSS: nuova lista, stesse chiavi e stessi nodi delle card.
+  let layoutItems = $derived.by(() => {
+    viewMode;
+    return [...items];
+  });
 </script>
 
 {#if items.length === 0}
@@ -31,11 +42,11 @@
 {:else}
   <!-- Niente {#key} sul cambio vista: distruggerebbe e ricreerebbe tutte le
        card (salto di scroll, cardIn rieseguita in stagger, immagini
-       ricaricate). I nodi persistono: cambia solo il layout CSS. -->
+        ricaricate). I nodi persistono e FLIP anima le nuove posizioni. -->
   <div class="series-grid" class:grid-large={large}>
-    {#each items as item, idx (keyOf(item, idx))}
-      <!-- Wrapper neutro: item di griglia, la card riempie. -->
-      <div class="flip-wrap">
+    {#each layoutItems as item, idx (keyOf(item, idx))}
+      <!-- FLIP sul wrapper: non interferisce con le animazioni della card. -->
+      <div class="flip-wrap" animate:flip={{ duration: relayoutDuration }}>
         {@render card?.(item, idx)}
       </div>
     {/each}
