@@ -229,50 +229,12 @@ namespace Core {
     const std::vector<Series>& SeriesRepository::loadSeriesData(bool forceReload) {
         // Lettore legacy per contesti single-thread (test, CLI one-shot,
         // setup): il riferimento non sopravvive a mutazioni concorrenti.
-        // Il codice runtime multithread usa snapshotSeriesData().
+        // Il codice runtime multithread usa snapshotSeriesData(). Delega a
+        // loadLocked: un solo corpo di caricamento, nessuna duplicazione.
         std::lock_guard<std::mutex> lock(m_mutex);
-
-        if (!forceReload && m_cache.has_value() && m_haveStat) {
-            auto cur = snapshotFile(m_jsonFilePath);
-            if (cur.valid && cur.mtime == m_lastWrite && cur.size == m_lastSize) {
-                return m_cache.value(); // file invariato: cache valida
-            }
-            // mismatch (o stat fallito): ricade nel reload qui sotto
-        } else if (!forceReload && m_cache.has_value()) {
-            return m_cache.value();
-        }
-
-        if (!std::filesystem::exists(m_jsonFilePath)) {
-            if (m_jsonFilePath.has_parent_path()) {
-                std::filesystem::create_directories(m_jsonFilePath.parent_path());
-            }
-            std::ofstream outFile(m_jsonFilePath);
-            outFile << "[]";
-            m_cache = std::vector<Series>{};
-            if (auto s = snapshotFile(m_jsonFilePath); s.valid) {
-                m_lastWrite = s.mtime;
-                m_lastSize = s.size;
-                m_haveStat = true;
-            }
-            return m_cache.value();
-        }
-
-        try {
-            std::ifstream inFile(m_jsonFilePath);
-            nlohmann::json jsonArray;
-            inFile >> jsonArray;
-            m_cache = jsonArray.get<std::vector<Series>>();
-        } catch (const std::exception& e) {
-            Logger::error("Errore caricamento dati: " + std::string(e.what()));
-            static const std::vector<Series> emptyFallback;
-            return emptyFallback;
-        }
-        if (auto s = snapshotFile(m_jsonFilePath); s.valid) {
-            m_lastWrite = s.mtime;
-            m_lastSize = s.size;
-            m_haveStat = true;
-        }
-        return m_cache.value();
+        if (forceReload)
+            invalidateCacheLocked();
+        return loadLocked();
     }
 
     // --- Helper privati sotto lock (il chiamante detiene già m_mutex) ---
