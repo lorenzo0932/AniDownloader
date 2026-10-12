@@ -29,10 +29,10 @@
     {/each}
   </div>
 {:else}
-  <!-- {#key}: toggle e sort ricreano la griglia e cardIn riparte sempre.
-       Senza, i nodi riusati non animano (visto su grid<->large diretto).
-       Il flip resta per i riordini senza cambio vista. -->
-  {#key viewMode}
+  <!-- Niente {#key} sul cambio vista: distruggerebbe e ricreerebbe tutte le
+       card (salto di scroll, cardIn rieseguita in stagger, immagini
+       ricaricate). I nodi persistono e animate:flip fa scivolare le card
+       nelle nuove posizioni — niente refetch, niente salti. -->
   <div class="series-grid" class:grid-large={large}>
     {#each items as item, idx (keyOf(item, idx))}
       <!-- Wrapper per animate:flip (lo standard Svelte per i relayout):
@@ -43,7 +43,6 @@
       </div>
     {/each}
   </div>
-  {/key}
 {/if}
 
 <style>
