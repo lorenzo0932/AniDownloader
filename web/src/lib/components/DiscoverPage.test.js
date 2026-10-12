@@ -210,6 +210,23 @@ describe('DiscoverPage', () => {
     expect(container.querySelector('.card-managed')).toBeTruthy();
   });
 
+  it('dettaglio in caricamento: skeleton stabile, poi trama (niente scatto)', async () => {
+    let risolviTooltip;
+    global.fetch = mockFetch({
+      tooltipImpl: () => new Promise((risolvi) => { risolviTooltip = () => risolvi(tooltip); }),
+    });
+    const { container } = render(DiscoverPage);
+    await waitFor(() => expect(screen.getByText('Naruto Shippuden')).toBeTruthy());
+    await fireEvent.click(screen.getByText('Naruto Shippuden'));
+    // In attesa: skeleton con status accessibile, dimensioni riservate.
+    const skeleton = await screen.findByRole('status', { name: 'Caricamento dettagli' });
+    expect(skeleton.classList.contains('detail-skeleton')).toBe(true);
+    expect(container.querySelector('.detail-modal')).toBeTruthy();
+    risolviTooltip();
+    await waitFor(() => expect(screen.getByText('Trama di prova')).toBeTruthy());
+    expect(screen.queryByRole('status', { name: 'Caricamento dettagli' })).toBeNull();
+  });
+
   it('tooltip fuori ordine: vince l\'ultimo dettaglio aperto', async () => {
     global.fetch = mockFetch({
       tooltipImpl: async (url) => {

@@ -506,7 +506,14 @@
     {/snippet}
     {#snippet body()}
       {#if detailLoading}
-        <p class="detail-loading">Caricamento dettagli...</p>
+        <div class="detail-skeleton" role="status" aria-label="Caricamento dettagli">
+          <span class="sk sk-plot" style="width:95%" aria-hidden="true"></span>
+          <span class="sk sk-plot" style="width:88%" aria-hidden="true"></span>
+          <span class="sk sk-plot" style="width:72%" aria-hidden="true"></span>
+          <span class="sk sk-plot" style="width:60%" aria-hidden="true"></span>
+          <span class="sk sk-meta" style="width:75%" aria-hidden="true"></span>
+          <span class="sk sk-meta" style="width:65%" aria-hidden="true"></span>
+        </div>
       {:else if detailError}
         <p class="detail-error" role="alert">{detailError}</p>
         <button type="button" class="btn-ghost" onclick={() => apriDettaglio(detail)}>Riprova</button>
@@ -590,4 +597,20 @@
   .discover-error { color: var(--danger); }
   .discover-notice { color: var(--success); }
   .discover-more { display: flex; justify-content: center; padding: 0.5rem 0 1rem; }
+  /* Skeleton del dettaglio in caricamento: occupa circa quanto trama+meta
+     reali, così il modale (ora a larghezza fissa) non scatta in altezza
+     all'arrivo del tooltip. Solo Scopri: Gestione ha la descrizione pronta. */
+  .detail-skeleton { display: flex; flex-direction: column; gap: 0.6rem; min-height: 240px; }
+  .detail-skeleton .sk {
+    display: block; border-radius: 6px;
+    background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);
+    background-size: 200% 100%;
+    animation: skShimmer 1.2s linear infinite;
+  }
+  .detail-skeleton .sk-plot { height: 0.9rem; }
+  .detail-skeleton .sk-meta { height: 0.85rem; }
+  @keyframes skShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .detail-skeleton .sk { animation: none; }
+  }
 </style>

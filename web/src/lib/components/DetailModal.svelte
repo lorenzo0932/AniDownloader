@@ -114,6 +114,9 @@
   .detail-modal {
     animation: panelIn 0.25s ease-out;
     max-width: 90vw; max-height: 90vh;
+    /* Larghezza stabile: il contenuto lazy (tooltip Scopri) non deve far
+       scattare il pannello da stretto a largo all'arrivo dei dati. */
+    width: min(720px, 90vw);
   }
   .detail-modal:focus { outline: none; }
   .detail-modal-inner {
@@ -250,6 +253,9 @@
     .detail-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       max-width: 100vw; max-height: 100dvh; border-radius: 0;
+      /* Fullscreen: con left+right fissati la larghezza torna automatica,
+         altrimenti il width desktop lascerebbe bande laterali. */
+      width: auto;
     }
     .detail-modal-inner {
       flex-direction: column; border-radius: 0;
@@ -290,6 +296,7 @@
     .detail-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       max-width: 100vw; max-height: 100dvh; border-radius: 0;
+      width: auto;
     }
     .detail-modal-inner {
       flex-direction: row; border-radius: 0;
