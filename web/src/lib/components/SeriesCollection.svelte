@@ -4,7 +4,10 @@
   // contenitori, griglie e animazioni di lista. Contenuti via snippet:
   // `card(item, idx)` per la griglia, `row(item, idx)` per la tabella.
   // Caricamento/ordinamento restano nel parent: qui solo presentazione.
-  import { flip } from 'svelte/animate';
+  // Niente animate:flip: su cataloghi da 40 card rilanciava dozzine di
+  // animazioni WAAPI a ogni aggiornamento di stato (badge, refetch, focus)
+  // e un transform incastrato sporgeva oltre il viewport con scrollbar
+  // orizzontale. Il cambio vista è un reflow istantaneo, affidabile.
 
   let {
     items = [],
@@ -35,10 +38,8 @@
        nelle nuove posizioni — niente refetch, niente salti. -->
   <div class="series-grid" class:grid-large={large}>
     {#each items as item, idx (keyOf(item, idx))}
-      <!-- Wrapper per animate:flip (lo standard Svelte per i relayout):
-           senza, lo switch griglia<->large riuserebbe i nodi e sembrerebbe
-           morto. Le card scivolano nelle nuove posizioni, niente refetch. -->
-      <div class="flip-wrap" animate:flip={{ duration: 300 }}>
+      <!-- Wrapper neutro: item di griglia, la card riempie. -->
+      <div class="flip-wrap">
         {@render card?.(item, idx)}
       </div>
     {/each}
