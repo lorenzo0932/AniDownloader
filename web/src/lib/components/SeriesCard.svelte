@@ -85,7 +85,7 @@
     pointer-events: none;
   }
   /* Solo i bottoni restano cliccabili sopra l'overlay: il resto passa al button di apertura. */
-  .card-hover-actions .btn-hover { pointer-events: auto; }
+  .card-hover-actions :global(.btn-hover) { pointer-events: auto; }
   /* Contenuti degli snippet (definiti nei consumer): selettori globali sotto
      scope della shell — un solo proprietario, niente duplicazioni. */
   .series-card :global(.btn-hover) {

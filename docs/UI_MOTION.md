@@ -42,6 +42,9 @@ Non aggiungere durate numeriche o copie dei keyframe nei componenti.
   Restituire il focus dopo un modale non deve simulare un hover da mouse.
 - Metadati asincroni: skeleton e contenuto condividono un riquadro stabile;
   `in:contentEnter` / `out:overlayExit` per la dissolvenza, senza reflow del modale.
+- Dettaglio mobile: altezza vincolata a `100dvh`, catena flex con `min-height:0`,
+  testo scorrevole e chiusura/azioni non comprimibili. Safe-area al posto di
+  padding inferiori fissi. Verificare anche il resize con il dialogo già aperto.
 - Progressi: interpolare solo il valore della barra, senza rilanciare ingressi.
 - Evitare `transition: all`, ritardi proporzionali illimitati, rimbalzi e
   animazioni continue diverse dagli indicatori di caricamento.

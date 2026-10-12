@@ -108,22 +108,24 @@
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     display: flex; align-items: center; justify-content: center;
     background: var(--overlay); z-index: 200;
+    height: 100dvh;
     border: none; padding: 0; cursor: default;
     animation: motion-fade var(--motion-enter) var(--motion-ease-out);
   }
   .detail-modal {
     animation: motion-panel var(--motion-layout) var(--motion-ease-out);
-    max-width: 90vw; max-height: 90vh;
+    max-width: 90vw; max-height: 90dvh;
+    display: flex; flex-direction: column; min-height: 0;
     /* Larghezza stabile: il contenuto lazy (tooltip Scopri) non deve far
        scattare il pannello da stretto a largo all'arrivo dei dati. */
     width: min(720px, 90vw);
   }
   .detail-modal:focus { outline: none; }
   .detail-modal-inner {
-    display: flex; gap: 0;
+    display: flex; gap: 0; min-height: 0; min-width: 0;
     background: var(--bg-secondary); border: 1px solid var(--border-color);
     border-radius: 16px; overflow: hidden;
-    max-height: 80vh;
+    max-height: 80dvh;
   }
   .detail-poster-col {
     flex-shrink: 0;
@@ -135,6 +137,7 @@
   .detail-poster-ambient { display: none; }
   .detail-poster {
     width: 260px; height: auto; aspect-ratio: 2/3; object-fit: contain;
+    max-height: 80dvh;
     display: block; background: var(--bg-tertiary);
     transform: translateZ(0);
     transition: transform var(--motion-enter) var(--motion-ease-out), filter var(--motion-enter) var(--motion-ease-out);
@@ -156,12 +159,13 @@
     animation: motion-scale var(--motion-layout) var(--motion-ease-out);
   }
   .detail-info-col {
-    flex: 1; min-width: 0; padding: 1.5rem;
+    flex: 1; min-width: 0; min-height: 0; padding: 1.5rem;
     display: flex; flex-direction: column;
     position: relative; max-width: 460px;
   }
   .detail-info-scroll {
-    flex: 1; overflow-y: auto;
+    flex: 1; min-height: 0; min-width: 0; overflow-y: auto;
+    overscroll-behavior: contain; overflow-wrap: anywhere;
     display: flex; flex-direction: column; gap: 0.75rem;
   }
   .detail-close {
@@ -172,7 +176,7 @@
   .detail-close:hover { color: var(--text-primary); }
   .detail-topbar {
     display: flex; align-items: center; justify-content: flex-end;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.5rem; flex-shrink: 0;
   }
   .modal-back {
     display: inline-flex; align-items: center; gap: 0.35rem;
@@ -213,7 +217,7 @@
   .detail-modal :global(.detail-stat-url) { font-size: 0.75rem; font-weight: 400; word-break: break-all; text-align: right; max-width: 55%; }
   .detail-modal :global(.detail-stat-url:hover) { color: var(--accent); }
   .detail-modal :global(.detail-stat-diff) { color: var(--text-muted); font-size: 0.75rem; margin-left: 0.4rem; }
-  .detail-modal :global(.detail-actions) { display: flex; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); flex-shrink: 0;
+  .detail-modal :global(.detail-actions) { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); flex-shrink: 0;
   }
   .detail-modal :global(.btn-primary) {
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
@@ -236,7 +240,7 @@
   .detail-modal :global(.detail-meta-list) { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
   .detail-modal :global(.detail-meta-list > div) { display: flex; gap: 0.5rem; }
   .detail-modal :global(.detail-meta-list dt) { color: var(--text-muted); min-width: 80px; }
-  .detail-modal :global(.detail-meta-list dd) { margin: 0; color: var(--text-primary); }
+  .detail-modal :global(.detail-meta-list dd) { margin: 0; min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); }
   .detail-modal :global(.detail-loading) { color: var(--text-muted); }
   .detail-modal :global(.detail-error) { color: var(--danger); font-size: 0.85rem; }
 
@@ -244,7 +248,7 @@
   @media (max-width: 768px) {
     .detail-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      max-width: 100vw; max-height: 100dvh; border-radius: 0;
+      max-width: 100vw; max-height: 100dvh; height: 100dvh; border-radius: 0;
       /* Fullscreen: con left+right fissati la larghezza torna automatica,
          altrimenti il width desktop lascerebbe bande laterali. */
       width: auto;
@@ -265,13 +269,13 @@
       object-fit: cover; filter: blur(32px) saturate(1.8);
     }
     .detail-poster {
-      position: relative; width: 100%; height: 38dvh;
+      position: relative; width: 100%; height: min(30dvh, 220px);
       aspect-ratio: auto; object-fit: contain;
       /* Trasparente: il suo fondo coprirebbe l'ambient dietro.
          (Su desktop resta --bg-tertiary: la colonna calza a pennello.) */
       background: transparent;
     }
-    .detail-info-col { max-width: none; padding: 1rem; }
+    .detail-info-col { max-width: none; padding: 1rem; padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)); }
     .detail-modal :global(.detail-desc) { max-height: none; }
     .detail-modal :global(.detail-stat-path) { max-width: none; }
     .detail-modal :global(.detail-stat-url) { max-width: none; }
@@ -280,22 +284,19 @@
     .detail-topbar { justify-content: flex-start; }
     /* Su mobile resta solo '<- Serie': la X vive su desktop. */
     .detail-close { display: none; }
-    /* Spazio sotto le azioni solo su mobile (era il bianco su desktop). */
-    .detail-modal :global(.detail-actions) { padding-bottom: 96px; }
   }
 
   @media (orientation: landscape) and (max-height: 520px) {
     .detail-modal {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      max-width: 100vw; max-height: 100dvh; border-radius: 0;
+      max-width: 100vw; max-height: 100dvh; height: 100dvh; border-radius: 0;
       width: auto;
     }
     .detail-modal-inner {
       flex-direction: row; border-radius: 0;
       max-height: 100dvh; height: 100dvh;
     }
-    .detail-poster { width: 160px; max-height: 100dvh; aspect-ratio: 2/3; object-fit: contain; }
-    .detail-info-col { max-width: none; padding: 0.75rem; }
-    .detail-modal :global(.detail-actions) { padding-bottom: 48px; }
+    .detail-poster { width: 160px; height: auto; max-height: 100dvh; aspect-ratio: 2/3; object-fit: contain; }
+    .detail-info-col { max-width: none; padding: 0.75rem; padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px)); }
   }
 </style>

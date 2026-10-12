@@ -602,7 +602,7 @@
   .discover-more { display: flex; justify-content: center; padding: 0.5rem 0 1rem; }
   /* Skeleton e trama+metadata occupano lo stesso spazio, anche con risposta
      lenta o molto lunga. Il contenuto scorre, il pannello non si ridimensiona. */
-  .discover-detail-content { position: relative; height: clamp(240px, 40dvh, 360px); flex-shrink: 0; }
+  .discover-detail-content { position: relative; height: min(220px, 30dvh); flex-shrink: 0; }
   .detail-skeleton, .discover-detail-ready { position: absolute; inset: 0; overflow-y: auto; }
   .discover-detail-ready { display: flex; flex-direction: column; gap: 0.75rem; }
   .discover-detail-content .discover-detail-ready .detail-desc { max-height: none; overflow: visible; }

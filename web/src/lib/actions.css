@@ -18,10 +18,10 @@
 [data-theme="light"] :is(.btn-row, .detail-actions button).action-delete {
   --action-color: #b91c1c; --action-bg: #fee2e2; --action-ink: #fff;
 }
-.detail-actions button:is(.action-info, .action-add, .action-edit, .action-delete) {
+:root .detail-actions button:is(.action-info, .action-add, .action-edit, .action-delete) {
   background: var(--action-bg); color: var(--action-color);
   border: 1px solid var(--action-color);
 }
-.detail-actions button:is(.action-info, .action-add, .action-edit, .action-delete):enabled:is(:hover, :focus-visible) {
+:root .detail-actions button:is(.action-info, .action-add, .action-edit, .action-delete):enabled:is(:hover, :focus-visible) {
   background: var(--action-color); color: var(--action-ink);
 }
