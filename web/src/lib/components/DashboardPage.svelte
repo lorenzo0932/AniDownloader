@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { fly } from 'svelte/transition';
+  import { pageEnter } from '../motion.js';
   import { api, BASE, posterUrl, posterSrcSet } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
   import ConfirmModal from './ConfirmModal.svelte';
@@ -291,7 +291,7 @@
 
 </script>
 
-<div transition:fly={{ y: 8, duration: 200 }}>
+<div in:pageEnter|global>
 <div class="header-row">
   <h2>Gestione Serie</h2>
 </div>
@@ -470,7 +470,6 @@
     background: none; border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); cursor: pointer; padding: 0.5rem;
     display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .btn-icon-only:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 
@@ -509,9 +508,8 @@
   .center { display: flex; justify-content: center; padding: 2rem; }
   .spinner-sm {
     width: 24px; height: 24px; border: 2px solid var(--border-color); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin 0.8s linear infinite;
+    border-radius: 50%; animation: motion-spin var(--motion-spinner) linear infinite;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
 
   .fab {
     position: fixed; right: 1.5rem;
@@ -520,11 +518,9 @@
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; z-index: 150;
     box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-    transition: transform 0.2s ease, opacity 0.2s ease, background 0.2s ease;
     bottom: 112px;
   }
-  .fab:hover { background: var(--accent-hover); transform: scale(1.08); }
-  .fab:active { transform: scale(0.95); }
+  .fab:hover { background: var(--accent-hover); }
 
   @media (max-width: 768px) {
     .header-row { flex-wrap: wrap; gap: 0.5rem; }

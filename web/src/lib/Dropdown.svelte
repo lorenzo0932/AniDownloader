@@ -71,7 +71,7 @@ function handleKeydown(e) {
   .dropdown-chevron {
     width: 14px;
     height: 14px;
-    transition: transform 0.15s;
+    transition: transform var(--motion-fast) var(--motion-ease-out);
   }
   .dropdown-chevron.open {
     transform: rotate(180deg);
@@ -88,6 +88,7 @@ function handleKeydown(e) {
     z-index: 100;
     min-width: 100%;
     box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    animation: motion-rise var(--motion-enter) var(--motion-ease-out);
   }
   .dropdown-item {
     display: block;

@@ -82,4 +82,12 @@ describe('ConfigPage controlli automatici', () => {
     await waitFor(() => expect(screen.getByLabelText('Ogni quanti minuti').value).toBe('15'));
     expect(screen.getByLabelText('Controllo periodico nuovi episodi').checked).toBe(true);
   });
+
+  it('errore al primo caricamento: mostra errore senza renderizzare un form incompleto', async () => {
+    configGetMock.mockRejectedValue(new Error('Configurazione non disponibile'));
+    render(ConfigPage);
+    expect(await screen.findByText('Configurazione non disponibile')).toBeTruthy();
+    expect(screen.queryByText('Salva Modifiche')).toBeNull();
+    expect(configSetMock).not.toHaveBeenCalled();
+  });
 });

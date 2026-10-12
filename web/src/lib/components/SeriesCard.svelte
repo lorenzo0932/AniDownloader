@@ -43,9 +43,9 @@
   .series-card {
     background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden;
     display: flex; flex-direction: column; min-width: 0;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    animation: cardIn 0.35s ease-out both;
-    animation-delay: calc(var(--i, 0) * 40ms);
+    transition: box-shadow var(--motion-enter) var(--motion-ease-out);
+    animation: motion-rise var(--motion-enter) var(--motion-ease-out) backwards;
+    animation-delay: min(calc(var(--i, 0) * var(--motion-stagger)), var(--motion-stagger-max));
   }
   @media (hover: hover) {
     .series-card:hover {
@@ -81,7 +81,7 @@
     display: flex; align-items: center; justify-content: center; gap: 0.6rem;
     background: rgba(0,0,0,0.45);
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--motion-fast) var(--motion-ease-out);
     pointer-events: none;
   }
   /* Solo i bottoni restano cliccabili sopra l'overlay: il resto passa al button di apertura. */
@@ -93,7 +93,6 @@
     border: 1px solid rgba(255,255,255,0.35);
     background: rgba(20,20,25,0.75); color: #fff; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s ease, border-color 0.15s ease;
   }
   .series-card :global(.btn-hover:hover) { background: var(--accent); border-color: var(--accent); }
   .series-card :global(.btn-hover.danger:hover) { background: var(--danger); border-color: var(--danger); }
@@ -121,11 +120,6 @@
   .series-card :global(.card-managed) {
     display: inline-block; font-size: 0.65rem; font-weight: 700; color: #fff;
     background: var(--success); padding: 0.1rem 0.4rem; border-radius: 4px;
-  }
-
-  @keyframes cardIn {
-    from { opacity: 0; transform: translateY(12px); }
-    to { opacity: 1; transform: translateY(0); }
   }
 
   @media (max-width: 768px) {

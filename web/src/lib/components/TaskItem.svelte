@@ -53,8 +53,8 @@
     display: flex; align-items: center; gap: 0.75rem;
     background: var(--bg-secondary); border-radius: 8px; padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color);
-    animation: rowIn 0.3s ease-out both;
-    animation-delay: calc(var(--i, 0) * 20ms);
+    animation: motion-rise var(--motion-enter) var(--motion-ease-out) backwards;
+    animation-delay: min(calc(var(--i, 0) * var(--motion-stagger)), var(--motion-stagger-max));
   }
   .series-row.active { border-color: var(--accent-bg); }
   .series-row.analysing { opacity: 0.65; }
@@ -75,14 +75,10 @@
   .pbar-wrap { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; min-width: 140px; }
   .pbar { flex: 1; height: 8px; background: var(--border-color); border-radius: 4px; overflow: hidden; }
   .pbar-fill {
-    height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s ease;
+    height: 100%; background: var(--accent); border-radius: 4px; transition: width var(--motion-enter) var(--motion-ease-out);
   }
   .pbar-text { font-size: 0.75rem; color: var(--accent-light); width: 2.5rem; text-align: right; }
 
-  @keyframes rowIn {
-    from { opacity: 0; transform: translateX(-8px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
 
   @media (max-width: 768px) {
     .series-row { padding: 0.4rem 0.5rem; gap: 0.5rem; flex-wrap: nowrap; }

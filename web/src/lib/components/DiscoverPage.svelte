@@ -1,4 +1,5 @@
 <script>
+  import { pageEnter } from '../motion.js';
   // Pagina Scopri: ricerca e filtri sul catalogo AnimeWorld (come la pagina
   // /filter del sito), collezione con gli stessi componenti di Gestione
   // (SeriesCollection/SeriesCard/SeriesRow/DetailModal), dettaglio lazy via
@@ -332,7 +333,7 @@
   });
 </script>
 
-<div class="discover-page">
+<div class="discover-page" in:pageEnter|global>
   <h2>Scopri</h2>
 
   <form class="discover-filters" onsubmit={(e) => { e.preventDefault(); cerca(); }}>
@@ -605,12 +606,8 @@
     display: block; border-radius: 6px;
     background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);
     background-size: 200% 100%;
-    animation: skShimmer 1.2s linear infinite;
+    animation: motion-shimmer var(--motion-shimmer) linear infinite;
   }
   .detail-skeleton .sk-plot { height: 0.9rem; }
   .detail-skeleton .sk-meta { height: 0.85rem; }
-  @keyframes skShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-  @media (prefers-reduced-motion: reduce) {
-    .detail-skeleton .sk { animation: none; }
-  }
 </style>

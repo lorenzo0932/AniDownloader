@@ -35,14 +35,12 @@
   .btn-primary {
     padding: 0.6rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
-    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-danger {
     padding: 0.6rem 1.25rem; background: var(--danger-bg); border: 1px solid var(--danger-border); border-radius: 8px;
     color: var(--danger); font-size: 0.85rem; font-weight: 600; cursor: pointer;
-    transition: background 0.15s ease;
   }
   .btn-danger:hover { background: var(--danger-bg-hover); }
   .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -56,10 +54,9 @@
   .loading-spinner {
     width: 16px; height: 16px; border: 2px solid var(--border-color);
     border-top: 2px solid var(--accent); border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+    animation: motion-spin var(--motion-spinner) linear infinite;
     flex-shrink: 0;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
 
   .global-bar-wrap { display: flex; align-items: center; gap: 0.75rem; }
   .global-bar {
@@ -67,7 +64,7 @@
   }
   .global-bar-fill {
     height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-light));
-    border-radius: 5px; transition: width 0.3s ease;
+    border-radius: 5px; transition: width var(--motion-enter) var(--motion-ease-out);
   }
   .global-bar-text { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
 

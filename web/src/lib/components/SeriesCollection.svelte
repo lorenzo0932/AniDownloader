@@ -6,10 +6,7 @@
   // Caricamento/ordinamento restano nel parent: qui solo presentazione.
   // FLIP anima il relayout senza ricreare le card.
   import { flip } from 'svelte/animate';
-
-  function relayoutDuration() {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 260;
-  }
+  import { relayoutDuration, relayoutEasing } from '../motion.js';
 
   let {
     items = [],
@@ -46,7 +43,7 @@
   <div class="series-grid" class:grid-large={large}>
     {#each layoutItems as item, idx (keyOf(item, idx))}
       <!-- FLIP sul wrapper: non interferisce con le animazioni della card. -->
-      <div class="flip-wrap" animate:flip={{ duration: relayoutDuration }}>
+      <div class="flip-wrap" animate:flip={{ duration: relayoutDuration, easing: relayoutEasing }}>
         {@render card?.(item, idx)}
       </div>
     {/each}

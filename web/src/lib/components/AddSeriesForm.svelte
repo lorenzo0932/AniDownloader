@@ -2,7 +2,7 @@
   // Modale aggiunta/modifica serie. Lo stato del form e le azioni di salvataggio
   // restano nel parent (DashboardPage): qui solo presentazione + fetch-name.
   import { api, posterUrl } from '../api.js';
-  import { fade, fly } from 'svelte/transition';
+  import { overlayExit, panelExit } from '../motion.js';
 
   let { show = false, form, editing = -1, series = [], backToName = '', busy = false, onclose, onsave, ondelete, onpick, onerror } = $props();
   let posterError = $state(false);
@@ -19,8 +19,8 @@
 </script>
 
 {#if show}
-  <div class="modal-overlay" out:fade={{ duration: 150 }} onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="modal-panel form-modal" out:fly={{ y: 16, duration: 200 }} onclick={(e) => e.stopPropagation()} role="presentation">
+  <div class="modal-overlay" out:overlayExit onclick={onclose} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="modal-panel form-modal" out:panelExit onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="form-modal-body">
         <div class="form-topbar">
           <button type="button" class="modal-back" onclick={onclose} title={backToName ? `Torna a ${backToName}` : 'Torna alle serie'} aria-label={backToName ? `Torna a ${backToName}` : 'Torna alle serie'}>
@@ -137,10 +137,10 @@
     display: flex; align-items: center; justify-content: center;
     background: var(--overlay); z-index: 200;
     border: none; padding: 0; cursor: default;
-    animation: fadeIn 0.2s ease;
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
   }
   .form-modal {
-    animation: panelIn 0.25s ease-out;
+    animation: motion-panel var(--motion-layout) var(--motion-ease-out);
     background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 16px;
     padding: 1.5rem; min-width: 520px; max-width: 90vw;
     max-height: 90vh; overflow-y: auto;
@@ -152,7 +152,6 @@
     background: none; border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;
     padding: 0.35rem 0.6rem; cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .modal-back:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent); }
   /* Desktop: bastano Annulla/Salva (il ritorno all'origine avviene
@@ -216,26 +215,20 @@
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
-    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-cancel {
     padding: 0.55rem 1.1rem; background: none; border: 1px solid var(--btn-cancel-border); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-danger {
     padding: 0.55rem 1.1rem; background: var(--danger); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
-    transition: opacity 0.15s ease;
   }
   .btn-danger:hover { opacity: 0.85; }
 
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes panelIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 
   @media (max-width: 768px) {
     .form-modal {

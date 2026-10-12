@@ -34,9 +34,9 @@
     display: flex; align-items: center; gap: 0.75rem;
     background: var(--bg-secondary); border: 1px solid var(--border-color);
     border-radius: 10px; padding: 0.4rem 0.6rem;
-    transition: border-color 0.15s ease;
-    animation: rowIn 0.3s ease-out both;
-    animation-delay: calc(var(--i, 0) * 20ms);
+    transition: border-color var(--motion-fast) var(--motion-ease-out);
+    animation: motion-rise var(--motion-enter) var(--motion-ease-out) backwards;
+    animation-delay: min(calc(var(--i, 0) * var(--motion-stagger)), var(--motion-stagger-max));
   }
   @media (hover: hover) {
     .series-row:hover { border-color: var(--accent); }
@@ -102,8 +102,4 @@
   .series-row :global(.btn-row:disabled) { opacity: 0.45; cursor: not-allowed; }
   .series-row :global(.btn-row:disabled:hover) { color: var(--text-muted); background: none; }
 
-  @keyframes rowIn {
-    from { opacity: 0; transform: translateX(-8px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
 </style>

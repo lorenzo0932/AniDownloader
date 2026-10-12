@@ -23,9 +23,9 @@
     display: flex; align-items: center; gap: 0.75rem;
     background: var(--bg-secondary); border-radius: 8px; padding: 0.5rem 0.75rem;
     border: 1px solid var(--border-color); cursor: pointer;
-    transition: border-color 0.15s ease;
-    animation: rowIn 0.3s ease-out both;
-    animation-delay: calc(var(--i, 0) * 20ms);
+    transition: border-color var(--motion-fast) var(--motion-ease-out);
+    animation: motion-rise var(--motion-enter) var(--motion-ease-out) backwards;
+    animation-delay: min(calc(var(--i, 0) * var(--motion-stagger)), var(--motion-stagger-max));
   }
   @media (hover: hover) {
     .home-row:hover { border-color: var(--accent); }
@@ -42,10 +42,6 @@
   }
   .home-service { font-size: 0.68rem; color: var(--accent); }
 
-  @keyframes rowIn {
-    from { opacity: 0; transform: translateX(-8px); }
-    to { opacity: 1; transform: translateX(0); }
-  }
 
   @media (max-width: 768px) {
     .home-row { padding: 0.4rem 0.5rem; gap: 0.5rem; }

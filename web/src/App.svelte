@@ -232,7 +232,7 @@
     left: 0;
     bottom: 0;
     z-index: 50;
-    transition: width 0.2s ease;
+    transition: width var(--motion-enter) var(--motion-ease-out);
   }
   .sidebar-collapsed { width: 64px; }
   .sidebar-collapsed .sidebar-header { gap: 0; justify-content: center; }
@@ -271,7 +271,6 @@
     cursor: pointer;
     border-radius: 8px;
     font-size: 0.9rem;
-    transition: all 0.15s;
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -302,7 +301,7 @@
        resta il min-content della pagina e una griglia auto-fill larga
        allarga tutto il contenuto oltre il viewport (visto in Scopri). */
     min-width: 0;
-    transition: margin-left 0.2s ease, width 0.2s ease;
+    transition: margin-left var(--motion-enter) var(--motion-ease-out), width var(--motion-enter) var(--motion-ease-out);
   }
   .sidebar-collapsed ~ .content {
     margin-left: 64px;

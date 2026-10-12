@@ -9,7 +9,7 @@
   // la shell non conosce i tre contesti. Accessibilità: dialog con titolo
   // associato, focus iniziale nel pannello, contenimento Tab, ritorno al
   // chiamante, Escape stratificato (lightbox prima, modale poi).
-  import { fade, fly, scale } from 'svelte/transition';
+  import { overlayExit, panelExit, lightboxExit } from '../motion.js';
 
   let {
     title = '',
@@ -64,11 +64,11 @@
 
 <!-- Ingresso via CSS (sempre visibile) + uscita via out: (simmetrica).
      transition: copriva entrambe ma l'ingresso non risultava percepibile. -->
-<div class="modal-overlay" out:fade={{ duration: 150 }} onclick={onclose} onkeydown={onOverlayKey} role="dialog" aria-modal="true" aria-labelledby={titleId} tabindex="-1">
+<div class="modal-overlay" out:overlayExit onclick={onclose} onkeydown={onOverlayKey} role="dialog" aria-modal="true" aria-labelledby={titleId} tabindex="-1">
   <!-- Pannello con rise (fly y+fade): lo scale 0.95 era impercettibile,
        specie sul modale fullscreen mobile dove solo il testo sembrava
        animarsi. Stesso vocabolario delle pagine (fly y:8). -->
-  <div class="modal-panel detail-modal" out:fly={{ y: 16, duration: 200 }} onclick={(e) => e.stopPropagation()} role="presentation" bind:this={panel} tabindex="-1">
+  <div class="modal-panel detail-modal" out:panelExit onclick={(e) => e.stopPropagation()} role="presentation" bind:this={panel} tabindex="-1">
     <div class="detail-modal-inner">
       <div class="detail-poster-col">
         <button type="button" class="detail-poster-btn" onclick={() => showLightbox = true} title="Ingrandisci locandina" aria-label="Ingrandisci locandina">
@@ -96,8 +96,8 @@
       </div>
     </div>
     {#if showLightbox}
-      <div class="lightbox" out:fade={{ duration: 150 }} onclick={() => showLightbox = false} role="dialog" aria-modal="true" aria-label="Locandina a tutto schermo" title="Chiudi">
-        <img class="lightbox-img" out:scale={{ duration: 200, start: 0.95 }} src={fullPoster || poster} alt="" />
+      <div class="lightbox" out:overlayExit onclick={() => showLightbox = false} role="dialog" aria-modal="true" aria-label="Locandina a tutto schermo" title="Chiudi">
+        <img class="lightbox-img" out:lightboxExit src={fullPoster || poster} alt="" />
       </div>
     {/if}
   </div>
@@ -109,10 +109,10 @@
     display: flex; align-items: center; justify-content: center;
     background: var(--overlay); z-index: 200;
     border: none; padding: 0; cursor: default;
-    animation: fadeIn 0.2s ease;
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
   }
   .detail-modal {
-    animation: panelIn 0.25s ease-out;
+    animation: motion-panel var(--motion-layout) var(--motion-ease-out);
     max-width: 90vw; max-height: 90vh;
     /* Larghezza stabile: il contenuto lazy (tooltip Scopri) non deve far
        scattare il pannello da stretto a largo all'arrivo dei dati. */
@@ -137,7 +137,7 @@
     width: 260px; height: auto; aspect-ratio: 2/3; object-fit: contain;
     display: block; background: var(--bg-tertiary);
     transform: translateZ(0);
-    transition: transform 0.2s ease, filter 0.2s ease;
+    transition: transform var(--motion-enter) var(--motion-ease-out), filter var(--motion-enter) var(--motion-ease-out);
   }
   @media (hover: hover) {
     .detail-poster-btn:hover .detail-poster { transform: scale(1.02); filter: brightness(1.06); }
@@ -149,11 +149,11 @@
     position: fixed; inset: 0; z-index: 300;
     display: flex; align-items: center; justify-content: center;
     background: rgba(0, 0, 0, 0.9); cursor: zoom-out;
-    animation: fadeIn 0.2s ease;
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
   }
   .lightbox-img {
     max-width: 100vw; max-height: 100dvh; object-fit: contain;
-    animation: scaleIn 0.25s ease-out;
+    animation: motion-scale var(--motion-layout) var(--motion-ease-out);
   }
   .detail-info-col {
     flex: 1; min-width: 0; padding: 1.5rem;
@@ -168,7 +168,6 @@
     background: none; border: none; color: var(--text-muted);
     font-size: 1.5rem; cursor: pointer; line-height: 1;
     padding: 0.25rem;
-    transition: color 0.15s ease;
   }
   .detail-close:hover { color: var(--text-primary); }
   .detail-topbar {
@@ -180,7 +179,6 @@
     background: none; border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.8rem; font-weight: 600;
     padding: 0.35rem 0.6rem; cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .modal-back:hover { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--accent); }
   /* Desktop: solo la X come prima; il back vive su mobile. */
@@ -204,7 +202,7 @@
   .detail-modal :global(.detail-desc) {
     font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6;
     max-height: 200px; overflow-y: auto;
-    animation: slideUp 0.3s ease-out;
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
   }
   .detail-modal :global(.detail-desc-empty) { color: var(--text-muted); font-style: italic; }
   .detail-modal :global(.detail-stats) { display: flex; flex-direction: column; gap: 0.5rem; }
@@ -221,7 +219,6 @@
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
-    transition: background 0.15s ease;
   }
   .detail-modal :global(.btn-primary:hover) { background: var(--accent-hover); }
   .detail-modal :global(.btn-primary:disabled) { opacity: 0.55; cursor: not-allowed; }
@@ -229,7 +226,6 @@
     padding: 0.55rem 1.1rem; background: var(--danger); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
     display: flex; align-items: center; gap: 0.4rem;
-    transition: opacity 0.15s ease;
   }
   .detail-modal :global(.btn-danger:hover) { opacity: 0.85; }
   .detail-modal :global(.btn-ghost) {
@@ -244,10 +240,6 @@
   .detail-modal :global(.detail-loading) { color: var(--text-muted); }
   .detail-modal :global(.detail-error) { color: var(--danger); font-size: 0.85rem; }
 
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-  @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes panelIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
   @media (max-width: 768px) {
     .detail-modal {
