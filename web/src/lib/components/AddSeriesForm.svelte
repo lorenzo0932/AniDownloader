@@ -4,7 +4,7 @@
   import { api, posterUrl } from '../api.js';
   import { fade, fly } from 'svelte/transition';
 
-  let { show = false, form, editing = -1, series = [], backToName = '', onclose, onsave, ondelete, onpick, onerror } = $props();
+  let { show = false, form, editing = -1, series = [], backToName = '', busy = false, onclose, onsave, ondelete, onpick, onerror } = $props();
   let posterError = $state(false);
 
   async function fetchName() {
@@ -114,7 +114,7 @@
             <button class="btn-danger" onclick={ondelete}>Elimina Serie</button>
             <div class="footer-right">
               <button class="btn-cancel" onclick={onclose}>Annulla</button>
-              <button class="btn-primary" onclick={onsave}>Salva Modifiche</button>
+              <button class="btn-primary" onclick={onsave} disabled={busy}>{busy ? 'Salvataggio...' : 'Salva Modifiche'}</button>
             </div>
           </div>
         {:else}
@@ -122,7 +122,7 @@
             <div></div>
             <div class="footer-right">
               <button class="btn-cancel" onclick={onclose}>Annulla</button>
-              <button class="btn-primary" onclick={onsave}>Salva Modifiche</button>
+              <button class="btn-primary" onclick={onsave} disabled={busy}>{busy ? 'Salvataggio...' : 'Salva Modifiche'}</button>
             </div>
           </div>
         {/if}

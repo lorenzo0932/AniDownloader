@@ -442,14 +442,58 @@
     {@const hs = seriesList.find(item => item._file_index === homeDetailIdx)}
     {#if hs}
       <DetailModal
-        series={hs}
-        description={homeDescriptions[homeDetailIdx] ?? ''}
+        title={hs.name || hs.title}
         poster={posterUrl(hs.path)}
         srcset={posterSrcSet(hs.path)}
         fullPoster={posterUrl(hs.path, 1080)}
-        actions={false}
         onclose={() => homeDetailIdx = -1}
-      />
+      >
+        {#snippet meta()}
+          {#if hs.service}
+            <span class="card-service">{hs.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
+          {/if}
+          {#if hs.continue}
+            <span class="detail-badge">Continua numerazione</span>
+          {/if}
+          {#if hs.is_high_priority}
+            <span class="detail-badge detail-badge-warn">Alta Priorit&agrave;</span>
+          {/if}
+        {/snippet}
+        {#snippet body()}
+          {#if homeDescriptions[homeDetailIdx] ?? ''}
+            <div class="detail-desc">
+              <p>{homeDescriptions[homeDetailIdx]}</p>
+            </div>
+          {:else}
+            <div class="detail-desc detail-desc-empty">Nessuna descrizione disponibile.</div>
+          {/if}
+        {/snippet}
+        {#snippet details()}
+          <div class="detail-stats">
+            <div class="detail-stat">
+              <span class="detail-stat-label">Episodi in locale</span>
+              <span class="detail-stat-value">
+                {hs.local_episode_count ?? '?'}
+                {#if (hs.passed_episodes ?? 0) > 0 && hs.local_episode_count !== hs.passed_episodes}
+                  <span class="detail-stat-diff">(config: {hs.passed_episodes})</span>
+                {/if}
+              </span>
+            </div>
+            <div class="detail-stat">
+              <span class="detail-stat-label">Percorso</span>
+              <span class="detail-stat-value detail-stat-path" title={hs.path}>{hs.path || '—'}</span>
+            </div>
+            <div class="detail-stat">
+              <span class="detail-stat-label">URL</span>
+              {#if hs.series_page_url || hs.url}
+                <a class="detail-stat-value detail-stat-url" href={hs.series_page_url || hs.url} target="_blank" rel="noopener noreferrer" title={hs.series_page_url || hs.url}>{hs.series_page_url || hs.url}</a>
+              {:else}
+                <span class="detail-stat-value detail-stat-url">—</span>
+              {/if}
+            </div>
+          </div>
+        {/snippet}
+      </DetailModal>
     {/if}
   {/if}
 

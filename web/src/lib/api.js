@@ -25,7 +25,10 @@ async function request(method, path, body) {
     if (!res.ok) {
       // count: presente nel 409 di DELETE /api/browse (cartella non vuota),
       // usato dal file picker per la seconda conferma.
-      throw new ApiError(data.error || data.code || res.statusText, res.status, data.count);
+      // error_code/identity: presenti nel 409 di POST/PUT /api/series (serie
+      // già in gestione). Restano undefined per gli altri errori (compat).
+      throw new ApiError(data.error || data.code || res.statusText, res.status, data.count,
+        data.error_code, data.identity);
     }
     return data;
   } catch (e) {
@@ -35,11 +38,19 @@ async function request(method, path, body) {
 }
 
 class ApiError extends Error {
-  constructor(msg, status, count) {
+  constructor(msg, status, count, error_code, identity) {
     super(msg);
     this.status = status;
     this.count = count;
+    this.error_code = error_code;
+    this.identity = identity;
   }
+}
+
+// Vero solo per il duplicato serie (409 + error_code dedicato): gli altri
+// 409 (es. browse cartella non vuota) non devono mai essere letti come serie.
+export function isSeriesDuplicateError(e) {
+  return !!e && e.status === 409 && e.error_code === 'series_already_managed';
 }
 
 export const api = {

@@ -386,15 +386,70 @@
   {@const s = series.find(item => item._file_index === detailIndex)}
   {#if s}
     <DetailModal
-      series={s}
-      description={descriptions[detailIndex]}
+      title={s.name || s.title}
       poster={posterSrc(s)}
       srcset={posterSet(s)}
       fullPoster={posterUrl(s.path, 1080)}
       onclose={closeDetail}
-      onedit={() => { const idx = detailIndex; closeDetail(); openEdit(idx, 'detail'); }}
-      onremove={() => { const idx = detailIndex; closeDetail(); promptRemove(idx); }}
-    />
+    >
+      {#snippet meta()}
+        {#if s.service}
+          <span class="card-service">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
+        {/if}
+        {#if s.continue}
+          <span class="detail-badge">Continua numerazione</span>
+        {/if}
+        {#if s.is_high_priority}
+          <span class="detail-badge detail-badge-warn">Alta Priorit&agrave;</span>
+        {/if}
+      {/snippet}
+      {#snippet body()}
+        {#if descriptions[detailIndex]}
+          <div class="detail-desc">
+            <p>{descriptions[detailIndex]}</p>
+          </div>
+        {:else}
+          <div class="detail-desc detail-desc-empty">Nessuna descrizione disponibile.</div>
+        {/if}
+      {/snippet}
+      {#snippet details()}
+        <div class="detail-stats">
+          <div class="detail-stat">
+            <span class="detail-stat-label">Episodi in locale</span>
+            <span class="detail-stat-value">
+              {s.local_episode_count ?? '?'}
+              {#if (s.passed_episodes ?? 0) > 0 && s.local_episode_count !== s.passed_episodes}
+                <span class="detail-stat-diff">(config: {s.passed_episodes})</span>
+              {/if}
+            </span>
+          </div>
+          <div class="detail-stat">
+            <span class="detail-stat-label">Percorso</span>
+            <span class="detail-stat-value detail-stat-path" title={s.path}>{s.path || '—'}</span>
+          </div>
+          <div class="detail-stat">
+            <span class="detail-stat-label">URL</span>
+            {#if s.series_page_url || s.url}
+              <a class="detail-stat-value detail-stat-url" href={s.series_page_url || s.url} target="_blank" rel="noopener noreferrer" title={s.series_page_url || s.url}>{s.series_page_url || s.url}</a>
+            {:else}
+              <span class="detail-stat-value detail-stat-url">—</span>
+            {/if}
+          </div>
+        </div>
+      {/snippet}
+      {#snippet actions()}
+        <div class="detail-actions">
+          <button class="btn-primary" onclick={() => { const idx = detailIndex; closeDetail(); openEdit(idx, 'detail'); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Modifica
+          </button>
+          <button class="btn-danger" onclick={() => { const idx = detailIndex; closeDetail(); promptRemove(idx); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            Elimina
+          </button>
+        </div>
+      {/snippet}
+    </DetailModal>
   {:else}
     <div class="error">Serie con ID {detailIndex} non trovata. Potrebbe essere stata eliminata.</div>
   {/if}

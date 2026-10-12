@@ -1,14 +1,22 @@
 <script>
   // Pagina Scopri: ricerca e filtri sul catalogo AnimeWorld (come la pagina
-  // /filter del sito), griglia card con poster diretto, dettaglio lazy via
+  // /filter del sito), collezione con gli stessi componenti di Gestione
+  // (SeriesCollection/SeriesCard/SeriesRow/DetailModal), dettaglio lazy via
   // tooltip, Aggiungi con form precompilato. Paginazione a chunk da ~40
   // (una pagina del sito) con "carica altri": niente scarichi massivi.
+  // Badge "In gestione" e guard anti-duplicati da identity opache del server.
   import { onMount } from 'svelte';
-  import { api } from '../api.js';
+  import { api, isSeriesDuplicateError } from '../api.js';
+  import { creaStatoGestite } from '../managedSeriesState.js';
   import AddSeriesForm from './AddSeriesForm.svelte';
   import DirectoryBrowser from './DirectoryBrowser.svelte';
+  import SeriesCollection from './SeriesCollection.svelte';
+  import SeriesCard from './SeriesCard.svelte';
+  import SeriesRow from './SeriesRow.svelte';
+  import DetailModal from './DetailModal.svelte';
 
   const ANIMEWORLD_BASE = 'https://www.animeworld.ac';
+  const VISTA_KEY = 'anidl.discover.view';
 
   const GENERI = [
     [1, 'Azione'], [2, 'Avventura'], [3, 'Arti Marziali'], [4, 'Commedia'],
@@ -52,14 +60,58 @@
   let error = $state('');
   let searched = $state(false);
 
+  // Vista griglia/grande/tabella come Gestione, preferenza separata.
+  let viewMode = $state('grid');
+  try {
+    const v = localStorage.getItem(VISTA_KEY);
+    if (v === 'grid' || v === 'large' || v === 'table') viewMode = v;
+  } catch {}
+  function setViewMode(v) {
+    viewMode = v;
+    try { localStorage.setItem(VISTA_KEY, v); } catch {}
+  }
+  let large = $derived(viewMode === 'large');
+
   let detail = $state(null);
   let detailData = $state(null);
   let detailLoading = $state(false);
+  let detailError = $state('');
 
   let showForm = $state(false);
   let showBrowser = $state(false);
+  let saving = $state(false);
   let form = $state({ service: 'animeW_scraper', name: '', path: '', url: '', continue: false, highPriority: false, passedEpisodes: 0 });
+  let formSourceIdentity = $state('');
   let notice = $state('');
+
+  // Serie in gestione: unica fonte per badge e guard (identity dal server).
+  let gestite = $state(creaStatoGestite());
+  let gestiteRefresh = $state(false);
+
+  // Generazioni anti-gara: risposte fuori ordine non sovrascrivono mai
+  // risultati più recenti (filtri cambiati, tooltip A->B, refetch gestite).
+  let catalogSeq = 0;
+  let detailSeq = 0;
+  let gestiteSeq = 0;
+
+  function chiaveItem(it) {
+    return it.identity || it.pageUrl;
+  }
+
+  function inGestione(item) {
+    return !!item && gestite.gestita(item.identity);
+  }
+
+  function aggiuntaAbilitata(item) {
+    return !!item && gestite.aggiuntaConsentita(item.identity);
+  }
+
+  function titoloAggiungi(item) {
+    if (!item) return 'Aggiungi';
+    if (gestite.stato !== 'ready') return 'Elenco serie in caricamento...';
+    if (inGestione(item)) return 'Già in gestione';
+    return 'Aggiungi';
+  }
 
   // Lock dello scroll di sfondo finche un modale e aperto
   // (dettaglio / form / browser): ripristino in cleanup.
@@ -88,32 +140,51 @@
     return opts;
   }
 
+  function accodaUnici(correnti, nuovi) {
+    const visti = new Set(correnti.map(chiaveItem));
+    const out = [...correnti];
+    for (const it of nuovi) {
+      const k = chiaveItem(it);
+      if (!visti.has(k)) {
+        visti.add(k);
+        out.push(it);
+      }
+    }
+    return out;
+  }
+
   async function cerca() {
+    const seq = ++catalogSeq;
     loading = true;
     error = '';
     notice = '';
     try {
       const data = await api.discover.page(buildOpts(1));
+      if (seq !== catalogSeq) return; // filtri cambiati nel frattempo
       items = data.items || [];
       page = data.page || 1;
       maxPage = data.maxPage || 1;
       searched = true;
     } catch (e) {
+      if (seq !== catalogSeq) return;
       error = 'Ricerca fallita: ' + e.message;
     } finally {
-      loading = false;
+      if (seq === catalogSeq) loading = false;
     }
   }
 
   async function caricaAltri() {
     if (loadingMore || page >= maxPage) return;
+    const seq = catalogSeq;
     loadingMore = true;
     try {
       const data = await api.discover.page(buildOpts(page + 1));
-      items = [...items, ...(data.items || [])];
+      if (seq !== catalogSeq) return; // filtri cambiati: scarta la pagina vecchia
+      items = accodaUnici(items, data.items || []);
       page = data.page || page + 1;
       maxPage = data.maxPage || maxPage;
     } catch (e) {
+      if (seq !== catalogSeq) return;
       error = 'Caricamento fallito: ' + e.message;
     } finally {
       loadingMore = false;
@@ -125,22 +196,54 @@
     stagione = ''; anno = ''; tipo = ''; stato = ''; studio = '';
     lingua = ''; soloDoppiati = false; ordine = 1;
     items = []; page = 0; maxPage = 1; searched = false; error = '';
+    catalogSeq++; // invalida risposte in volo della ricerca precedente
+  }
+
+  async function caricaGestite() {
+    const seq = ++gestiteSeq;
+    gestiteRefresh = true;
+    try {
+      const data = await api.series.list();
+      if (seq !== gestiteSeq) return;
+      gestite.carica(data.series || []);
+    } catch (e) {
+      if (seq !== gestiteSeq) return;
+      gestite.fallimento('Elenco serie non disponibile: ' + e.message);
+    } finally {
+      if (seq === gestiteSeq) gestiteRefresh = false;
+    }
   }
 
   async function apriDettaglio(item) {
+    const seq = ++detailSeq;
     detail = item;
     detailData = null;
     detailLoading = true;
+    detailError = '';
     try {
-      detailData = await api.discover.tooltip(item.tooltipId);
-    } catch {
-      detailData = { trama: '', voto: '', stato: '', dataUscita: '', nomiAlternativi: '', generi: [] };
+      const data = await api.discover.tooltip(item.tooltipId);
+      if (seq !== detailSeq) return; // altro dettaglio aperto nel frattempo
+      detailData = data;
+    } catch (e) {
+      if (seq !== detailSeq) return;
+      detailError = 'Dettaglio non disponibile: ' + e.message;
+      detailData = null;
     } finally {
-      detailLoading = false;
+      if (seq === detailSeq) detailLoading = false;
     }
   }
 
   function aggiungiDaScopri(item) {
+    if (!item) return;
+    if (gestite.stato !== 'ready') {
+      notice = '';
+      error = 'Attendi il caricamento delle serie in gestione prima di aggiungere.';
+      return;
+    }
+    if (inGestione(item)) {
+      notice = `“${item.titolo}” è già in gestione: niente doppia aggiunta.`;
+      return;
+    }
     form = {
       service: 'animeW_scraper',
       name: item.titolo,
@@ -150,19 +253,31 @@
       highPriority: false,
       passedEpisodes: 0,
     };
+    formSourceIdentity = item.identity || '';
+    if (formSourceIdentity) gestite.iniziaSalvataggio(formSourceIdentity);
     detail = null;
     showForm = true;
     notice = '';
+    error = '';
+  }
+
+  function chiudiForm() {
+    showForm = false;
+    if (formSourceIdentity) gestite.fineSalvataggio(formSourceIdentity);
+    formSourceIdentity = '';
   }
 
   async function salvaForm() {
+    // Guard sincrona anti-doppio-click: la seconda chiamata termina subito.
+    if (saving) return;
     if (!form.name.trim() || !form.path.trim() || !form.url.trim()) {
       error = 'Nome, Percorso e URL sono obbligatori.';
       return;
     }
     error = '';
+    saving = true;
     try {
-      await api.series.add({
+      const data = await api.series.add({
         name: form.name.trim(),
         service: form.service,
         path: form.path.trim(),
@@ -174,14 +289,47 @@
         download_link_selector: '',
         fetch_metadata: form.fetchMetadata !== false,
       });
-      showForm = false;
-      notice = `“${form.name}” aggiunta: la troverai in Gestione Serie.`;
+      // Identity di RISPOSTA: il form può aver cambiato l'URL originale.
+      gestite.aggiuntaRiuscita(data && data.identity ? data.identity : formSourceIdentity);
+      const nome = form.name;
+      chiudiForm();
+      await caricaGestite();
+      notice = `“${nome}” aggiunta: la troverai in Gestione Serie.`;
     } catch (e) {
-      error = e.message;
+      if (isSeriesDuplicateError(e)) {
+        // Altro client/scheda l'ha aggiunta prima: riallinea senza falso successo.
+        if (e.identity) gestite.conflitto(e.identity);
+        error = `“${form.name}” è già in gestione: niente doppia aggiunta.`;
+        try { await caricaGestite(); }
+        catch { /* conflitto noto già memorizzato */ }
+      } else {
+        error = e.message;
+      }
+    } finally {
+      saving = false;
     }
   }
 
-  onMount(() => { cerca(); });
+  onMount(() => {
+    cerca();
+    caricaGestite();
+    // Rientro pagina/scheda: riallinea l'indice gestite (deduplica con
+    // le richieste in volo, niente polling per card).
+    let inRefresh = false;
+    const riallinea = () => {
+      if (inRefresh || document.hidden) return;
+      inRefresh = true;
+      caricaGestite().finally(() => { inRefresh = false; });
+    };
+    window.addEventListener('focus', riallinea);
+    window.addEventListener('pageshow', riallinea);
+    document.addEventListener('visibilitychange', riallinea);
+    return () => {
+      window.removeEventListener('focus', riallinea);
+      window.removeEventListener('pageshow', riallinea);
+      document.removeEventListener('visibilitychange', riallinea);
+    };
+  });
 </script>
 
 <div class="discover-page">
@@ -249,32 +397,91 @@
 
   {#if error}<p class="discover-error" role="alert">{error}</p>{/if}
   {#if notice}<p class="discover-notice" role="status">{notice}</p>{/if}
-
-  {#if searched && !loading && items.length === 0 && !error}
-    <p class="discover-empty">Nessun risultato con questi filtri.</p>
+  {#if gestite.stato === 'error'}
+    <p class="discover-error" role="alert">{gestite.errore}
+      <button type="button" class="btn-ghost" onclick={caricaGestite} disabled={gestiteRefresh}>Riprova</button>
+    </p>
   {/if}
 
-  <div class="discover-grid">
-    {#each items as item, i (item.pageUrl)}
-      <div class="discover-card" style="--i:{Math.min(i, 20)}" role="button" tabindex="0"
-        onclick={() => apriDettaglio(item)} onkeydown={(e) => e.key === 'Enter' && apriDettaglio(item)} aria-label={item.titolo}>
-        <div class="discover-poster-wrap">
-          <img class="discover-poster" src={item.posterUrl} alt="" loading="lazy" decoding="async" />
-          <div class="discover-title-overlay"><h3>{item.titolo}</h3></div>
-          <div class="discover-hover-actions">
-            <button type="button" class="btn-hover" title="Dettagli" aria-label="Dettagli"
-              onclick={(e) => { e.stopPropagation(); apriDettaglio(item); }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  <div class="view-toggle" role="group" aria-label="Vista risultati">
+    <button type="button" class:active={viewMode === 'grid'} onclick={() => setViewMode('grid')} title="Vista griglia" aria-label="Vista griglia" aria-pressed={viewMode === 'grid'}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+    </button>
+    <button type="button" class:active={viewMode === 'table'} onclick={() => setViewMode('table')} title="Vista tabella" aria-label="Vista tabella" aria-pressed={viewMode === 'table'}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="3" y="3" width="18" height="4"/><rect x="3" y="10" width="18" height="4"/><rect x="3" y="17" width="18" height="4"/></svg>
+    </button>
+    <button type="button" class:active={viewMode === 'large'} onclick={() => setViewMode('large')} title="Vista grande" aria-label="Vista grande" aria-pressed={viewMode === 'large'}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+    </button>
+  </div>
+
+  <SeriesCollection
+    {items}
+    keyOf={chiaveItem}
+    {viewMode}
+    emptyText="Nessun risultato con questi filtri."
+    showEmpty={searched && !loading && !error}
+  >
+    {#snippet card(item, i)}
+      <SeriesCard
+        title={item.titolo}
+        poster={item.posterUrl}
+        {large}
+        index={Math.min(i, 20)}
+        onopen={() => apriDettaglio(item)}
+      >
+        {#snippet meta()}
+          <span class="card-service">AnimeW</span>
+          {#if inGestione(item)}
+            <span class="card-managed">In gestione</span>
+          {/if}
+        {/snippet}
+        {#snippet actions()}
+          {#if inGestione(item)}
+            <button type="button" class="btn-hover" title="Già in gestione" aria-label="Già in gestione" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
             </button>
-            <button type="button" class="btn-hover" title="Aggiungi" aria-label="Aggiungi"
+          {:else}
+            <button type="button" class="btn-hover" title={titoloAggiungi(item)} aria-label="Aggiungi"
+              disabled={!aggiuntaAbilitata(item)}
               onclick={(e) => { e.stopPropagation(); aggiungiDaScopri(item); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
-          </div>
-        </div>
-      </div>
-    {/each}
-  </div>
+          {/if}
+        {/snippet}
+      </SeriesCard>
+    {/snippet}
+    {#snippet row(item, i)}
+      <SeriesRow
+        title={item.titolo}
+        thumb={item.posterUrl}
+        index={Math.min(i, 20)}
+        onopen={() => apriDettaglio(item)}
+      >
+        {#snippet meta()}
+          <span class="row-service">AnimeW</span>
+        {/snippet}
+        {#snippet badge()}
+          {#if inGestione(item)}
+            <span class="row-badge row-badge-managed">In gestione</span>
+          {/if}
+        {/snippet}
+        {#snippet actions()}
+          {#if inGestione(item)}
+            <button type="button" class="btn-row" title="Già in gestione" aria-label="Già in gestione" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          {:else}
+            <button type="button" class="btn-row" title={titoloAggiungi(item)} aria-label="Aggiungi"
+              disabled={!aggiuntaAbilitata(item)}
+              onclick={(e) => { e.stopPropagation(); aggiungiDaScopri(item); }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          {/if}
+        {/snippet}
+      </SeriesRow>
+    {/snippet}
+  </SeriesCollection>
 
   {#if searched && page < maxPage}
     <div class="discover-more">
@@ -286,34 +493,51 @@
 </div>
 
 {#if detail}
-  <div class="modal-overlay" onclick={() => detail = null} onkeydown={(e) => e.key === 'Escape' && (detail = null)} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="modal-panel detail-modal" onclick={(e) => e.stopPropagation()} role="presentation">
-      <div class="detail-modal-inner">
-        <div class="detail-poster-col">
-          <img class="detail-poster" src={detail.posterUrl} alt="" loading="lazy" decoding="async" />
-        </div>
-        <div class="detail-info-col">
-          <h3>{detail.titolo}</h3>
-          {#if detailLoading}
-            <p class="detail-loading">Caricamento dettagli...</p>
-          {:else if detailData}
-            {#if detailData.trama}<p class="detail-plot">{detailData.trama}</p>{/if}
-            <dl class="detail-meta">
-              {#if detailData.stato}<div><dt>Stato</dt><dd>{detailData.stato}</dd></div>{/if}
-              {#if detailData.voto}<div><dt>Voto</dt><dd>{detailData.voto}</dd></div>{/if}
-              {#if detailData.dataUscita}<div><dt>Uscita</dt><dd>{detailData.dataUscita}</dd></div>{/if}
-              {#if detailData.generi?.length}<div><dt>Generi</dt><dd>{detailData.generi.join(', ')}</dd></div>{/if}
-              {#if detailData.nomiAlternativi}<div><dt>Altri nomi</dt><dd>{detailData.nomiAlternativi}</dd></div>{/if}
-            </dl>
-          {/if}
-          <div class="detail-actions">
-            <button type="button" class="btn-primary" onclick={() => aggiungiDaScopri(detail)}>Aggiungi</button>
-            <button type="button" class="btn-ghost" onclick={() => detail = null}>Chiudi</button>
-          </div>
-        </div>
+  <DetailModal
+    title={detail.titolo}
+    poster={detail.posterUrl}
+    onclose={() => { detailSeq++; detail = null; }}
+  >
+    {#snippet meta()}
+      <span class="card-service">AnimeW</span>
+      {#if inGestione(detail)}
+        <span class="detail-badge detail-badge-managed">In gestione</span>
+      {/if}
+    {/snippet}
+    {#snippet body()}
+      {#if detailLoading}
+        <p class="detail-loading">Caricamento dettagli...</p>
+      {:else if detailError}
+        <p class="detail-error" role="alert">{detailError}</p>
+        <button type="button" class="btn-ghost" onclick={() => apriDettaglio(detail)}>Riprova</button>
+      {:else if detailData}
+        {#if detailData.trama}<p class="detail-desc">{detailData.trama}</p>{/if}
+      {:else}
+        <p class="detail-desc detail-desc-empty">Nessuna descrizione disponibile.</p>
+      {/if}
+    {/snippet}
+    {#snippet details()}
+      {#if detailData && !detailLoading && !detailError}
+        <dl class="detail-meta-list">
+          {#if detailData.stato}<div><dt>Stato</dt><dd>{detailData.stato}</dd></div>{/if}
+          {#if detailData.voto}<div><dt>Voto</dt><dd>{detailData.voto}</dd></div>{/if}
+          {#if detailData.dataUscita}<div><dt>Uscita</dt><dd>{detailData.dataUscita}</dd></div>{/if}
+          {#if detailData.generi?.length}<div><dt>Generi</dt><dd>{detailData.generi.join(', ')}</dd></div>{/if}
+          {#if detailData.nomiAlternativi}<div><dt>Altri nomi</dt><dd>{detailData.nomiAlternativi}</dd></div>{/if}
+        </dl>
+      {/if}
+    {/snippet}
+    {#snippet actions()}
+      <div class="detail-actions">
+        {#if inGestione(detail)}
+          <button type="button" class="btn-primary" disabled title="Già in gestione">In gestione</button>
+        {:else}
+          <button type="button" class="btn-primary" disabled={!aggiuntaAbilitata(detail)} title={titoloAggiungi(detail)} onclick={() => aggiungiDaScopri(detail)}>Aggiungi</button>
+        {/if}
+        <button type="button" class="btn-ghost" onclick={() => { detailSeq++; detail = null; }}>Chiudi</button>
       </div>
-    </div>
-  </div>
+    {/snippet}
+  </DetailModal>
 {/if}
 
 {#if showForm}
@@ -323,7 +547,8 @@
     editing={-1}
     series={[]}
     backToName="Scopri"
-    onclose={() => showForm = false}
+    busy={saving}
+    onclose={chiudiForm}
     onsave={salvaForm}
     onpick={() => showBrowser = true}
     onerror={(msg) => error = msg}
@@ -354,33 +579,15 @@
   .btn-primary:disabled { opacity: 0.6; cursor: wait; }
   .btn-ghost { padding: 0.55rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer; }
   .btn-ghost:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+  .view-toggle { display: flex; gap: 0.4rem; }
+  .view-toggle button {
+    background: none; border: 1px solid var(--border-color); border-radius: 8px;
+    color: var(--text-muted); padding: 0.4rem 0.55rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .view-toggle button:hover { color: var(--text-primary); border-color: var(--accent); }
+  .view-toggle button.active { color: var(--accent); border-color: var(--accent); }
   .discover-error { color: var(--danger); }
   .discover-notice { color: var(--success); }
-  .discover-empty { color: var(--text-muted); }
-  .discover-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; }
-  .discover-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; animation: cardIn 0.35s ease-out both; animation-delay: calc(var(--i, 0) * 40ms); }
-  .discover-poster-wrap { position: relative; overflow: hidden; cursor: pointer; }
-  .discover-poster { width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: contain; background: var(--bg-tertiary); display: block; }
-  .discover-title-overlay { position: absolute; left: 0; right: 0; bottom: 0; padding: 1.6rem 0.6rem 0.55rem; background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.45) 55%, transparent 100%); color: #fff; }
-  .discover-title-overlay h3 { font-size: 0.85rem; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .discover-hover-actions { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 0.6rem; background: rgba(0,0,0,0.45); opacity: 0; transition: opacity 0.2s ease; }
-  @media (hover: hover) { .discover-card:hover .discover-hover-actions { opacity: 1; } }
-  .btn-hover { width: 2.5rem; height: 2.5rem; border-radius: 50%; border: 1px solid rgba(255,255,255,0.35); background: rgba(20,20,25,0.75); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-  .btn-hover:hover { background: var(--accent); border-color: var(--accent); }
-  .btn-hover svg { width: 1.1rem; height: 1.1rem; }
   .discover-more { display: flex; justify-content: center; padding: 0.5rem 0 1rem; }
-  .modal-overlay { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
-  .modal-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; max-width: 640px; width: 100%; max-height: 90vh; overflow: auto; padding: 1.25rem; }
-  .detail-modal-inner { display: flex; gap: 1rem; }
-  .detail-poster { width: 160px; border-radius: 8px; }
-  .detail-info-col { flex: 1; display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
-  .detail-plot { color: var(--text-secondary); font-size: 0.9rem; }
-  .detail-meta { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
-  .detail-meta div { display: flex; gap: 0.5rem; }
-  .detail-meta dt { color: var(--text-muted); min-width: 80px; }
-  .detail-meta dd { margin: 0; color: var(--text-primary); }
-  .detail-actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
-  .detail-loading { color: var(--text-muted); }
-  @keyframes cardIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-  @media (max-width: 640px) { .detail-modal-inner { flex-direction: column; } .detail-poster { width: 120px; } }
 </style>
