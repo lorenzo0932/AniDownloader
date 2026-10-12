@@ -222,8 +222,13 @@ describe('DiscoverPage', () => {
     const skeleton = await screen.findByRole('status', { name: 'Caricamento dettagli' });
     expect(skeleton.classList.contains('detail-skeleton')).toBe(true);
     expect(container.querySelector('.detail-modal')).toBeTruthy();
+    const content = container.querySelector('.discover-detail-content');
+    expect(content.getAttribute('aria-busy')).toBe('true');
     risolviTooltip();
     await waitFor(() => expect(screen.getByText('Trama di prova')).toBeTruthy());
+    expect(container.querySelector('.discover-detail-content')).toBe(content);
+    expect(content.getAttribute('aria-busy')).toBe('false');
+    expect(content.querySelector('.detail-meta-list')).toBeTruthy();
     expect(screen.queryByRole('status', { name: 'Caricamento dettagli' })).toBeNull();
   });
 

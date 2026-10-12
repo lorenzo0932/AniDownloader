@@ -38,6 +38,10 @@ export function overlayExit(node) {
   return fade(node, { duration: motionDuration('exit'), easing: cubicInOut });
 }
 
+export function contentEnter(node) {
+  return fade(node, { duration: motionDuration(), easing: cubicOut });
+}
+
 export function panelExit(node) {
   const duration = motionDuration('exit');
   // Una sola trasformazione, senza sovrascrivere lo stile di base.
@@ -60,3 +64,27 @@ export function relayoutDuration() {
 }
 
 export const relayoutEasing = cubicOut;
+
+// Il tap può essere più breve della transition CSS :active. Il feedback
+// touch/pen completa un singolo impulso anche dopo il rilascio, senza hover
+// persistenti né trasformazioni sul wrapper FLIP delle collezioni.
+export function installTouchFeedback(target = document) {
+  const animations = new WeakMap();
+  function onPress(event) {
+    if (!['touch', 'pen'].includes(event.pointerType) || event.isPrimary === false) return;
+    const node = event.target?.closest?.('button, [role="button"]');
+    if (!node || node.matches(':disabled, [aria-disabled="true"]') || node.closest('[inert]')) return;
+    const duration = motionDuration();
+    if (!duration || !node.animate) return;
+    animations.get(node)?.cancel();
+    const wholeContent = node.matches('.card-open, .row-open, .home-row, .detail-poster-btn');
+    const filter = getComputedStyle(node).filter;
+    const base = filter === 'none' ? '' : filter;
+    const frames = wholeContent
+      ? [{ filter: base || 'none' }, { filter: `${base} brightness(0.88)`, offset: 0.35 }, { filter: base || 'none' }]
+      : [{ scale: '1' }, { scale: '0.96', offset: 0.35 }, { scale: '1' }];
+    animations.set(node, node.animate(frames, { duration, easing: motion.easeOut }));
+  }
+  target.addEventListener('pointerdown', onPress, { passive: true });
+  return () => target.removeEventListener('pointerdown', onPress);
+}

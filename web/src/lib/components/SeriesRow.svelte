@@ -93,13 +93,14 @@
   }
   .row-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
   .series-row :global(.btn-row) {
-    background: none; border: none; color: var(--text-muted);
+    background: var(--action-bg, transparent); border: none; color: var(--action-color, var(--text-muted));
     padding: 0.45rem; cursor: pointer; border-radius: 6px;
     display: flex; align-items: center; justify-content: center;
   }
-  .series-row :global(.btn-row:hover) { color: var(--accent); background: var(--bg-tertiary); }
-  .series-row :global(.btn-row.danger:hover) { color: var(--danger); }
+  .series-row :global(.btn-row:hover), .series-row :global(.btn-row:focus-visible) {
+    color: var(--action-ink, #fff); background: var(--action-color, var(--accent));
+  }
   .series-row :global(.btn-row:disabled) { opacity: 0.45; cursor: not-allowed; }
-  .series-row :global(.btn-row:disabled:hover) { color: var(--text-muted); background: none; }
+  .series-row :global(.btn-row:disabled:hover) { color: var(--action-color, var(--text-muted)); background: var(--action-bg, transparent); }
 
 </style>

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   motion, initMotion, motionDuration, pageEnter, overlayExit,
-  panelExit, lightboxExit, relayoutDuration,
+  panelExit, lightboxExit, relayoutDuration, contentEnter, installTouchFeedback,
 } from './motion.js';
 
 afterEach(() => {
@@ -41,6 +41,7 @@ describe('motion standard', () => {
   it.each([
     ['pageEnter', pageEnter], ['overlayExit', overlayExit],
     ['panelExit', panelExit], ['lightboxExit', lightboxExit],
+    ['contentEnter', contentEnter],
   ])(
     '%s rispetta movimento ridotto', (_name, transition) => {
       vi.stubGlobal('window', { matchMedia: () => ({ matches: true }) });
@@ -63,5 +64,65 @@ describe('motion standard', () => {
     node.style.opacity = '0.1';
     expect(transition.css(0.5, 0.5)).toContain('opacity: 0.4');
     expect(transition.css(0, 1)).toContain('opacity: 0');
+  });
+});
+
+describe('feedback touch condiviso', () => {
+  function press(node, pointerType = 'touch') {
+    node.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType, isPrimary: true }));
+  }
+
+  it.each(['card-open', 'row-open', 'home-row', 'detail-poster-btn'])(
+    '%s: impulso luminoso, senza scalare tutto il contenuto', className => {
+      const node = document.createElement(className === 'home-row' ? 'div' : 'button');
+      node.className = className;
+      node.setAttribute('role', 'button');
+      document.body.append(node);
+      node.animate = vi.fn(() => ({ cancel: vi.fn() }));
+      const dispose = installTouchFeedback();
+      try {
+        press(node);
+        const [frames, options] = node.animate.mock.calls[0];
+        expect(frames[1].filter).toContain('brightness');
+        expect(frames[1].scale).toBeUndefined();
+        expect(options.duration).toBe(motion.enter);
+      } finally { dispose(); }
+    },
+  );
+
+  it('pulsante piccolo: pressione visibile e cancellazione del feedback precedente', () => {
+    const node = document.createElement('button');
+    document.body.append(node);
+    const cancel = vi.fn();
+    node.animate = vi.fn(() => ({ cancel }));
+    const dispose = installTouchFeedback();
+    try {
+      press(node);
+      press(node, 'pen');
+      expect(node.animate.mock.calls[0][0][1].scale).toBe('0.96');
+      expect(cancel).toHaveBeenCalledOnce();
+      dispose();
+      press(node);
+      expect(node.animate).toHaveBeenCalledTimes(2);
+    } finally { dispose(); }
+  });
+
+  it('non anima mouse, controlli disabilitati o movimento ridotto', () => {
+    const node = document.createElement('button');
+    document.body.append(node);
+    node.animate = vi.fn();
+    const dispose = installTouchFeedback();
+    try {
+      press(node, 'mouse');
+      node.disabled = true;
+      press(node);
+      node.disabled = false;
+      node.setAttribute('aria-disabled', 'true');
+      press(node);
+      node.removeAttribute('aria-disabled');
+      vi.stubGlobal('window', { matchMedia: () => ({ matches: true }) });
+      press(node);
+      expect(node.animate).not.toHaveBeenCalled();
+    } finally { dispose(); }
   });
 });

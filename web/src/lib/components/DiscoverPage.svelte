@@ -1,5 +1,5 @@
 <script>
-  import { pageEnter } from '../motion.js';
+  import { pageEnter, contentEnter, overlayExit } from '../motion.js';
   // Pagina Scopri: ricerca e filtri sul catalogo AnimeWorld (come la pagina
   // /filter del sito), collezione con gli stessi componenti di Gestione
   // (SeriesCollection/SeriesCard/SeriesRow/DetailModal), dettaglio lazy via
@@ -439,11 +439,11 @@
         {/snippet}
         {#snippet actions()}
           {#if inGestione(item)}
-            <button type="button" class="btn-hover" title="Già in gestione" aria-label="Già in gestione" disabled>
+            <button type="button" class="btn-hover action-add" title="Già in gestione" aria-label="Già in gestione" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
             </button>
           {:else}
-            <button type="button" class="btn-hover" title={titoloAggiungi(item)} aria-label="Aggiungi"
+            <button type="button" class="btn-hover action-add" title={titoloAggiungi(item)} aria-label="Aggiungi"
               disabled={!aggiuntaAbilitata(item)}
               onclick={(e) => { e.stopPropagation(); aggiungiDaScopri(item); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -469,11 +469,11 @@
         {/snippet}
         {#snippet actions()}
           {#if inGestione(item)}
-            <button type="button" class="btn-row" title="Già in gestione" aria-label="Già in gestione" disabled>
+            <button type="button" class="btn-row action-add" title="Già in gestione" aria-label="Già in gestione" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>
             </button>
           {:else}
-            <button type="button" class="btn-row" title={titoloAggiungi(item)} aria-label="Aggiungi"
+            <button type="button" class="btn-row action-add" title={titoloAggiungi(item)} aria-label="Aggiungi"
               disabled={!aggiuntaAbilitata(item)}
               onclick={(e) => { e.stopPropagation(); aggiungiDaScopri(item); }}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -506,41 +506,43 @@
       {/if}
     {/snippet}
     {#snippet body()}
-      {#if detailLoading}
-        <div class="detail-skeleton" role="status" aria-label="Caricamento dettagli">
-          <span class="sk sk-plot" style="width:95%" aria-hidden="true"></span>
-          <span class="sk sk-plot" style="width:88%" aria-hidden="true"></span>
-          <span class="sk sk-plot" style="width:72%" aria-hidden="true"></span>
-          <span class="sk sk-plot" style="width:60%" aria-hidden="true"></span>
-          <span class="sk sk-meta" style="width:75%" aria-hidden="true"></span>
-          <span class="sk sk-meta" style="width:65%" aria-hidden="true"></span>
-        </div>
-      {:else if detailError}
-        <p class="detail-error" role="alert">{detailError}</p>
-        <button type="button" class="btn-ghost" onclick={() => apriDettaglio(detail)}>Riprova</button>
-      {:else if detailData}
-        {#if detailData.trama}<p class="detail-desc">{detailData.trama}</p>{/if}
-      {:else}
-        <p class="detail-desc detail-desc-empty">Nessuna descrizione disponibile.</p>
-      {/if}
-    {/snippet}
-    {#snippet details()}
-      {#if detailData && !detailLoading && !detailError}
-        <dl class="detail-meta-list">
-          {#if detailData.stato}<div><dt>Stato</dt><dd>{detailData.stato}</dd></div>{/if}
-          {#if detailData.voto}<div><dt>Voto</dt><dd>{detailData.voto}</dd></div>{/if}
-          {#if detailData.dataUscita}<div><dt>Uscita</dt><dd>{detailData.dataUscita}</dd></div>{/if}
-          {#if detailData.generi?.length}<div><dt>Generi</dt><dd>{detailData.generi.join(', ')}</dd></div>{/if}
-          {#if detailData.nomiAlternativi}<div><dt>Altri nomi</dt><dd>{detailData.nomiAlternativi}</dd></div>{/if}
-        </dl>
-      {/if}
+      <div class="discover-detail-content" aria-busy={detailLoading}>
+        {#if detailLoading}
+          <div class="detail-skeleton" role="status" aria-label="Caricamento dettagli" out:overlayExit>
+            <span class="sk sk-plot" style="width:95%" aria-hidden="true"></span>
+            <span class="sk sk-plot" style="width:88%" aria-hidden="true"></span>
+            <span class="sk sk-plot" style="width:72%" aria-hidden="true"></span>
+            <span class="sk sk-plot" style="width:60%" aria-hidden="true"></span>
+            <span class="sk sk-meta" style="width:75%" aria-hidden="true"></span>
+            <span class="sk sk-meta" style="width:65%" aria-hidden="true"></span>
+          </div>
+        {:else}
+          <div class="discover-detail-ready" in:contentEnter>
+            {#if detailError}
+              <p class="detail-error" role="alert">{detailError}</p>
+              <button type="button" class="btn-ghost" onclick={() => apriDettaglio(detail)}>Riprova</button>
+            {:else if detailData}
+              {#if detailData.trama}<p class="detail-desc">{detailData.trama}</p>{/if}
+              <dl class="detail-meta-list">
+                {#if detailData.stato}<div><dt>Stato</dt><dd>{detailData.stato}</dd></div>{/if}
+                {#if detailData.voto}<div><dt>Voto</dt><dd>{detailData.voto}</dd></div>{/if}
+                {#if detailData.dataUscita}<div><dt>Uscita</dt><dd>{detailData.dataUscita}</dd></div>{/if}
+                {#if detailData.generi?.length}<div><dt>Generi</dt><dd>{detailData.generi.join(', ')}</dd></div>{/if}
+                {#if detailData.nomiAlternativi}<div><dt>Altri nomi</dt><dd>{detailData.nomiAlternativi}</dd></div>{/if}
+              </dl>
+            {:else}
+              <p class="detail-desc detail-desc-empty">Nessuna descrizione disponibile.</p>
+            {/if}
+          </div>
+        {/if}
+      </div>
     {/snippet}
     {#snippet actions()}
       <div class="detail-actions">
         {#if inGestione(detail)}
-          <button type="button" class="btn-primary" disabled title="Già in gestione">In gestione</button>
+          <button type="button" class="btn-primary action-add" disabled title="Già in gestione">In gestione</button>
         {:else}
-          <button type="button" class="btn-primary" disabled={!aggiuntaAbilitata(detail)} title={titoloAggiungi(detail)} onclick={() => aggiungiDaScopri(detail)}>Aggiungi</button>
+          <button type="button" class="btn-primary action-add" disabled={!aggiuntaAbilitata(detail)} title={titoloAggiungi(detail)} onclick={() => aggiungiDaScopri(detail)}>Aggiungi</button>
         {/if}
         <button type="button" class="btn-ghost" onclick={() => { detailSeq++; detail = null; }}>Chiudi</button>
       </div>
@@ -598,10 +600,13 @@
   .discover-error { color: var(--danger); }
   .discover-notice { color: var(--success); }
   .discover-more { display: flex; justify-content: center; padding: 0.5rem 0 1rem; }
-  /* Skeleton del dettaglio in caricamento: occupa circa quanto trama+meta
-     reali, così il modale (ora a larghezza fissa) non scatta in altezza
-     all'arrivo del tooltip. Solo Scopri: Gestione ha la descrizione pronta. */
-  .detail-skeleton { display: flex; flex-direction: column; gap: 0.6rem; min-height: 240px; }
+  /* Skeleton e trama+metadata occupano lo stesso spazio, anche con risposta
+     lenta o molto lunga. Il contenuto scorre, il pannello non si ridimensiona. */
+  .discover-detail-content { position: relative; height: clamp(240px, 40dvh, 360px); flex-shrink: 0; }
+  .detail-skeleton, .discover-detail-ready { position: absolute; inset: 0; overflow-y: auto; }
+  .discover-detail-ready { display: flex; flex-direction: column; gap: 0.75rem; }
+  .discover-detail-content .discover-detail-ready .detail-desc { max-height: none; overflow: visible; }
+  .detail-skeleton { display: flex; flex-direction: column; gap: 0.6rem; pointer-events: none; }
   .detail-skeleton .sk {
     display: block; border-radius: 6px;
     background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);

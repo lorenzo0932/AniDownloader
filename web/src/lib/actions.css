@@ -1,0 +1,27 @@
+/* Codice colore comune, sempre accompagnato da icona e nome dell'azione.
+   I pulsanti sulle locandine usano una base scura indipendente dal tema. */
+.action-info { --action-color: #93c5fd; --action-bg: #172d48; --action-ink: #10243b; }
+.action-add { --action-color: #86efac; --action-bg: #163527; --action-ink: #102b1d; }
+.action-edit { --action-color: #fcd34d; --action-bg: #3b3018; --action-ink: #30240c; }
+.action-delete { --action-color: #fca5a5; --action-bg: #3e2024; --action-ink: #351317; }
+
+/* I controlli delle righe e dei modali si adattano invece al tema chiaro. */
+[data-theme="light"] :is(.btn-row, .detail-actions button).action-info {
+  --action-color: #1d4ed8; --action-bg: #dbeafe; --action-ink: #fff;
+}
+[data-theme="light"] :is(.btn-row, .detail-actions button).action-add {
+  --action-color: #166534; --action-bg: #dcfce7; --action-ink: #fff;
+}
+[data-theme="light"] :is(.btn-row, .detail-actions button).action-edit {
+  --action-color: #854d0e; --action-bg: #fef3c7; --action-ink: #fff;
+}
+[data-theme="light"] :is(.btn-row, .detail-actions button).action-delete {
+  --action-color: #b91c1c; --action-bg: #fee2e2; --action-ink: #fff;
+}
+.detail-actions button:is(.action-info, .action-add, .action-edit, .action-delete) {
+  background: var(--action-bg); color: var(--action-color);
+  border: 1px solid var(--action-color);
+}
+.detail-actions button:is(.action-info, .action-add, .action-edit, .action-delete):enabled:is(:hover, :focus-visible) {
+  background: var(--action-color); color: var(--action-ink);
+}

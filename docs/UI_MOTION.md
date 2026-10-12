@@ -32,6 +32,16 @@ Non aggiungere durate numeriche o copie dei keyframe nei componenti.
 - Lightbox: `motion-scale` e `out:lightboxExit`.
 - Pulsanti: feedback cromatico e pressione lieve; niente pressione applicata
   a pulsanti che occupano card/righe/poster interi, né a controlli disabilitati.
+  Su touch/pen `installTouchFeedback()` completa un impulso breve anche dopo
+  il rilascio: luminosità per card/righe/poster, scala per gli altri pulsanti.
+  Non dipende dall'hover ed è disabilitato con movimento ridotto.
+- Azioni serie: blu per dettagli, verde per aggiunta, ambra per modifica,
+  rosso per eliminazione. Token comuni in `web/src/lib/actions.css`; mantenere
+  anche icone e label, mai affidare il significato al solo colore.
+- Overlay delle card: hover reale o `:focus-visible`, non `:focus-within`.
+  Restituire il focus dopo un modale non deve simulare un hover da mouse.
+- Metadati asincroni: skeleton e contenuto condividono un riquadro stabile;
+  `in:contentEnter` / `out:overlayExit` per la dissolvenza, senza reflow del modale.
 - Progressi: interpolare solo il valore della barra, senza rilanciare ingressi.
 - Evitare `transition: all`, ritardi proporzionali illimitati, rimbalzi e
   animazioni continue diverse dagli indicatori di caricamento.

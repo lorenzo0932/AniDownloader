@@ -30,7 +30,7 @@
       </span>
     </button>
     <div class="card-hover-actions">
-      <button type="button" class="btn-hover" title="Dettagli" aria-label="Dettagli"
+      <button type="button" class="btn-hover action-info" title="Dettagli" aria-label="Dettagli"
         onclick={(e) => { e.stopPropagation(); onopen?.(); }}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
       </button>
@@ -54,11 +54,11 @@
       z-index: 2;
     }
     .series-card:hover .card-hover-actions {
-      opacity: 1;
+      opacity: 1; visibility: visible;
     }
   }
-  .series-card:focus-within .card-hover-actions {
-    opacity: 1;
+  .series-card:has(:focus-visible) .card-hover-actions {
+    opacity: 1; visibility: visible;
   }
   .card-poster-wrap {
     position: relative;
@@ -80,8 +80,8 @@
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center; gap: 0.6rem;
     background: rgba(0,0,0,0.45);
-    opacity: 0;
-    transition: opacity var(--motion-fast) var(--motion-ease-out);
+    opacity: 0; visibility: hidden;
+    transition: opacity var(--motion-fast) var(--motion-ease-out), visibility var(--motion-fast);
     pointer-events: none;
   }
   /* Solo i bottoni restano cliccabili sopra l'overlay: il resto passa al button di apertura. */
@@ -90,14 +90,16 @@
      scope della shell — un solo proprietario, niente duplicazioni. */
   .series-card :global(.btn-hover) {
     width: 2.5rem; height: 2.5rem; border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.35);
-    background: rgba(20,20,25,0.75); color: #fff; cursor: pointer;
+    border: 1px solid var(--action-color, rgba(255,255,255,0.35));
+    background: var(--action-bg, rgba(20,20,25,0.75)); color: var(--action-color, #fff); cursor: pointer;
     display: flex; align-items: center; justify-content: center;
   }
-  .series-card :global(.btn-hover:hover) { background: var(--accent); border-color: var(--accent); }
-  .series-card :global(.btn-hover.danger:hover) { background: var(--danger); border-color: var(--danger); }
+  .series-card :global(.btn-hover:hover), .series-card :global(.btn-hover:focus-visible) {
+    background: var(--action-color, var(--accent)); border-color: var(--action-color, var(--accent));
+    color: var(--action-ink, #fff);
+  }
   .series-card :global(.btn-hover:disabled) { opacity: 0.45; cursor: not-allowed; }
-  .series-card :global(.btn-hover:disabled:hover) { background: rgba(20,20,25,0.75); border-color: rgba(255,255,255,0.35); }
+  .series-card :global(.btn-hover:disabled:hover) { background: var(--action-bg, rgba(20,20,25,0.75)); color: var(--action-color, #fff); }
   .series-card :global(.btn-hover svg) { width: 1.1rem; height: 1.1rem; }
   .card-title-overlay {
     position: absolute; left: 0; right: 0; bottom: 0;
