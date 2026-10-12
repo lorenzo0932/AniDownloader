@@ -4,10 +4,7 @@
   // contenitori, griglie e animazioni di lista. Contenuti via snippet:
   // `card(item, idx)` per la griglia, `row(item, idx)` per la tabella.
   // Caricamento/ordinamento restano nel parent: qui solo presentazione.
-  // Niente animate:flip: su cataloghi da 40 card rilanciava dozzine di
-  // animazioni WAAPI a ogni aggiornamento di stato (badge, refetch, focus)
-  // e un transform incastrato sporgeva oltre il viewport con scrollbar
-  // orizzontale. Il cambio vista è un reflow istantaneo, affidabile.
+  // Il cambio vista usa il reflow CSS, senza animazioni di relayout.
 
   let {
     items = [],
@@ -34,8 +31,7 @@
 {:else}
   <!-- Niente {#key} sul cambio vista: distruggerebbe e ricreerebbe tutte le
        card (salto di scroll, cardIn rieseguita in stagger, immagini
-       ricaricate). I nodi persistono e animate:flip fa scivolare le card
-       nelle nuove posizioni — niente refetch, niente salti. -->
+       ricaricate). I nodi persistono: cambia solo il layout CSS. -->
   <div class="series-grid" class:grid-large={large}>
     {#each items as item, idx (keyOf(item, idx))}
       <!-- Wrapper neutro: item di griglia, la card riempie. -->
@@ -55,11 +51,10 @@
      gonfiate sui monitor larghi. */
   .series-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 0.9rem; max-width: 1100px; margin-inline: auto;
-    /* min-width:0 obbligatorio: la collezione è flex-item della pagina e
-       auto-fill ha min-content che cresce con le colonne — senza, griglia
-       e pagina si allargano a vicenda fino al cap (1400px fuori schermo
-       in vista grande). Stesso per la tabella. */
+    /* In una pagina flex-column, margin-inline:auto disabilita lo stretch.
+       Una larghezza esplicita vincola auto-fill allo spazio disponibile,
+       invece di lasciare che la griglia si dimensioni sul contenuto. */
+    width: 100%; gap: 0.9rem; max-width: 1100px; margin-inline: auto;
     min-width: 0;
   }
   /* Wrapper flip: item di griglia neutro, la card riempie. :global per il
