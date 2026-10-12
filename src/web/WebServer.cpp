@@ -7,6 +7,7 @@
 #include "core/MediaProcessor.hpp"
 #include "core/PlanningService.hpp"
 #include "core/QueueStore.hpp"
+#include "core/SeriesIdentity.hpp"
 #include "core/SeriesUtils.hpp"
 #include "core/ThumbCache.hpp"
 #include "scrapers/AnimeWScraper.hpp"
@@ -98,6 +99,9 @@ namespace Web {
           m_seriesRepository(resolveJsonPath(configManager),
                              Core::SeriesRepository::dbPathFor(resolveJsonPath(configManager))),
           m_scheduler(configManager, resolveJsonPath(configManager).string()) {
+        // Demone: scheduler e route CRUD condividono lo stesso repository
+        // (un solo mutex sulle serie). Prima di start(), mai dopo.
+        m_scheduler.useRepository(&m_seriesRepository);
         // Ogni client SSE occupa un thread del pool per l'intera connessione:
         // pool dinamico proporzionale alla macchina (coerente con lo stile del
         // resto del codice, es. getExecutionStrategy), minimo garantito 16.
@@ -358,13 +362,15 @@ namespace Web {
         // ---- SERIES ----
         m_svr.Get("/api/series", [this](const httplib::Request& req, httplib::Response& res) {
             try {
-                auto vec = m_seriesRepository.loadSeriesData();
+                auto vec = m_seriesRepository.snapshotSeriesData();
                 nlohmann::json data = nlohmann::json::array();
                 for (size_t i = 0; i < vec.size(); ++i) {
                     nlohmann::json entry = vec[i];
                     auto path = entry.value("path", "");
                     entry["local_episode_count"] = path.empty() ? 0 : Core::countVideoFiles(path);
                     entry["_file_index"] = static_cast<uint64_t>(i);
+                    entry["identity"] = Core::seriesIdentity(entry.value("service", ""),
+                                                             entry.value("series_page_url", ""));
                     data.push_back(std::move(entry));
                 }
                 std::string sortField = req.has_param("sort") ? req.get_param_value("sort") : "";
@@ -382,9 +388,20 @@ namespace Web {
             try {
                 auto body = nlohmann::json::parse(req.body);
                 auto series = body.get<Core::Series>();
-                auto vec = m_seriesRepository.loadSeriesData();
-                vec.push_back(series);
-                m_seriesRepository.saveSeriesData(vec);
+                // Mutazione atomica nel repository: il vincolo anti-duplicato
+                // vive lì (una sola sezione critica), non nel controller.
+                auto esito = m_seriesRepository.addSeries(series);
+                if (esito.esito == Core::SeriesRepository::MutazioneEsito::Duplicato) {
+                    auto err = errorJson("Serie già in gestione", 409);
+                    err["error_code"] = "series_already_managed";
+                    err["identity"] = esito.identity;
+                    sendJson(res, err, 409);
+                    return;
+                }
+                if (esito.esito == Core::SeriesRepository::MutazioneEsito::ErroreStorage) {
+                    sendJson(res, errorJson("Storage error: " + esito.errore, 500), 500);
+                    return;
+                }
                 // Metadati una tantum (solo AnimeWorld, solo se spuntato nel
                 // form): poster + tvshow.nfo, best-effort — l'aggiunta riesce
                 // comunque. Mai sovrascritture.
@@ -396,7 +413,8 @@ namespace Web {
                                            std::string(e.what()));
                     }
                 }
-                sendJson(res, successJson({{"index", vec.size() - 1}}));
+                sendJson(res, successJson({{"index", esito.indice},
+                                                   {"identity", esito.identity}}));
             } catch (const std::exception& e) {
                 sendJson(res, errorJson("Invalid series data: " + std::string(e.what())), 400);
             }
@@ -406,15 +424,34 @@ namespace Web {
                   [this](const httplib::Request& req, httplib::Response& res) {
                       try {
                           auto idx = std::stoi(req.matches[1]);
-                          auto body = nlohmann::json::parse(req.body);
-                          auto vec = m_seriesRepository.loadSeriesData();
-                          if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
+                          if (idx < 0) {
                               sendJson(res, errorJson("Index out of range"), 404);
                               return;
                           }
-                          vec[idx] = body.get<Core::Series>();
-                          m_seriesRepository.saveSeriesData(vec);
-                          sendJson(res, successJson());
+                          auto body = nlohmann::json::parse(req.body);
+                          auto serie = body.get<Core::Series>();
+                          auto esito = m_seriesRepository.updateSeries(
+                              static_cast<size_t>(idx), serie);
+                          if (esito.esito ==
+                              Core::SeriesRepository::MutazioneEsito::NonTrovato) {
+                              sendJson(res, errorJson("Index out of range"), 404);
+                              return;
+                          }
+                          if (esito.esito ==
+                              Core::SeriesRepository::MutazioneEsito::Duplicato) {
+                              auto err = errorJson("Serie già in gestione", 409);
+                              err["error_code"] = "series_already_managed";
+                              err["identity"] = esito.identity;
+                              sendJson(res, err, 409);
+                              return;
+                          }
+                          if (esito.esito ==
+                              Core::SeriesRepository::MutazioneEsito::ErroreStorage) {
+                              sendJson(res, errorJson("Storage error: " + esito.errore, 500),
+                                       500);
+                              return;
+                          }
+                          sendJson(res, successJson({{"identity", esito.identity}}));
                       } catch (const std::exception& e) {
                           sendJson(res, errorJson("Invalid data: " + std::string(e.what())), 400);
                       }
@@ -424,13 +461,19 @@ namespace Web {
             R"(/api/series/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
                 try {
                     auto idx = std::stoi(req.matches[1]);
-                    auto vec = m_seriesRepository.loadSeriesData();
-                    if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
+                    if (idx < 0) {
                         sendJson(res, errorJson("Index out of range"), 404);
                         return;
                     }
-                    vec.erase(vec.begin() + idx);
-                    m_seriesRepository.saveSeriesData(vec);
+                    auto esito = m_seriesRepository.removeSeries(static_cast<size_t>(idx));
+                    if (esito.esito == Core::SeriesRepository::MutazioneEsito::NonTrovato) {
+                        sendJson(res, errorJson("Index out of range"), 404);
+                        return;
+                    }
+                    if (esito.esito == Core::SeriesRepository::MutazioneEsito::ErroreStorage) {
+                        sendJson(res, errorJson("Storage error: " + esito.errore, 500), 500);
+                        return;
+                    }
                     sendJson(res, successJson());
                 } catch (const std::exception& e) {
                     sendJson(res, errorJson("Invalid request: " + std::string(e.what())), 400);
@@ -459,7 +502,7 @@ namespace Web {
                   [this](const httplib::Request& req, httplib::Response& res) {
                       try {
                           auto idx = std::stoi(req.matches[1]);
-                          auto vec = m_seriesRepository.loadSeriesData();
+                          auto vec = m_seriesRepository.snapshotSeriesData();
                           if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
                               sendJson(res, errorJson("Index out of range"), 404);
                               return;
@@ -476,7 +519,7 @@ namespace Web {
                                                         httplib::Response& res) {
             try {
                 auto idx = std::stoi(req.matches[1]);
-                auto vec = m_seriesRepository.loadSeriesData();
+                auto vec = m_seriesRepository.snapshotSeriesData();
                 if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
                     sendJson(res, errorJson("Index out of range"), 404);
                     return;
@@ -583,6 +626,7 @@ namespace Web {
                     e["pageUrl"] = it.pageUrl;
                     e["posterUrl"] = it.posterUrl;
                     e["tooltipId"] = it.tooltipId;
+                    e["identity"] = Core::discoverIdentity(it.pageUrl);
                     items.push_back(std::move(e));
                 }
                 sendJson(res, successJson({{"items", std::move(items)},
@@ -970,7 +1014,7 @@ namespace Web {
                     auto body = nlohmann::json::parse(req.body);
                     burst = body.value("burst", true);
                 }
-                auto& seriesList = m_seriesRepository.loadSeriesData();
+                auto seriesList = m_seriesRepository.snapshotSeriesData();
                 if (seriesList.empty()) {
                     m_downloadRunning.store(false);
                     sendJson(res, errorJson("No series configured"), 400);

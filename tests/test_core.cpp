@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <barrier>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
@@ -1501,6 +1502,148 @@ static void testSeriesIdentity() {
     CHECK(seriesIdentity("animeW_scraper", "   ").empty());
 }
 
+// Mutazioni atomiche del repository: vincolo anti-duplicato, concorrenza con
+// barriera (mai sleep), nessun bypass read-modify-save, errori propagati.
+static void testRepositoryAtomic() {
+    using Core::SeriesRepository;
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_repo_atomic";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    auto jsonPath = dir / "series_data.json";
+
+    auto makeSeries = [](const std::string& name, const std::string& url) {
+        Core::Series s;
+        s.name = name;
+        s.service = "animeW_scraper";
+        s.path = "/tmp/" + name;
+        s.seriesPageUrl = url;
+        return s;
+    };
+
+    SeriesRepository repo(jsonPath);
+    const std::string urlA = "https://www.animeworld.ac/play/serie-a.AAAA1";
+    const std::string urlB = "https://www.animeworld.ac/play/serie-b.BBBB2";
+
+    // Add ok con identity; mirror .so considerato duplicato.
+    auto addA = repo.addSeries(makeSeries("A", urlA));
+    CHECK(addA.esito == SeriesRepository::MutazioneEsito::Ok);
+    CHECK(addA.indice == 0);
+    CHECK(!addA.identity.empty());
+    CHECK(addA.identity ==
+          Core::seriesIdentity("animeW_scraper", "https://www.animeworld.so/play/serie-a.AAAA1"));
+    auto dupA = repo.addSeries(makeSeries("A-copia", "https://www.animeworld.so/play/serie-a.AAAA1/"));
+    CHECK(dupA.esito == SeriesRepository::MutazioneEsito::Duplicato);
+    CHECK(dupA.indice == 0);
+    CHECK(repo.snapshotSeriesData().size() == 1);
+    CHECK(repo.shadowChecks() == 0); // JSON-only: nessun mirror aggiunto
+
+    // Update stessa serie/stessa identity ammesso (correzione altri campi).
+    Core::Series aMod = makeSeries("A", urlA);
+    aMod.path = "/tmp/A-nuovo";
+    auto updSame = repo.updateSeries(0, aMod);
+    CHECK(updSame.esito == SeriesRepository::MutazioneEsito::Ok);
+    CHECK(repo.snapshotSeriesData()[0].path == "/tmp/A-nuovo");
+
+    // Update verso identità di un'altra serie rifiutato, senza modifiche.
+    CHECK(repo.addSeries(makeSeries("B", urlB)).esito == SeriesRepository::MutazioneEsito::Ok);
+    Core::Series bConflict = makeSeries("B", urlA);
+    auto updConf = repo.updateSeries(1, bConflict);
+    CHECK(updConf.esito == SeriesRepository::MutazioneEsito::Duplicato);
+    CHECK(repo.snapshotSeriesData()[1].seriesPageUrl == urlB);
+    // Indice assente: 404 logico.
+    CHECK(repo.updateSeries(9, makeSeries("X", urlB)).esito ==
+          SeriesRepository::MutazioneEsito::NonTrovato);
+    CHECK(repo.removeSeries(9).esito == SeriesRepository::MutazioneEsito::NonTrovato);
+
+    // Due thread, stessa identity, partenza sincronizzata: uno Ok, uno Duplicato.
+    {
+        auto dir2 = std::filesystem::temp_directory_path() / "anidl_test_repo_race";
+        std::filesystem::remove_all(dir2);
+        std::filesystem::create_directories(dir2);
+        SeriesRepository race(dir2 / "series_data.json");
+        std::barrier sync(2);
+        SeriesRepository::AddEsito r1, r2;
+        std::thread t1([&] {
+            sync.arrive_and_wait();
+            r1 = race.addSeries(makeSeries("R", urlA));
+        });
+        std::thread t2([&] {
+            sync.arrive_and_wait();
+            r2 = race.addSeries(makeSeries("R-bis", urlA));
+        });
+        t1.join();
+        t2.join();
+        int okCount = (r1.esito == SeriesRepository::MutazioneEsito::Ok ? 1 : 0) +
+                      (r2.esito == SeriesRepository::MutazioneEsito::Ok ? 1 : 0);
+        int dupCount = (r1.esito == SeriesRepository::MutazioneEsito::Duplicato ? 1 : 0) +
+                       (r2.esito == SeriesRepository::MutazioneEsito::Duplicato ? 1 : 0);
+        CHECK(okCount == 1);
+        CHECK(dupCount == 1);
+        CHECK(race.snapshotSeriesData().size() == 1);
+        std::filesystem::remove_all(dir2);
+    }
+
+    // Due add diverse concorrenti: entrambe presenti.
+    {
+        auto dir3 = std::filesystem::temp_directory_path() / "anidl_test_repo_race2";
+        std::filesystem::remove_all(dir3);
+        std::filesystem::create_directories(dir3);
+        SeriesRepository race(dir3 / "series_data.json");
+        std::barrier sync(2);
+        SeriesRepository::AddEsito r1, r2;
+        std::thread t1([&] {
+            sync.arrive_and_wait();
+            r1 = race.addSeries(makeSeries("R1", urlA));
+        });
+        std::thread t2([&] {
+            sync.arrive_and_wait();
+            r2 = race.addSeries(makeSeries("R2", urlB));
+        });
+        t1.join();
+        t2.join();
+        CHECK(r1.esito == SeriesRepository::MutazioneEsito::Ok);
+        CHECK(r2.esito == SeriesRepository::MutazioneEsito::Ok);
+        CHECK(race.snapshotSeriesData().size() == 2);
+        std::filesystem::remove_all(dir3);
+    }
+
+    // Remove + avanzamento: nessuna resurrezione della serie rimossa.
+    CHECK(repo.removeSeries(0).esito == SeriesRepository::MutazioneEsito::Ok);
+    CHECK(repo.snapshotSeriesData().size() == 1);
+    CHECK(repo.applyDownloadedEpisodes({{"B", 3}}, "2026-10-12T00:00:00Z"));
+    auto snap = repo.snapshotSeriesData();
+    CHECK(snap.size() == 1);
+    CHECK(snap[0].name == "B");
+    CHECK(snap[0].lastDownloadedEpisode == 3);
+
+    // Snapshot precedente resta valido dopo nuove scritture.
+    auto prima = repo.snapshotSeriesData();
+    CHECK(repo.addSeries(makeSeries("C", "https://www.animeworld.ac/play/serie-c.CCCC3")).esito ==
+          SeriesRepository::MutazioneEsito::Ok);
+    CHECK(prima.size() == 1);
+    CHECK(repo.snapshotSeriesData().size() == 2);
+
+    // Errore storage deterministico (parent del JSON è un file regolare):
+    // esito tipizzato, cache/dati vecchi integri, niente throw.
+    {
+        auto dir4 = std::filesystem::temp_directory_path() / "anidl_test_repo_err";
+        std::filesystem::remove_all(dir4);
+        std::filesystem::create_directories(dir4);
+        auto blocker = dir4 / "blocco";
+        {
+            std::ofstream f(blocker);
+            f << "non una directory";
+        }
+        SeriesRepository rotto(blocker / "series_data.json");
+        auto bad = rotto.addSeries(makeSeries("E", urlA));
+        CHECK(bad.esito == SeriesRepository::MutazioneEsito::ErroreStorage);
+        CHECK(!bad.errore.empty());
+        std::filesystem::remove_all(dir4);
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -1512,6 +1655,7 @@ int main(int argc, char** argv) {
     testScraperUtils();
     testSeriesRepository();
     testSeriesIdentity();
+    testRepositoryAtomic();
     testCacheMtimeReload();
     testConfigMigration();
     testInstanceLock(argv[0]);

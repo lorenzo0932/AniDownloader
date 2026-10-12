@@ -27,6 +27,32 @@ namespace Core {
         void saveSeriesData(const std::vector<Series>& seriesData);
         void invalidateCache();
 
+        // Istantanea per valore copiata sotto lock: nessun riferimento alla
+        // cache sopravvive al lock. Sostituisce l'uso di const& per i lettori.
+        std::vector<Series> snapshotSeriesData(bool forceReload = false);
+
+        // Mutazioni atomiche (una sola sezione critica load→verifica→save).
+        // Il vincolo anti-duplicato vive qui, non nel controller HTTP.
+        enum class MutazioneEsito { Ok, Duplicato, NonTrovato, ErroreStorage };
+        struct AddEsito {
+            MutazioneEsito esito = MutazioneEsito::Ok;
+            std::size_t indice = 0;
+            std::string identity;
+            std::string errore;
+        };
+        struct UpdateEsito {
+            MutazioneEsito esito = MutazioneEsito::Ok;
+            std::string identity;
+            std::string errore;
+        };
+        struct RemoveEsito {
+            MutazioneEsito esito = MutazioneEsito::Ok;
+            std::string errore;
+        };
+        AddEsito addSeries(const Series& serie);
+        UpdateEsito updateSeries(std::size_t indice, const Series& serie);
+        RemoveEsito removeSeries(std::size_t indice);
+
         // Aggiorna lastDownloadedEpisode/lastDownloadedAt per le serie in maxEpisodes
         // (una sola scrittura, dopo che tutti i download sono terminati).
         // Ritorna true se almeno una serie è stata aggiornata.
@@ -45,6 +71,12 @@ namespace Core {
         static std::filesystem::path dbPathFor(const std::filesystem::path& jsonFilePath);
 
       private:
+        // Helper sotto lock (NON acquisiscono m_mutex: il chiamante lo detiene
+        // già). loadLocked ricarica se necessario, saveLocked persiste e
+        // aggiorna cache/stat/shadow, invalidateCacheLocked resetta la cache.
+        const std::vector<Series>& loadLocked();
+        std::string saveLocked(const std::vector<Series>& seriesData);
+        void invalidateCacheLocked();
         // Apre il DB e importa dal JSON se la tabella series è vuota mentre
         // il JSON ha dati (primo avvio o import interrotto). Ritorna false
         // con log se l'import fallisce: il Repository continua in JSON-only.

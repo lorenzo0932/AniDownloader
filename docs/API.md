@@ -78,6 +78,7 @@ Lista delle serie.
     "series": [
         {
             "_file_index": 0,
+            "identity": "animeW_scraper:/play/one-piece.HASH",
             "name": "One Piece",
             "path": "~/Video/Anime/One Piece",
             "series_page_url": "https://animeworld.so/...",
@@ -92,6 +93,11 @@ Lista delle serie.
     ]
 }
 ```
+
+`identity`: stringa opaca calcolata dal server (servizio + URL canonico).
+Il frontend la confronta come stringa, senza normalizzare URL in JS.
+Stessa serie su mirror verificato (es. `.so`/`.ac`) ha stessa identity;
+stesso titolo con URL diversi resta distinto.
 
 ---
 
@@ -118,11 +124,23 @@ una tantum `folder.jpg` (locandina HD) e `tvshow.nfo` (trama, generi, anno,
 stato) nella cartella serie — solo se non esistono già, mai sovrascritture.
 Best-effort: se fallisce, l'aggiunta riesce comunque.
 
-Risposta:
+Risposta (successo):
 
 ```json
-{"success": true}
+{"success": true, "index": 3, "identity": "animeW_scraper:/play/one-piece.HASH"}
 ```
+
+Duplicato (stessa serie già in gestione, anche da mirror verificato):
+
+```json
+{"error": "Serie già in gestione", "code": 409, "error_code": "series_already_managed", "identity": "animeW_scraper:/play/one-piece.HASH"}
+```
+
+`code` resta numerico (allineato allo status HTTP); il motivo applicativo è
+in `error_code`. Il controllo è atomico nel repository: due richieste
+concorrenti sullo stesso repository non creano due copie. La garanzia vale
+per thread dello stesso processo; due daemon sullo stesso JSON restano
+fuori garanzia (lock interprocesso via `exec.lock` per i giri, non per CRUD).
 
 ---
 
@@ -130,11 +148,14 @@ Risposta:
 
 Modifica la serie all'indice `index`.
 
-Corpo: stesso formato di POST. Risposta:
+Corpo: stesso formato di POST. Risposta (successo):
 
 ```json
-{"success": true}
+{"success": true, "identity": "animeW_scraper:/play/one-piece.HASH"}
 ```
+
+Il cambio URL verso una serie già gestita da un altro indice è rifiutato
+con lo stesso 409 `series_already_managed` (nessuna modifica applicata).
 
 ---
 
@@ -270,10 +291,14 @@ Risposta:
     "success": true, "page": 1, "maxPage": 122,
     "items": [
         {"titolo": "Naruto Shippuden", "pageUrl": "/play/naruto-shippuden.v3U8a",
-         "posterUrl": "https://img.animeworld.ac/locandine/01ec....png", "tooltipId": "193"}
+         "posterUrl": "https://img.animeworld.ac/locandine/01ec....png", "tooltipId": "193",
+         "identity": "animeW_scraper:/play/naruto-shippuden.v3U8a"}
     ]
 }
 ```
+
+Ogni item espone `identity` (stessa regola di `GET /api/series`): il badge
+"In gestione" si decide confrontando stringhe, senza parsing URL nel browser.
 
 I poster sono URL diretti (`img.animeworld.ac`): il frontend li carica senza proxy.
 
