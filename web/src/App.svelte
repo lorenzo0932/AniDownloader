@@ -298,6 +298,10 @@
     padding: 2rem;
     flex: 1;
     width: calc(100% - 240px);
+    /* Flex-item con larghezza esplicita: senza min-width:0 il pavimento
+       resta il min-content della pagina e una griglia auto-fill larga
+       allarga tutto il contenuto oltre il viewport (visto in Scopri). */
+    min-width: 0;
     transition: margin-left 0.2s ease, width 0.2s ease;
   }
   .sidebar-collapsed ~ .content {
