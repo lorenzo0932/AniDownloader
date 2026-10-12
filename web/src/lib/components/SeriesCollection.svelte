@@ -55,6 +55,11 @@
   .series-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 0.9rem; max-width: 1100px; margin-inline: auto;
+    /* min-width:0 obbligatorio: la collezione è flex-item della pagina e
+       auto-fill ha min-content che cresce con le colonne — senza, griglia
+       e pagina si allargano a vicenda fino al cap (1400px fuori schermo
+       in vista grande). Stesso per la tabella. */
+    min-width: 0;
   }
   /* Wrapper flip: item di griglia neutro, la card riempie. :global per il
      contenuto degli snippet (compilato con lo scope del consumer). */
@@ -68,6 +73,8 @@
 
   .series-table {
     display: flex; flex-direction: column; gap: 0.4rem;
+    /* Come la griglia: mai allargare la pagina oltre il viewport. */
+    min-width: 0;
   }
 
   @media (max-width: 768px) {

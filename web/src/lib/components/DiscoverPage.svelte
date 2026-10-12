@@ -571,9 +571,9 @@
 />
 
 <style>
-  .discover-page { display: flex; flex-direction: column; gap: 1rem; }
+  .discover-page { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
   .discover-page h2 { font-size: 1.4rem; }
-  .discover-filters { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+  .discover-filters { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
   .filter-keyword { padding: 0.6rem 0.8rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); font-size: 1rem; }
   .filter-row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; }
   .filter-row label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; color: var(--text-secondary); }
