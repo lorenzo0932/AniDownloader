@@ -11,6 +11,7 @@
 #include "core/QueueStore.hpp"
 #include "core/Scheduler.hpp"
 #include "core/Series.hpp"
+#include "core/SeriesIdentity.hpp"
 #include "core/SeriesRepository.hpp"
 #include "core/SeriesUtils.hpp"
 #include "core/ThumbCache.hpp"
@@ -1446,6 +1447,60 @@ static void testNfoPosterOnce() {
     std::filesystem::remove_all(dir);
 }
 
+// Identità serie (B0): relativo AW == assoluto canonico, host
+// case-insensitive, path case-sensitive, episodio mai collassato.
+static void testSeriesIdentity() {
+    using Core::discoverIdentity;
+    using Core::seriesIdentity;
+
+    // Relativo del catalogo == assoluto su host ufficiale.
+    CHECK(seriesIdentity("animeW_scraper", "/play/ghost-meets-gal.0H0eO") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(discoverIdentity("/play/ghost-meets-gal.0H0eO") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // Host maiuscolo/minuscolo equivale...
+    CHECK(seriesIdentity("animeW_scraper", "https://WWW.ANIMEWORLD.AC/play/ghost-meets-gal.0H0eO") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    // ...ma il path che cambia case NON equivale (ID con maiuscole/minuscole).
+    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/Ghost-Meets-Gal.0H0eO") !=
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // Mirror .so verificato (301 a .ac) equivale al canonico.
+    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.so/play/ghost-meets-gal.0H0eO") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    // Host estraneo mai equivalente.
+    CHECK(seriesIdentity("animeW_scraper", "https://evil.example.com/play/ghost-meets-gal.0H0eO") !=
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // Trailing slash / fragment / query non cambiano l'identità serie.
+    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO/") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(seriesIdentity("animeW_scraper",
+                         "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO#trama") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // URL episodio NON diventa identità della serie.
+    CHECK(seriesIdentity("animeW_scraper",
+                         "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO/abc123") !=
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // Stesso path su servizi diversi resta diverso; stesso titolo non conta.
+    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO") !=
+          seriesIdentity("animeU_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(seriesIdentity("animeU_scraper", "https://animeunity.to/watch/ghost/1") !=
+          seriesIdentity("animeU_scraper", "https://animeunity.to/watch/gal/1"));
+
+    // AU: mirror storico .so equivale al canonico .to, host case-insensitive.
+    CHECK(seriesIdentity("animeU_scraper", "https://animeunity.so/watch/ghost/1") ==
+          seriesIdentity("animeU_scraper", "https://animeunity.to/watch/ghost/1"));
+
+    // Vuoti mai validi.
+    CHECK(seriesIdentity("", "https://www.animeworld.ac/play/x.y").empty());
+    CHECK(seriesIdentity("animeW_scraper", "").empty());
+    CHECK(seriesIdentity("animeW_scraper", "   ").empty());
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -1456,6 +1511,7 @@ int main(int argc, char** argv) {
     testSeriesJsonRoundtrip();
     testScraperUtils();
     testSeriesRepository();
+    testSeriesIdentity();
     testCacheMtimeReload();
     testConfigMigration();
     testInstanceLock(argv[0]);
