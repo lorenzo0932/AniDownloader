@@ -38,6 +38,21 @@ namespace Core {
             }
         }
 
+        // Il JSON esport contiene ancora dati? Serve per l'import di recupero:
+        // DB vuoto mentre l'ex-autorevole ha contenuti. Mai lanciare: un parse
+        // fallito equivale a "dati assenti" (il fallback gestisce il resto).
+        bool jsonHasData(const std::filesystem::path& jsonPath) {
+            try {
+                std::ifstream f(jsonPath);
+                if (!f.is_open())
+                    return false;
+                auto parsed = nlohmann::json::parse(f);
+                return parsed.is_array() && !parsed.empty();
+            } catch (const std::exception&) {
+                return false;
+            }
+        }
+
     } // namespace
 
     namespace {
@@ -64,6 +79,27 @@ namespace Core {
             return s;
         }
 
+        // Stat combinato dei file del DB (cutover §6). Il -wal si tocca a ogni
+        // commit: senza contarlo, le scritture dello scheduler sulla stessa
+        // tabella kv sembrerebbero invariate e la cache stagnerebbe.
+        FileSnapshot snapshotDbFiles(const std::filesystem::path& dbPath) {
+            FileSnapshot out;
+            const auto db = snapshotFile(dbPath);
+            const auto wal = snapshotFile(dbPath.string() + "-wal");
+            if (db.valid) {
+                out.mtime = db.mtime;
+                out.size = db.size;
+                out.valid = true;
+            }
+            if (wal.valid) {
+                if (!out.valid || wal.mtime > out.mtime)
+                    out.mtime = wal.mtime;
+                out.size += wal.size;
+                out.valid = true;
+            }
+            return out;
+        }
+
     } // namespace
 
     SeriesRepository::SeriesRepository(const std::filesystem::path& jsonFilePath)
@@ -85,6 +121,55 @@ namespace Core {
     }
 
     bool SeriesRepository::shadowEnabled() const noexcept { return !m_dbPath.empty(); }
+
+    // Lettura completa della tabella series: ordine di rowid (INSERT in ordine
+    // array) mantiene la posizione indicizzata usata dall'API (_file_index).
+    bool SeriesRepository::readAllFromDb(Database& db, std::vector<Series>& out) {
+        out.clear();
+        auto sel = db.prepare(
+            "SELECT name, service, path, continue_series, is_high_priority, "
+            "passed_episodes, series_page_url, episode_list_selector, "
+            "download_link_selector, last_downloaded_at, last_downloaded_episode, "
+            "alternate_sources FROM series ORDER BY rowid;");
+        if (!sel.valid())
+            return false;
+        while (sel.step())
+            out.push_back(DbImporter::readSeries(sel));
+        return !sel.hasError();
+    }
+
+    // Parità export: l'export deve raccontare la stessa lista del DB. Su
+    // divergenza soltanto allarme in log: decidere "quale copia vince"
+    // automaticamente rischierebbe di cancellare contenuti più recenti; il
+    // recupero passa da backup/restore (o dal binario precedente per l'export).
+    void SeriesRepository::checkExportParity(const std::vector<Series>& dalDb) {
+        if (dalDb.empty())
+            return;
+        std::vector<Series> esportato;
+        try {
+            std::ifstream f(m_jsonFilePath);
+            if (!f.is_open())
+                return; // export assente (prima scrittura): niente da confrontare
+            auto arr = nlohmann::json::parse(f);
+            esportato = arr.get<std::vector<Series>>();
+        } catch (const std::exception& e) {
+            Logger::error("Shadow DB: export JSON illeggibile: " + std::string(e.what()));
+            return;
+        }
+        if (esportato.empty())
+            return; // export assente (prima scrittura): niente da confrontare
+        const std::string hashJson = DbImporter::seriesHash(esportato);
+        const std::string hashDb = DbImporter::seriesHash(dalDb);
+        // Sbagliato anche solo il conteggio è una divergenza: export vuoto con
+        // DB pieno (o viceversa) deve generare l'allarme come contenuti diversi.
+        if (esportato.size() == dalDb.size() && hashJson == hashDb)
+            return;
+        Logger::error("Shadow DB: DIVERGENZA export (" +
+                      std::to_string(esportato.size()) + " serie, hash " + hashJson +
+                      ") vs DB (" + std::to_string(dalDb.size()) + " serie, hash " +
+                      hashDb + "): nessun auto-ripristino, recupero manuale da backup");
+    }
+
 
     std::size_t SeriesRepository::shadowChecks() const {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -118,7 +203,11 @@ namespace Core {
             if (count.valid() && count.step() && !count.hasError())
                 righe = static_cast<std::size_t>(count.columnInt(0));
         }
-        if (righe == 0 && m_cache.has_value() && !m_cache->empty()) {
+        // Cutover: l'import di recupero parte solo con il DB vuoto mentre
+        // l'export ha ancora contenuti, senza dipendere dalla cache in memoria
+        // (al primo avvio la cache non esiste). È il caso "DB perso o
+        // cancellato": si ricostruisce dal JSON senza mai riscriverlo.
+        if (righe == 0 && jsonHasData(m_jsonFilePath)) {
             auto res = DbImporter::importJson(m_jsonFilePath, m_dbPath);
             if (!res.ok) {
                 m_shadowLastInfo = "import iniziale: " + res.error;
@@ -177,26 +266,12 @@ namespace Core {
                         }
                     }
                 }
-                // Verifica dentro la transazione: conteggi + hash su rilettura.
+                // Verifica dentro la transazione: conteggi + hash su rilettura
+                // (stessa lettura usata dal cutover: un solo mapping).
                 std::vector<Series> rilette;
-                if (ok) {
-                    auto sel = m_db->prepare(
-                        "SELECT name, service, path, continue_series, is_high_priority, "
-                        "passed_episodes, "
-                        "series_page_url, episode_list_selector, download_link_selector, "
-                        "last_downloaded_at, last_downloaded_episode, alternate_sources FROM "
-                        "series;");
-                    if (!sel.valid()) {
-                        ok = false;
-                        dettaglio = "verifica prepare: " + sel.lastError();
-                    } else {
-                        while (sel.step())
-                            rilette.push_back(DbImporter::readSeries(sel));
-                        if (sel.hasError()) {
-                            ok = false;
-                            dettaglio = "verifica lettura: " + sel.lastError();
-                        }
-                    }
+                if (ok && !readAllFromDb(*m_db, rilette)) {
+                    ok = false;
+                    dettaglio = "verifica lettura: " + m_db->lastError();
                 }
                 if (ok) {
                     const std::string hashJson = DbImporter::seriesHash(data);
@@ -223,6 +298,10 @@ namespace Core {
         }
         m_shadowLastInfo = dettaglio + " (verifiche " + std::to_string(m_shadowChecks) +
                            ", divergenze " + std::to_string(m_shadowDivergences) + ")";
+        // Cutover: anche i successi entrano nei log come le divergenze, così
+        // lo "zero-divergenze" è misurabile da /api/log durante la finestra
+        // di rollback (i contatori non sono esposti via API).
+        Logger::info("Shadow DB: " + m_shadowLastInfo);
         return true;
     }
 
@@ -239,16 +318,37 @@ namespace Core {
 
     // --- Helper privati sotto lock (il chiamante detiene già m_mutex) ---
 
-    // Ricarica la cache dal file se necessario e la restituisce. NON acquisisce
-    // il mutex: chiamare solo con m_mutex già acquisito.
+    // Ricarica la cache e la restituisce. NON acquisisce il mutex: chiamare
+    // solo con m_mutex già acquisito.
+    //
+    // Cutover (ADR-004 §6): il DB è la fonte; il JSON è l'export e il fallback
+    // di rollback (binario precedente = comportamento pre-cutover). Cache
+    // valida finché i file del DB non cambiano; DB non apribile o lettura
+    // fallita → si legge il file JSON esattamente come prima del cutover.
     const std::vector<Series>& SeriesRepository::loadLocked() {
-        if (m_cache.has_value() && m_haveStat) {
-            auto cur = snapshotFile(m_jsonFilePath);
-            if (cur.valid && cur.mtime == m_lastWrite && cur.size == m_lastSize) {
-                return m_cache.value();
+        if (shadowEnabled()) {
+            if (m_cache.has_value()) {
+                if (!m_haveStat)
+                    return m_cache.value();
+                auto cur = snapshotDbFiles(m_dbPath);
+                if (cur.valid && cur.mtime == m_lastWrite && cur.size == m_lastSize)
+                    return m_cache.value();
             }
-        } else if (m_cache.has_value()) {
-            return m_cache.value();
+            if (ensureShadowImported()) {
+                std::vector<Series> rilette;
+                if (readAllFromDb(*m_db, rilette)) {
+                    m_cache = std::move(rilette);
+                    checkExportParity(m_cache.value());
+                    if (auto s = snapshotDbFiles(m_dbPath); s.valid) {
+                        m_lastWrite = s.mtime;
+                        m_lastSize = s.size;
+                        m_haveStat = true;
+                    }
+                    return m_cache.value();
+                }
+                Logger::error("Shadow DB: lettura fallita: " + m_db->lastError() +
+                              " → fallback sul file JSON");
+            }
         }
 
         if (!std::filesystem::exists(m_jsonFilePath)) {
@@ -293,25 +393,50 @@ namespace Core {
         return m_cache.value();
     }
 
-    // Persiste data su JSON + cache + shadow. NON acquisisce il mutex:
-    // chiamare solo con m_mutex già acquisito, dopo aver validato il vincolo.
+    // Persiste data: DB prima (fonte, transazione + verifica), poi export
+    // JSON. NON acquisisce il mutex: chiamare solo con m_mutex già acquisito.
     // Ritorna "" in caso di successo, altrimenti il messaggio d'errore.
     std::string SeriesRepository::saveLocked(const std::vector<Series>& seriesData) {
         try {
+            if (shadowEnabled()) {
+                // Un mirror fallito non blocca il salvataggio: il JSON esportato
+                // resta la copia di rollback aggiornata e la divergenza è nei
+                // log/contatori (ripristino manuale da backup). L'hash-parity
+                // di ricarica segnalerà lo sfasamento finché non si recupera.
+                if (!writeShadow(seriesData))
+                    Logger::error("Shadow DB: mirror fallito: la scrittura risiede solo "
+                                  "nell'export JSON (copia di rollback); il DB va "
+                                  "verificato e, se serve, ripristinato da backup");
+                try {
+                    // Export atomico (tmp + rename): evita series_data.json
+                    // corrotto su crash a metà scrittura.
+                    nlohmann::json jsonArray = seriesData;
+                    writeJsonAtomic(m_jsonFilePath, jsonArray, 4);
+                } catch (const std::exception& e) {
+                    // Il DB (fonte) ha comunque la scrittura: export/manutenzione
+                    // danneggiata non deve sembrare una perdita dati.
+                    Logger::error("Shadow DB: export JSON fallito (il DB conserva la "
+                                  "scrittura): " + std::string(e.what()));
+                }
+                m_cache = seriesData; // Aggiorna la cache solo dopo il successo
+                if (auto s = snapshotDbFiles(m_dbPath); s.valid) {
+                    m_lastWrite = s.mtime;
+                    m_lastSize = s.size;
+                    m_haveStat = true;
+                }
+                return "";
+            }
+
+            // Legacy JSON-only (costruttore 1-arg: test/CLI one-shot senza DB):
+            // comportamento pre-cutover invariato.
             nlohmann::json jsonArray = seriesData;
-            // Scrittura atomica (tmp + rename): evita series_data.json corrotto
-            // su crash a metà scrittura.
             writeJsonAtomic(m_jsonFilePath, jsonArray, 4);
-            m_cache = seriesData; // Aggiorna la cache solo dopo il successo
+            m_cache = seriesData;
             if (auto s = snapshotFile(m_jsonFilePath); s.valid) {
                 m_lastWrite = s.mtime;
                 m_lastSize = s.size;
                 m_haveStat = true;
             }
-            // Shadow dopo il successo JSON: un suo fallimento non tocca mai
-            // il salvataggio appena riuscito (log + contatori, niente throw).
-            if (shadowEnabled())
-                writeShadow(seriesData);
             return "";
         } catch (const std::exception& e) {
             return e.what();

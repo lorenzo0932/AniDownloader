@@ -1026,9 +1026,10 @@ static void testDbImporter() {
     fs::remove_all(dir, ec);
 }
 
-// Shadow mode: JSON autorevole, DB rispecchiato e verificato; divergenza
-// rilevata senza rompere il JSON. Concorrenza: due handle in write-write
-// non perdono righe. Cleanup sempre.
+// Cutover (ADR-004 §6): il DB è la fonte; il JSON è export + fallback.
+// Il mirror resta una verifica su ogni scrittura (divergenza contata,
+// salvataggio non bloccato). Concorrenza: due handle in write-write non
+// perdono righe. Cleanup sempre.
 static void testShadowMode() {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "anidl_test_shadow";
@@ -1066,42 +1067,145 @@ static void testShadowMode() {
     repo.saveSeriesData(due);
     CHECK(repo.shadowChecks() == 1);
     CHECK(repo.shadowDivergences() == 0);
-    // Primo avvio: import automatico con backup verificato.
+    // Primo avvio senza export precedente: il mirror semina direttamente il
+    // DB (nessun import, nessun .bak: il file non esisteva).
     CHECK(fs::exists(dbPath));
     {
-        bool bak = false;
-        for (const auto& entry : fs::directory_iterator(dir))
-            bak = bak || entry.path().string().find(".bak.") != std::string::npos;
-        CHECK(bak);
+        Core::Database db(dbPath);
+        auto sel = db.prepare("SELECT COUNT(*) FROM series;");
+        CHECK(sel.valid() && sel.step() && sel.columnInt(0) == 2);
     }
-    // Letture restano dal JSON.
-    CHECK(repo.loadSeriesData().size() == 2);
+    // Letture dal DB autorevole (ordine righe = ordine array del JSON).
+    auto lette = repo.loadSeriesData();
+    CHECK(lette.size() == 2);
+    CHECK(lette[0].name == "Alpha");
 
-    // Corrompo il DB fuori dal Repository: la scrittura dopo rileva la
-    // divergenza (mirror riscrive tutto: torna a 0 alla save successiva).
+    // Modifica esterna al DB (altro processo): post-cutover è la verità, la
+    // ricarica ne tiene conto grazie allo stat combinato di .db + -wal.
     {
         Core::Database db(dbPath);
         CHECK(db.execute("DELETE FROM series WHERE name='Beta';"));
     }
     {
         auto dati = repo.loadSeriesData();
+        CHECK(dati.size() == 1); // DB autorevole: la cancellazione esterna vince
         repo.saveSeriesData(dati);
         CHECK(repo.shadowChecks() == 2);
-        CHECK(repo.shadowDivergences() == 0); // mirror riscrive: autod Riparato
+        CHECK(repo.shadowDivergences() == 0); // mirror coerente con la fonte
     }
     {
-        // Divergenza vera: riga extra nel DB che il mirror non spiega.
-        // Il mirror fa DELETE+INSERT totale, quindi per osservare una
-        // divergenza persistente serve un DB non scrivibile: directory sola
-        // lettura non basta (WAL). Caso coperto: DB con schema illeggibile.
+        // DB rotto (tabella assente): la lettura casca sul export JSON
+        // (comportamento pre-cutover) e la scrittura conta la divergenza
+        // senza bloccare il salvataggio.
         Core::Database db(dbPath);
         CHECK(db.execute("DROP TABLE series;"));
     }
     {
         auto dati = repo.loadSeriesData();
-        repo.saveSeriesData(dati); // mirror fallisce, JSON intatto
+        CHECK(dati.size() == 1); // fallback: l'export racconta l'ultimo stato
+        repo.saveSeriesData(dati); // mirror fallisce, export intatto
         CHECK(repo.shadowDivergences() == 1);
+        CHECK(repo.loadSeriesData().size() == 1);
+    }
+
+    fs::remove_all(dir, ec);
+}
+
+// Cutover DB fonte (ADR-004 §6): import automatico (DB vuoto + export con
+// dati), letture dal DB con restart, export aggiornato a ogni save, recupero
+// da export con DB svuotato, fallback con file DB illeggibile. Cleanup sempre.
+static void testDbCutover() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_cutover";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    const fs::path jsonPath = dir / "series_data.json";
+    const fs::path dbPath = Core::SeriesRepository::dbPathFor(jsonPath);
+
+    Core::Series a;
+    a.name = "Alpha";
+    a.service = "animew";
+    a.path = "/tmp/a";
+    a.seriesPageUrl = "https://x/a";
+    a.passedEpisodes = 1;
+    Core::Series b = a;
+    b.name = "Beta";
+    b.seriesPageUrl = "https://x/b";
+
+    // 1) primo avvio: export pre-cutover con dati, DB assente → import auto + lettura dal DB.
+    {
+        nlohmann::json arr = std::vector<Core::Series>{a, b};
+        std::ofstream f(jsonPath);
+        f << arr.dump(4);
+        f.close(); // il repository legge il file: nessun buffer in sospeso
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        auto r = repo.loadSeriesData();
+        CHECK(r.size() == 2);
+        CHECK(r[0].name == "Alpha"); // ordine rowid = ordine atteso dall'API
+        CHECK(fs::exists(dbPath));
+    }
+
+    // 2) restart simulato: nuova istanza leggale dal DB (righe > 0, niente import).
+    {
+        Core::SeriesRepository repo(jsonPath, dbPath);
         CHECK(repo.loadSeriesData().size() == 2);
+    }
+
+    // 3) ogni scrittura aggiorna anche l'export: addSeries → export con 3.
+    {
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        Core::Series c = a;
+        c.name = "Gamma";
+        c.seriesPageUrl = "https://x/c";
+        auto esito = repo.addSeries(c);
+        CHECK(esito.esito == Core::SeriesRepository::MutazioneEsito::Ok);
+        std::ifstream f(jsonPath);
+        auto arr = nlohmann::json::parse(f);
+        CHECK(arr.is_array() && arr.size() == 3);
+        CHECK(repo.loadSeriesData().size() == 3);
+        CHECK(repo.shadowDivergences() == 0);
+    }
+
+    // 4) DB svuotato fuori dal Repository (disastro) → auto-import dall'export.
+    {
+        {
+            Core::Database db(dbPath);
+            CHECK(db.execute("DELETE FROM series;"));
+        }
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        CHECK(repo.loadSeriesData().size() == 3);
+        CHECK(repo.shadowDivergences() == 0);
+    }
+
+    // 5) DB illeggibile (file non-SQLite) → fallback sull'export: lette e
+    //    scritture proseguono senza perdita (mirror segnala la divergenza).
+    {
+        fs::rename(dbPath, dir / "db.sano.bak", ec);
+        CHECK(!ec);
+        {
+            std::ofstream f(dbPath, std::ios::binary | std::ios::trunc);
+            f << "questo non è un database SQLite";
+            f.close(); // il repository apre il file: nessun buffer in sospeso
+        }
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        CHECK(repo.loadSeriesData().size() == 3);
+        Core::Series d = a;
+        d.name = "Delta";
+        d.seriesPageUrl = "https://x/d";
+        auto esito = repo.addSeries(d);
+        CHECK(esito.esito == Core::SeriesRepository::MutazioneEsito::Ok); // salvato sull'export
+        CHECK(repo.loadSeriesData().size() == 4);
+        CHECK(repo.shadowDivergences() >= 1); // mirror impossibile: contatore
+        // ripristino: export (4 serie) resta la copia di riferimento per il drill
+        for (const char* suffix : {"", "-wal", "-shm"}) {
+            std::error_code rm;
+            fs::remove(fs::path(dbPath.string() + suffix), rm);
+        }
+        fs::rename(dir / "db.sano.bak", dbPath, ec);
+        CHECK(!ec);
     }
 
     fs::remove_all(dir, ec);
@@ -1708,6 +1812,7 @@ int main(int argc, char** argv) {
     testDatabase();
     testDbImporter();
     testShadowMode();
+    testDbCutover();
     testConcurrentWrites();
     testQueueStore();
     testScheduler();
