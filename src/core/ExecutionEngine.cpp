@@ -45,8 +45,13 @@ namespace Core {
                 break;
             (*pending)++;
 
+            // Callback copiate per valore: su stop questi thread vengono
+            // detachati (sotto) e possono sopravvivere a run(); con i
+            // riferimenti ai frame morti il broadcast SSE leggeva un this
+            // corrotto (SIGSEGV). Il check su stopSignal li rende muti
+            // subito dopo lo stop, senza eventi tardivi.
             analysisThreads.emplace_back(
-                [&stopSignal, result, pending, s, &onProgress, &onTaskSkipped]() {
+                [&stopSignal, result, pending, s, onProgress, onTaskSkipped]() {
                     if (stopSignal) {
                         (*pending)--;
                         return;
@@ -55,8 +60,9 @@ namespace Core {
                     Series seriesCopy = s;
                     seriesCopy.path = ScraperUtils::expandTilde(s.path);
                     auto tasks = PlanningService::planSingleSeries(
-                        seriesCopy, [&onProgress, name = s.name](const std::string& stage) {
-                            if (onProgress)
+                        seriesCopy,
+                        [onProgress, &stopSignal, name = s.name](const std::string& stage) {
+                            if (onProgress && !stopSignal)
                                 onProgress(name, 0, stage);
                         });
 
