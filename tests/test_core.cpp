@@ -324,6 +324,39 @@ static void testConfigMigration() {
     std::filesystem::remove_all(dir);
 }
 
+static void testBurstOnManualStartDefault() {
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_burst_cfg";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+#ifdef _WIN32
+    _putenv_s("XDG_CONFIG_HOME", dir.string().c_str());
+#else
+    setenv("XDG_CONFIG_HOME", dir.string().c_str(), 1);
+#endif
+    auto cfgPath = dir / "AniDownloader" / "config.json";
+    std::filesystem::create_directories(cfgPath.parent_path());
+
+    auto writeCfg = [&](const std::string& body) {
+        std::ofstream f(cfgPath);
+        f << body;
+    };
+
+    {
+        // Config storica senza la chiave → merge dei default: burst ON.
+        writeCfg("{}");
+        Config::AppConfigManager m(cfgPath);
+        CHECK(m.get<bool>("burst_on_manual_start", false) == true);
+    }
+    {
+        // Scelta utente esplicita dalle Impostazioni → vince sul default.
+        writeCfg(R"({"burst_on_manual_start":false})");
+        Config::AppConfigManager m(cfgPath);
+        CHECK(m.get<bool>("burst_on_manual_start", true) == false);
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
 static void testPublishNoReplace() {
     using Core::PublishStatus;
 
@@ -1658,6 +1691,7 @@ int main(int argc, char** argv) {
     testRepositoryAtomic();
     testCacheMtimeReload();
     testConfigMigration();
+    testBurstOnManualStartDefault();
     testInstanceLock(argv[0]);
     testPublishNoReplace();
     testParseMountTable();

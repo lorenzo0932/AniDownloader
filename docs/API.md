@@ -515,7 +515,9 @@ Risposta:
 
 ### `POST /api/download/start`
 
-Avvia i download.
+Avvia i download. Il corpo è opzionale: la UI non lo invia e la modalità
+arriva dalla config `burst_on_manual_start` (default `true`); un `burst`
+esplicito nel corpo vince per quella richiesta.
 
 ```json
 {"burst": true}
@@ -524,7 +526,7 @@ Avvia i download.
 Risposta:
 
 ```json
-{"success": true}
+{"success": true, "message": "Download started"}
 ```
 
 ---

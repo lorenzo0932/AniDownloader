@@ -75,7 +75,8 @@ export const api = {
   },
 
   download: {
-    start: (burst = true) => request('POST', '/api/download/start', { burst }),
+    // Il burst lo decide il backend dalla config (burst_on_manual_start).
+    start: () => request('POST', '/api/download/start'),
     stop: () => request('POST', '/api/download/stop'),
     status: () => request('GET', '/api/download/status'),
   },

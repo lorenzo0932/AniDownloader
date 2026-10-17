@@ -35,6 +35,7 @@
     show_close_warning: true,
     auto_cleanup_on_close: true,
     convert_to_h265: true,
+    burst_on_manual_start: true,
     num_chunks: 0,
     max_network_retries: 3,
     retry_delay_ms: 2000,
@@ -165,6 +166,17 @@
               <label for="convert_to_h265">Abilita compressione H.265 (HEVC)</label>
             </div>
             <p class="field-hint">Riduce le dimensioni del file (~50%) mantenendo la qualit&agrave;.</p>
+
+            <hr class="field-sep" />
+
+            <div class="checkbox-row">
+              <input id="burst_on_manual_start" type="checkbox" bind:checked={config.burst_on_manual_start} />
+              <label for="burst_on_manual_start">Download manuali con priorit&agrave; massima (burst)</label>
+            </div>
+            <p class="field-hint">
+              Usa ~85% della CPU invece del 50% dei controlli automatici: pi&ugrave; veloce quando sei al PC,
+              con pi&ugrave; calore e consumo. Vale dal prossimo avvio; lo scheduler resta sempre contenuto.
+            </p>
 
             <hr class="field-sep" />
 

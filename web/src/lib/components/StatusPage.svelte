@@ -165,7 +165,7 @@
     hasRun = true;
     addLog({ type: 'overall', status: 'Avvio download...' });
     try {
-      await api.download.start(false);
+      await api.download.start();
       downloadRunning = true;
     } catch (e) {
       addLog({ type: 'error', message: e.message });

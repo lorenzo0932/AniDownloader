@@ -57,6 +57,9 @@ namespace Config {
             {"is_json_path_customized", false},
             {"convert_to_h265", true},
             {"num_chunks", 0}, // 0 = Modalità Auto (Dinamica)
+            // Download avviati a mano dalla UI: default risorse piene (85% CPU).
+            // Lo scheduler interno non legge questa chiave: resta sempre contenuto.
+            {"burst_on_manual_start", true},
             {"auto_cleanup_on_close",
              true}, // Pulizia file parziali (deprecata: vince resume_interrupted_downloads)
             {"resume_interrupted_downloads",

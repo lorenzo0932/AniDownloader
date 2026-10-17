@@ -1017,10 +1017,13 @@ namespace Web {
                 return;
             }
             try {
-                bool burst = true;
+                // Burst dei download manuali: scelta dell'utente in Impostazioni
+                // (default ON). La UI non invia più il campo; un `burst`
+                // esplicito nel body vince comunque (client futuri).
+                bool burst = loadConfigJson().value("burst_on_manual_start", true);
                 if (!req.body.empty()) {
                     auto body = nlohmann::json::parse(req.body);
-                    burst = body.value("burst", true);
+                    burst = body.value("burst", burst);
                 }
                 auto seriesList = m_seriesRepository.snapshotSeriesData();
                 if (seriesList.empty()) {
@@ -1029,6 +1032,9 @@ namespace Web {
                     return;
                 }
                 sendJson(res, successJson({{"message", "Download started"}}));
+                Core::Logger::info(std::format("Download manuale: modalità {}",
+                                               burst ? "burst (risorse piene)"
+                                                     : "silenziosa (risorse contenute)"));
                 runDownloads(seriesList, burst);
             } catch (const std::exception& e) {
                 m_downloadRunning.store(false);

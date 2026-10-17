@@ -149,10 +149,11 @@ describe('api.config / download / logs / status', () => {
     expect(fetch).toHaveBeenCalledWith(BASE + '/api/config', expect.objectContaining({ method: 'PUT', body: JSON.stringify(data) }));
   });
 
-  it('download.start: POST /api/download/start con burst', async () => {
+  it('download.start: POST /api/download/start senza body (burst deciso dal backend)', async () => {
     fetch.mockResolvedValue(jsonResponse({}));
-    await api.download.start(false);
-    expect(fetch).toHaveBeenCalledWith(BASE + '/api/download/start', expect.objectContaining({ method: 'POST', body: JSON.stringify({ burst: false }) }));
+    await api.download.start();
+    expect(fetch).toHaveBeenCalledWith(BASE + '/api/download/start', expect.objectContaining({ method: 'POST' }));
+    expect(fetch.mock.calls[0][1].body).toBeUndefined();
   });
 
   it('download.stop: POST /api/download/stop senza body', async () => {
