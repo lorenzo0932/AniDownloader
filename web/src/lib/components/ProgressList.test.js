@@ -36,4 +36,20 @@ describe('Pannelli Home', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Mostra tutti (5)' }));
     expect(screen.getByText('Serie4')).toBeTruthy();
   });
+  it('usa le miniature delle serie senza trasformare le righe in pulsanti', () => {
+    const { container } = render(ProgressList, { tasks: [task('Serie', 'converting', 12)],
+      seriesList: [{ name: 'Serie', path: '/media/serie' }] });
+    expect(container.querySelector('.task-poster').getAttribute('src')).toContain('path=%2Fmedia%2Fserie');
+    expect(container.querySelector('.task-card button')).toBeNull();
+    expect(container.querySelector('.phase-overview')).toBeNull();
+  });
+  it('a riposo mostra solo i risultati presenti e non pannelli attivi vuoti', () => {
+    const { container } = render(ProgressList, { running: false,
+      tasks: [task('Pronta', 'completed'), task('Fallita', 'error')] });
+    expect(container.querySelector('#home-download')).toBeNull();
+    expect(container.querySelector('#home-conversion')).toBeNull();
+    expect(container.querySelector('#home-waiting')).toBeNull();
+    expect(screen.getByText('Fallita')).toBeTruthy();
+    expect(screen.queryByText('Pronta')).toBeNull();
+  });
 });

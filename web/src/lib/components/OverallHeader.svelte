@@ -6,12 +6,13 @@
 </script>
 
 <div class="toolbar" class:running={downloadRunning}>
-  <button class="btn-primary" onclick={onstart} disabled={downloadRunning || starting}>
-    {starting ? 'Avvio…' : 'Avvia Download'}
-  </button>
-  <button class="btn-danger" onclick={onstop} disabled={!downloadRunning}>
-    Ferma Download
-  </button>
+  {#if downloadRunning}
+    <button class="btn-danger" onclick={onstop}>Ferma Download</button>
+  {:else}
+    <button class="btn-primary" onclick={onstart} disabled={starting}>
+      {starting ? 'Avvio…' : 'Avvia Download'}
+    </button>
+  {/if}
   {#if phase === 'analysis' && !summary}
     <span class="loading-spinner"></span>
   {/if}
@@ -25,18 +26,18 @@
 <style>
   .toolbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
   .btn-primary {
-    padding: 0.6rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
+    min-height: 36px; padding: 0.4rem 0.85rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-danger {
-    padding: 0.6rem 1.25rem; background: var(--danger-bg); border: 1px solid var(--danger-border); border-radius: 8px;
+    min-height: 36px; padding: 0.4rem 0.85rem; background: transparent; border: 1px solid var(--danger-border); border-radius: 8px;
     color: var(--danger); font-size: 0.85rem; font-weight: 600; cursor: pointer;
   }
   .btn-danger:hover { background: var(--danger-bg-hover); }
   .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-  .status-label { font-size: 0.9rem; color: var(--text-secondary); font-weight: 600; flex: 1; }
+  .status-label { font-size: 0.85rem; color: var(--text-secondary); font-weight: 500; flex: 1; }
   .sse-badge {
     font-size: 0.75rem; color: var(--text-muted); background: var(--bg-secondary); border: 1px solid var(--border-color);
     padding: 0.2rem 0.5rem; border-radius: 4px;
@@ -52,10 +53,12 @@
 
   @media (max-width: 768px) {
     .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; }
-    .toolbar .btn-primary, .toolbar .btn-danger { grid-column: 2; grid-row: 1; min-height: 44px; padding: 0.5rem 0.75rem; }
-    .toolbar.running .btn-primary, .toolbar:not(.running) .btn-danger { display: none; }
+    .toolbar .btn-primary, .toolbar .btn-danger { grid-column: 2; grid-row: 1; padding: 0.4rem 0.65rem; }
     .status-label { grid-column: 1; grid-row: 1; min-width: 0; overflow-wrap: anywhere; font-size: 0.85rem; }
     .sse-badge { grid-column: 1 / -1; justify-self: start; }
     .loading-spinner { display: none; }
+  }
+  @media (any-pointer: coarse) {
+    .toolbar .btn-primary, .toolbar .btn-danger { min-height: 44px; }
   }
 </style>

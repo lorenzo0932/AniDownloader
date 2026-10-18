@@ -133,7 +133,7 @@ describe('StatusPage home', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Avvia Download' }));
     await screen.findByRole('alert');
     expect(screen.getByRole('alert').textContent).toContain('Avvio rifiutato');
-    expect(screen.getByRole('button', { name: 'Ferma Download' }).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Ferma Download' })).toBeNull();
     await waitFor(() => expect(startMock).toHaveBeenCalledTimes(1));
   });
 
@@ -149,5 +149,26 @@ describe('StatusPage home', () => {
     resolve({ running: true, runId: 1, sequence: 3, phase: 'processing', tasks: [] });
     await screen.findByText('Tra snapshot e SSE');
     expect(statusMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('panoramica ancora presente durante il run e dopo il completamento', async () => {
+    statusMock.mockResolvedValue({ running: true, runId: 1, sequence: 4, phase: 'processing', tasks: [
+      { key: 'A', seriesName: 'Episodio in corso', episode: 1, phase: 'downloading', percent: 42 },
+    ] });
+    const { container } = render(StatusPage);
+    await screen.findByText('42%');
+    expect(screen.getByText('Ultime serie aggiunte')).toBeTruthy();
+    expect(screen.getByText('Ultime serie scaricate')).toBeTruthy();
+    expect(container.querySelectorAll('.table-col')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Avvia Download' })).toBeNull();
+    sseMock.onmessage({ data: JSON.stringify({ type: 'finished', runId: 1, sequence: 5,
+      task: { key: 'A', seriesName: 'Episodio in corso', episode: 1, phase: 'completed', percent: 100 } }) });
+    sseMock.onmessage({ data: JSON.stringify({ type: 'done', runId: 1, sequence: 6, stopped: false }) });
+    await screen.findByText('Elaborazione completata');
+    expect(container.querySelector('#home-download')).toBeNull();
+    expect(container.querySelectorAll('.table-col')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Avvia Download' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Nuovo Download' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Completati/ }).getAttribute('aria-expanded')).toBe('false');
   });
 });

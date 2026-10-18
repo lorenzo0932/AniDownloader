@@ -226,17 +226,19 @@
           </div>
         {/if}
       </div>
-      <div class="summary-actions">
-        <button class="btn-primary btn-sm" onclick={startDownload} disabled={starting}>Nuovo Download</button>
-        <button class="btn-secondary btn-sm" onclick={() => { history.pushState(null, '', '/gestione'); window.dispatchEvent(new PopStateEvent('popstate')); }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          Gestione Serie
-        </button>
-      </div>
     </div>
   {/if}
 
-  {#if !hasRun && taskValues.length === 0 && !summary}
+  {#if hasRun}
+    <ProgressList
+      tasks={taskValues}
+      {waitingSeries}
+      {seriesList}
+      running={downloadRunning}
+      {hydration}
+    />
+  {/if}
+
     <div class="dashboard-tables">
       <div class="table-col">
         <div class="group-label">Ultime serie aggiunte</div>
@@ -263,14 +265,6 @@
         </div>
       </div>
     </div>
-  {/if}
-  {#if hasRun}
-    <ProgressList
-      tasks={taskValues}
-      {waitingSeries}
-      {hydration}
-    />
-  {/if}
 
   <ConfirmModal
     show={showStopConfirm}
@@ -347,44 +341,30 @@
 <style>
   .vetrina { display: flex; flex-direction: column; gap: 1rem; }
 
-  .btn-primary {
-    padding: 0.6rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
-    color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
-  }
-  .btn-primary:hover { background: var(--accent-hover); }
-  .btn-secondary {
-    padding: 0.6rem 1.25rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px;
-    color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; cursor: pointer;
-    display: flex; align-items: center; gap: 0.4rem;
-  }
-  .btn-secondary:hover { background: var(--bg-hover); color: var(--text-primary); }
-  .btn-sm { padding: 0.45rem 0.9rem; font-size: 0.8rem; }
-
   .error {
     background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger);
     padding: 0.75rem; border-radius: 8px; font-size: 0.85rem;
   }
 
   .summary-box {
-    display: flex; align-items: flex-start; gap: 1rem;
-    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px;
-    padding: 1.25rem;
+    display: flex; align-items: flex-start; gap: 0.6rem;
+    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;
+    padding: 0.65rem 0.75rem;
   }
-  .summary-icon { width: 28px; height: 28px; color: var(--success); flex-shrink: 0; margin-top: 2px; }
-  .summary-body { flex: 1; }
-  .summary-title { font-size: 1rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.5rem; }
-  .summary-stats { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.35rem; }
+  .summary-icon { width: 18px; height: 18px; color: var(--success); flex-shrink: 0; margin-top: 2px; }
+  .summary-body { flex: 1; min-width: 0; }
+  .summary-title { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 0.3rem; }
+  .summary-stats { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-bottom: 0.2rem; }
   .stat { font-size: 0.8rem; font-weight: 600; }
   .stat-done { color: var(--success); }
   .stat-skipped { color: var(--warning); }
   .stat-error { color: var(--danger); }
   .stat-total { color: var(--text-muted); }
   .summary-times { font-size: 0.78rem; color: var(--text-muted-more); }
-  .summary-actions { display: flex; gap: 0.5rem; flex-shrink: 0; align-items: flex-start; }
 
   .dashboard-tables {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
     gap: 1.5rem;
   }
   .table-col {
@@ -401,17 +381,5 @@
     font-size: 0.8rem; font-weight: 600; color: var(--accent-light);
     text-transform: uppercase; letter-spacing: 0.05em;
     padding: 0.75rem 0 0.25rem; border-bottom: 1px solid var(--border-color); margin-bottom: 0.25rem;
-  }
-  .empty-text {
-    text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.85rem;
-  }
-
-  @media (max-width: 768px) {
-    .summary-box { flex-direction: column; align-items: stretch; gap: 0.75rem; }
-    .summary-actions { flex-direction: column; align-items: stretch; }
-    .summary-actions .btn-primary,
-    .summary-actions .btn-secondary { width: 100%; justify-content: center; }
-    .summary-icon { display: none; }
-
   }
 </style>

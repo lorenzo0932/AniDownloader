@@ -3,25 +3,35 @@
   // La variante determina markup e stile; task (per le varianti di attività) o
   // series (per analisi/attesa) portano i dati.
   let { variant = 'active', task = null, series = null, poster = '', index = 0 } = $props();
+  let posterFailed = $state(false);
+  $effect(() => { poster; posterFailed = false; });
 </script>
 
 {#if variant === 'phase' && task}
   <article class="task-card phase-{task.phase}">
-    <div class="task-title">{task.seriesName}</div>
-    <div class="task-episode">{task.episode > 0 ? `Episodio ${task.episode}` : 'Serie'}</div>
-    {#if ['downloading', 'converting'].includes(task.phase) && task.percent >= 0}
-      <div class="task-progress">
-        <progress max="100" value={task.percent} aria-label={`${task.seriesName}: ${task.phase === 'downloading' ? 'download' : 'conversione'}`}></progress>
-        <span>{Math.round(task.percent)}%</span>
-      </div>
+    {#if poster && !posterFailed}
+      <img class="task-poster" src={poster} alt="" loading="lazy" decoding="async" width="40" height="56" onerror={() => posterFailed = true} />
+    {:else}
+      <span class="task-poster placeholder" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="m4 16 5-5 4 4 3-3 4 4"/></svg>
+      </span>
     {/if}
-    {#if task.phase === 'waiting_conversion'}
-      <p class="task-detail ready">✓ Download completo</p>
-    {:else if task.phase === 'completed'}
-      <p class="task-detail ready">✓ Pronto</p>
-    {:else if task.detail}
-      <p class="task-detail">{task.detail}</p>
-    {/if}
+    <div class="task-content">
+      <div class="task-title" title={task.seriesName}>{task.seriesName}</div>
+      <div class="task-episode">{task.episode > 0 ? `Episodio ${task.episode}` : 'Serie'}</div>
+      {#if ['downloading', 'converting'].includes(task.phase) && task.percent >= 0}
+        <div class="task-progress">
+          <progress max="100" value={task.percent} aria-label={`${task.seriesName}: ${task.phase === 'downloading' ? 'download' : 'conversione'}`}></progress>
+          <span>{Math.round(task.percent)}%</span>
+        </div>
+      {:else if task.phase === 'waiting_conversion'}
+        <p class="task-detail ready">✓ Scaricato</p>
+      {:else if task.phase === 'completed'}
+        <p class="task-detail ready">✓ Pronto</p>
+      {:else if task.detail}
+        <p class="task-detail">{task.detail}</p>
+      {/if}
+    </div>
   </article>
 {:else if variant === 'analysing' && series}
   <div class="series-row analysing" style="--i:{index}">
@@ -67,22 +77,24 @@
 {/if}
 
 <style>
-  .task-card { min-width: 0; padding: 0.8rem; border: 1px solid var(--border-color); background: var(--bg-secondary); border-radius: 8px; }
-  .task-title { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
-  .task-episode { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem; }
-  .task-progress { display: flex; align-items: center; gap: 0.65rem; margin-top: 0.65rem; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
-  progress { appearance: none; width: 100%; min-width: 0; height: 8px; border: 0; border-radius: 4px; overflow: hidden; background: var(--border-color); accent-color: var(--accent); }
+  .task-card { display: flex; align-items: center; gap: 0.75rem; min-width: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); background: var(--bg-secondary); border-radius: 8px; }
+  .task-poster { width: 40px; height: 56px; flex-shrink: 0; border-radius: 4px; object-fit: contain; background: var(--bg-tertiary); }
+  .placeholder { display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+  .placeholder svg { width: 22px; height: 22px; }
+  .task-content { flex: 1; min-width: 0; }
+  .task-title { font-size: 0.85rem; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .task-episode { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.15rem; }
+  .task-progress { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.3rem; font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+  progress { appearance: none; flex: 1; width: 100%; min-width: 0; height: 6px; border: 0; border-radius: 4px; overflow: hidden; background: var(--border-color); accent-color: var(--accent); }
   progress::-webkit-progress-bar { background: var(--border-color); }
   progress::-webkit-progress-value { background: var(--accent); border-radius: 4px; }
   progress::-moz-progress-bar { background: var(--accent); border-radius: 4px; }
   .phase-converting progress { accent-color: var(--warning); }
   .phase-converting progress::-webkit-progress-value { background: var(--warning); }
   .phase-converting progress::-moz-progress-bar { background: var(--warning); }
-  .task-detail { margin: 0.4rem 0 0; font-size: 0.76rem; color: var(--text-muted); overflow-wrap: anywhere; }
+  .task-detail { margin: 0.2rem 0 0; font-size: 0.72rem; color: var(--text-muted); overflow-wrap: anywhere; }
   .ready { color: var(--success); }
-  .phase-error { border-color: var(--danger); }
   .phase-error .task-detail, .phase-interrupted .task-detail { color: var(--danger); }
-  .phase-waiting_conversion, .phase-completed, .phase-skipped, .phase-queued { padding: 0.6rem 0.8rem; }
   .series-row {
     display: flex; align-items: center; gap: 0.75rem;
     background: var(--bg-secondary); border-radius: 8px; padding: 0.5rem 0.75rem;
@@ -115,6 +127,9 @@
 
 
   @media (max-width: 768px) {
+    .task-card { padding: 0.4rem 0.5rem; gap: 0.5rem; }
+    .task-poster { width: 32px; height: 44px; }
+    .task-title { font-size: 0.8rem; }
     .series-row { padding: 0.4rem 0.5rem; gap: 0.5rem; flex-wrap: nowrap; }
     .poster-thumb { width: 32px; height: 44px; }
     .pbar-wrap { min-width: 100px; }

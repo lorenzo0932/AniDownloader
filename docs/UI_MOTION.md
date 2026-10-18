@@ -46,9 +46,17 @@ Non aggiungere durate numeriche o copie dei keyframe nei componenti.
   testo scorrevole e chiusura/azioni non comprimibili. Safe-area al posto di
   padding inferiori fissi. Verificare anche il resize con il dialogo già aperto.
 - Progressi: interpolare solo il valore della barra, senza rilanciare ingressi.
-- Home in elaborazione: pannelli Conversione/Download affiancati, una colonna
+- Home in elaborazione: sezioni Conversione/Download affiancate, una colonna
   fino a 768px; Scaricati in attesa sotto. Percentuali separate; nessuna barra
   nell'attesa. Completati, Saltati e Da elaborare chiusi di default; Errori aperti.
+- Stesso linguaggio della panoramica e delle righe serie: miniatura 40x56px
+  (32x44px su mobile), titolo, episodio e progresso integrato. Intestazioni con
+  conteggio e divisore, niente tessere-contatore o cornici colorate annidate.
+  La panoramica aggiunte/scaricate resta disponibile sotto le attività e torna
+  centrale a riposo; dopo il run spariscono le sezioni attive vuote.
+- Toolbar Home: una sola azione contestuale Avvia/Ferma; pulsanti compatti da
+  desktop (36px), target touch di almeno 44px con `any-pointer: coarse`.
+  Accordion e log usano righe compatte desktop (32px), target touch 44px.
 - Card episodio: `taskMotion.js` applica FLIP ai wrapper identificati da `key`,
   anche fra contenitori. Movimento solo con origine e destinazione interamente
   nel viewport; altrimenti dissolvenza locale. Nessun replay su snapshot/reload,

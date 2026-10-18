@@ -47,7 +47,7 @@
 <style>
   .event-log { border-top: 1px solid var(--border-color); padding-top: 0.5rem; }
   h2 { margin: 0; font-size: 0.85rem; }
-  button { min-height: 44px; background: none; border: 0; color: var(--text-secondary); font: inherit; cursor: pointer; text-align: left; }
+  button { min-height: 32px; background: none; border: 0; color: var(--text-secondary); font: inherit; cursor: pointer; text-align: left; }
   h2 button { width: 100%; }
   h2 span { margin-left: 0.5rem; color: var(--text-muted); }
   .log-hint { margin: 0 0 0.5rem; font-size: 0.75rem; color: var(--text-muted); }
@@ -59,4 +59,7 @@
   li div { display: flex; flex-direction: column; gap: 0.15rem; overflow-wrap: anywhere; color: var(--text-secondary); }
   strong { color: var(--text-primary); font-weight: 600; }
   .failure span { color: var(--danger); }
+  @media (any-pointer: coarse) {
+    button { min-height: 44px; }
+  }
 </style>
