@@ -71,7 +71,8 @@ static void padToSize(const fs::path& p, std::uintmax_t minSize) {
 
 // Esegue un singolo task della pipeline su un MediaProcessor reale.
 static Core::ProcessResult runTask(const fs::path& workDir, const std::string& url,
-                                   const std::string& fileName, bool convert, int epNum) {
+                                   const std::string& fileName, bool convert, int epNum,
+                                   std::vector<Core::TaskProgress>* observed = nullptr) {
     Core::Series series;
     series.name = "TestSerie";
     series.path = workDir.string();
@@ -82,7 +83,11 @@ static Core::ProcessResult runTask(const fs::path& workDir, const std::string& u
     task.episodeNumber = epNum;
     task.fileName = fileName;
     std::atomic<bool> stop{false};
-    Core::MediaProcessor mp([](const std::string&, const std::string&) {}, stop);
+    Core::MediaProcessor mp([](const std::string&, const std::string&) {}, stop,
+                            [observed](const Core::TaskProgress& progress) {
+                                if (observed)
+                                    observed->push_back(progress);
+                            });
     return mp.processTask(task, series, strategy);
 }
 
@@ -195,8 +200,22 @@ int main() {
     std::string url = srv.url;
 
     // --- 3. Happy path con conversione H265 ---
-    auto res1 = runTask(workDir, url, "Serie_Ep_01.mp4", true, 1);
+    std::vector<Core::TaskProgress> observed;
+    auto res1 = runTask(workDir, url, "Serie_Ep_01.mp4", true, 1, &observed);
     CHECK(res1.success);
+    auto phaseIndex = [&](Core::TaskPhase phase) {
+        return std::find_if(observed.begin(), observed.end(),
+                            [phase](const auto& p) { return p.phase == phase; });
+    };
+    CHECK(phaseIndex(Core::TaskPhase::Downloading) <
+          phaseIndex(Core::TaskPhase::VerifyingDownload));
+    CHECK(phaseIndex(Core::TaskPhase::VerifyingDownload) <
+          phaseIndex(Core::TaskPhase::WaitingConversion));
+    CHECK(phaseIndex(Core::TaskPhase::WaitingConversion) < phaseIndex(Core::TaskPhase::Converting));
+    CHECK(phaseIndex(Core::TaskPhase::Finalizing) != observed.end());
+    for (const auto& p : observed)
+        if (p.phase == Core::TaskPhase::WaitingConversion)
+            CHECK(p.percent == -1);
     CHECK(fs::exists(workDir / "Serie_Ep_01.mp4"));
     if (res1.success) {
         std::atomic<bool> stop{false};

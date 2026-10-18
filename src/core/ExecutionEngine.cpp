@@ -23,7 +23,8 @@ namespace Core {
     void ExecutionEngine::run(const std::vector<Series>& seriesList, bool burstMode,
                               std::atomic<bool>& stopSignal, ProgressCb onProgress,
                               const StatusCb& onStatus, FinishedCb onTaskFinished,
-                              SkippedCb onTaskSkipped, const AnalysisCb& onAnalysisDone) {
+                              SkippedCb onTaskSkipped, const AnalysisCb& onAnalysisDone,
+                              ActivityCb onActivity) {
         onStatus("Analisi parallelizzata in corso...");
 
         auto result = std::make_shared<PlanningResult>();
@@ -108,6 +109,9 @@ namespace Core {
                 auto colon = err.find(':');
                 if (colon != std::string::npos && onProgress) {
                     onProgress(err.substr(0, colon), 0, "❌ Errore: " + err.substr(colon + 2));
+                    if (onActivity)
+                        onActivity(err.substr(0, colon), 0,
+                                   {TaskPhase::Error, -1, err.substr(colon + 2)});
                 }
             }
         }
@@ -141,6 +145,12 @@ namespace Core {
         onStatus(std::format("Inizio elaborazione di {} serie...", toProcess.size()));
         auto strategy = m_config.getExecutionStrategy(toProcess.size(), burstMode);
 
+        if (onActivity) {
+            for (const auto& [series, task] : toProcess)
+                onActivity(series.name, task.episodeNumber,
+                           {TaskPhase::Queued, -1, "In attesa di elaborazione"});
+        }
+
         std::atomic<size_t> nextIndex(0);
         std::vector<std::future<void>> workers;
         int downloadWorkers = (std::min)(static_cast<int>(toProcess.size()),
@@ -159,7 +169,12 @@ namespace Core {
                         if (onProgress)
                             onProgress(name, epNum, msg);
                     };
-                    MediaProcessor mp(taskProgressCb, stopSignal);
+                    MediaProcessor mp(taskProgressCb, stopSignal,
+                                      [onActivity, name = item.first.name,
+                                       ep = item.second.episodeNumber](const TaskProgress& progress) {
+                                          if (onActivity)
+                                              onActivity(name, ep, progress);
+                                      });
                     ProcessResult res = mp.processTask(item.second, item.first, strategy);
 
                     // Feature 11: i parziali (.part/.part.aria2) vengono rimossi

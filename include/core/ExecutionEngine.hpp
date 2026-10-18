@@ -28,6 +28,7 @@ namespace Core {
         using SkippedCb =
             std::function<void(const std::string& name, const std::string& reason)>; // NUOVO
         using AnalysisCb = std::function<void()>;
+        using ActivityCb = std::function<void(const std::string&, int, const TaskProgress&)>;
 
         explicit ExecutionEngine(Config::AppConfigManager& config);
 
@@ -35,7 +36,7 @@ namespace Core {
                  std::atomic<bool>& stopSignal, ProgressCb onProgress, const StatusCb& onStatus,
                  FinishedCb onTaskFinished,
                  SkippedCb onTaskSkipped, // AGGIUNTO
-                 const AnalysisCb& onAnalysisDone);
+                 const AnalysisCb& onAnalysisDone, ActivityCb onActivity = {});
 
       private:
         Config::AppConfigManager& m_config;

@@ -24,8 +24,15 @@ namespace Core {
     std::condition_variable MediaProcessor::s_convCv;
     std::atomic<int> MediaProcessor::s_activeConversions{0};
 
-    MediaProcessor::MediaProcessor(ProgressCallback callback, std::atomic<bool>& stopSignal)
-        : m_progressCallback(std::move(callback)), m_stopSignal(stopSignal) {}
+    MediaProcessor::MediaProcessor(ProgressCallback callback, std::atomic<bool>& stopSignal,
+                                   TaskProgressCallback activity)
+        : m_progressCallback(std::move(callback)), m_activity(std::move(activity)),
+          m_stopSignal(stopSignal) {}
+
+    void MediaProcessor::activity(TaskPhase phase, int percent, const std::string& detail) {
+        if (m_activity)
+            m_activity({phase, percent < 0 ? -1 : std::clamp(percent, 0, 100), detail});
+    }
 
     void MediaProcessor::notifyStop() {
         std::lock_guard<std::mutex> lock(s_convMutex);
@@ -52,6 +59,7 @@ namespace Core {
         // | .part + .part.aria2              | resume (--continue) → publish   |
         // | .part senza .aria2 (no proof)    | delete → download da zero       |
         if (fs::exists(fullFile)) {
+            activity(TaskPhase::Queued, -1, "Verifica file esistente");
             m_progressCallback(series.name, "Verifica file esistente...");
 
             if (fs::exists(aria2File)) {
@@ -124,6 +132,7 @@ namespace Core {
         // --- FASE 1: DOWNLOAD CON ARIA2C (in .part, con resume) ---
         auto startDl = std::chrono::steady_clock::now();
         if (needsDownload) {
+            activity(TaskPhase::Downloading, 0, "Trasferimento in corso");
             m_progressCallback(series.name, "Download...");
             // --continue=true: i trasferimenti interrotti riprendono dal punto
             // di interruzione (i .part non vengono MAI cancellati tra i
@@ -144,8 +153,11 @@ namespace Core {
                 status =
                     ProcessUtils::runCommand(dlCmd, m_stopSignal, [&](const std::string& line) {
                         std::smatch m;
-                        if (std::regex_search(line, m, dlRegex))
+                        if (std::regex_search(line, m, dlRegex)) {
+                            activity(TaskPhase::Downloading, std::stoi(m[1].str()),
+                                     "Trasferimento in corso");
                             m_progressCallback(series.name, "DL " + m[1].str() + "%");
+                        }
                     });
 
                 if (status == 0 || m_stopSignal || attempt == 3)
@@ -154,6 +166,8 @@ namespace Core {
                 Logger::warn(std::format("{}: Download fallito, tentativo {}/3, retry tra 3s...",
                                          series.name, attempt));
                 m_progressCallback(series.name, std::format("Retry download ({}/3)...", attempt));
+                activity(TaskPhase::Downloading, -1,
+                         std::format("Nuovo tentativo download ({}/3)", attempt + 1));
                 std::this_thread::sleep_for(std::chrono::seconds(3));
             }
 
@@ -167,6 +181,8 @@ namespace Core {
             // Check di integrità sul .part PRIMA della pubblicazione: nessun
             // file corrotto può finire in media (la garanzia strutturale S1).
             m_progressCallback(series.name, "Verifica file scaricato...");
+            activity(TaskPhase::VerifyingDownload, -1,
+                     "Trasferimento concluso · verifica integrità");
             if (!MediaProbe::isMediaFileHealthy(partFile, m_stopSignal)) {
                 res.errorMessage = "File scaricato non valido (check di integrità fallito)";
                 Logger::error(series.name + ": " + res.errorMessage);
@@ -223,6 +239,7 @@ namespace Core {
 
         // --- FASE 2: CONVERSIONE CON FFmpeg ---
         if (needsConversion) {
+            activity(TaskPhase::WaitingConversion, -1, "Download completo · attesa di uno slot");
             m_progressCallback(series.name, "In coda...");
             {
                 std::unique_lock<std::mutex> lock(s_convMutex);
@@ -236,6 +253,7 @@ namespace Core {
                 s_activeConversions++;
             }
 
+            activity(TaskPhase::Converting, -1, "Preparazione conversione");
             bool ok = convertAndVerify(fullFile, series.name, strategy, res.conversionTime);
 
             {
@@ -287,6 +305,7 @@ namespace Core {
                 return false;
 
             m_progressCallback(seriesName, "Analisi...");
+            activity(TaskPhase::Converting, -1, "Analisi del video");
 
             bool isRamDisk = (ProcessUtils::getRamUsagePercent() < 55.0 && fs::exists("/dev/shm"));
             fs::path baseWorkDir = isRamDisk ? fs::path("/dev/shm") : fs::temp_directory_path();
@@ -317,6 +336,7 @@ namespace Core {
                 fs::path finalMergedInWork = workDir / "merged.mp4";
 
                 if (strategy.chunksPerTask <= 1) {
+                    activity(TaskPhase::Converting, 0, "Codifica HEVC");
                     m_progressCallback(seriesName, "Encoding...");
                     fs::path progP = workDir / "prog.txt";
                     std::string cmd =
@@ -338,6 +358,10 @@ namespace Core {
                             fs::remove_all(workDir);
                             return false;
                         }
+                        activity(TaskPhase::Converting,
+                                 (int)((ProcessUtils::parseProgressUs(progP) * 100) /
+                                       (duration * 1000000)),
+                                 "Codifica HEVC");
                         m_progressCallback(
                             seriesName,
                             std::format(
@@ -350,6 +374,7 @@ namespace Core {
                         return false;
                     }
                 } else {
+                    activity(TaskPhase::Converting, -1, "Preparazione segmenti");
                     m_progressCallback(seriesName, "Splitting...");
                     std::string split =
                         "ffmpeg -v error -y -i " + ScraperUtils::Q(inputPath) +
@@ -365,6 +390,7 @@ namespace Core {
                             parts.push_back(p.path());
                     std::sort(parts.begin(), parts.end());
 
+                    activity(TaskPhase::Converting, 0, "Codifica HEVC");
                     m_progressCallback(seriesName, "Encoding...");
                     struct Job {
                         fs::path out;
@@ -406,6 +432,8 @@ namespace Core {
                                 allDone = false;
                             cur += ProcessUtils::parseProgressUs(j.prog);
                         }
+                        activity(TaskPhase::Converting, (int)((cur * 100) / (duration * 1000000)),
+                                 "Codifica HEVC");
                         m_progressCallback(
                             seriesName,
                             std::format("Conv {}%", (std::min)(100, (int)((cur * 100) /
@@ -419,6 +447,7 @@ namespace Core {
                             throw std::runtime_error("Errore in un chunk");
 
                     m_progressCallback(seriesName, "Merging...");
+                    activity(TaskPhase::Finalizing, -1, "Unione dei segmenti");
                     std::ofstream l(workDir / "list.txt");
                     for (auto& j : jobs)
                         l << "file '" << j.out.filename().string() << "'\n";
@@ -432,10 +461,12 @@ namespace Core {
                 }
 
                 m_progressCallback(seriesName, "Verifica...");
+                activity(TaskPhase::Finalizing, -1, "Verifica del video convertito");
                 if (MediaProbe::verifyIntegrity(finalMergedInWork.string(), duration,
                                                 m_stopSignal)) {
 
                     m_progressCallback(seriesName, "Salvataggio...");
+                    activity(TaskPhase::Finalizing, -1, "Salvataggio del video");
 
                     std::error_code ec;
                     fs::rename(finalMergedInWork, inputPath, ec);

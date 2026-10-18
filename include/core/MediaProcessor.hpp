@@ -3,6 +3,7 @@
 #include "config/AppConfigManager.hpp"
 #include "core/DownloadTask.hpp"
 #include "core/Series.hpp"
+#include "core/TaskProgress.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -23,7 +24,8 @@ namespace Core {
 
     class MediaProcessor {
       public:
-        MediaProcessor(ProgressCallback callback, std::atomic<bool>& stopSignal);
+        MediaProcessor(ProgressCallback callback, std::atomic<bool>& stopSignal,
+                       TaskProgressCallback activity = {});
 
         ProcessResult processTask(const DownloadTask& task, const Series& series,
                                   const Config::ExecutionStrategy& strategy);
@@ -32,6 +34,8 @@ namespace Core {
 
       private:
         ProgressCallback m_progressCallback;
+        TaskProgressCallback m_activity;
+        void activity(TaskPhase phase, int percent = -1, const std::string& detail = "");
         std::atomic<bool>& m_stopSignal;
 
         static std::mutex s_convMutex;

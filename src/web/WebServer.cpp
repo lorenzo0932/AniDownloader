@@ -195,11 +195,16 @@ namespace Web {
     }
 
     void WebServer::broadcastSseEvent(const std::string& eventJson) {
+        // Stesso ordine per snapshot e SSE, anche con callback concorrenti.
+        std::lock_guard<std::mutex> stateLock(m_downloadStateMutex);
+        auto event = nlohmann::json::parse(eventJson);
+        m_downloadState.record(event);
+        const auto serialized = event.dump();
         std::lock_guard<std::mutex> lock(m_sseMutex);
         for (auto& [id, queue] : m_sseQueues) {
             if (queue.size() >= kMaxSseQueueSize)
                 queue.pop();
-            queue.push(eventJson);
+            queue.push(serialized);
         }
     }
 
@@ -1081,7 +1086,9 @@ namespace Web {
         });
 
         m_svr.Get("/api/download/status", [this](const httplib::Request&, httplib::Response& res) {
-            sendJson(res, successJson({{"running", m_downloadRunning.load()}}));
+            std::lock_guard<std::mutex> lock(m_downloadStateMutex);
+            res.set_header("Cache-Control", "no-store");
+            sendJson(res, successJson(m_downloadState.snapshot()));
         });
 
         // ---- SSE ----
@@ -1239,6 +1246,7 @@ namespace Web {
 
         m_stopSignal.store(false);
         m_downloadRunning.store(true);
+        broadcastSseEvent(nlohmann::json({{"type", "started"}}).dump());
 
         m_downloadThread = std::thread([this, seriesList, burst]() {
             // Feature 11: lock transazionale (planning → download → save).
@@ -1250,6 +1258,7 @@ namespace Web {
                                      {"status", "Già in corso: un'altra esecuzione è attiva"}};
                 broadcastSseEvent(ev.dump());
                 m_downloadRunning.store(false);
+                broadcastSseEvent(nlohmann::json({{"type", "done"}, {"stopped", true}}).dump());
                 return;
             }
 
@@ -1262,10 +1271,15 @@ namespace Web {
             engine.run(
                 seriesList, burst, m_stopSignal,
                 [this](const std::string& name, int ep, const std::string& msg) {
-                    nlohmann::json ev = {{"type", "progress"}, {"series", name}, {"message", msg}};
-                    if (ep > 0)
-                        ev["episode"] = ep;
-                    broadcastSseEvent(ev.dump());
+                    // I messaggi episodio restano per i consumer CLI. La Home
+                    // usa esclusivamente l'observer strutturato qui sotto.
+                    if (ep == 0)
+                        broadcastSseEvent(nlohmann::json({{"type", "progress"},
+                                                          {"series", name},
+                                                          {"episode", 0},
+                                                          {"phase", "analysing"},
+                                                          {"message", msg}})
+                                              .dump());
                 },
                 [this](const std::string& status) {
                     nlohmann::json ev = {{"type", "overall"}, {"status", status}};
@@ -1281,6 +1295,7 @@ namespace Web {
                                          {"series", report.name},
                                          {"episode", report.episodeNumber},
                                          {"success", report.success},
+                                         {"interrupted", !report.success && m_stopSignal.load()},
                                          {"dlTime", report.dlTime},
                                          {"convTime", report.convTime},
                                          {"error", report.error}};
@@ -1293,6 +1308,16 @@ namespace Web {
                 [this]() {
                     nlohmann::json ev = {{"type", "phase"}, {"phase", "processing"}};
                     broadcastSseEvent(ev.dump());
+                },
+                [this](const std::string& name, int ep, const Core::TaskProgress& progress) {
+                    broadcastSseEvent(nlohmann::json({{"type", "progress"},
+                                                      {"series", name},
+                                                      {"episode", ep},
+                                                      {"phase", Core::phaseName(progress.phase)},
+                                                      {"percent", progress.percent},
+                                                      {"detail", progress.detail},
+                                                      {"message", progress.detail}})
+                                          .dump());
                 });
 
             if (!maxEpisodes.empty()) {
@@ -1305,10 +1330,11 @@ namespace Web {
                 m_seriesRepository.applyDownloadedEpisodes(maxEpisodes, buf.data());
             }
 
+            const bool stopped = m_stopSignal.load();
             m_downloadRunning.store(false);
             m_stopSignal.store(false);
 
-            nlohmann::json ev = {{"type", "done"}, {"running", false}};
+            nlohmann::json ev = {{"type", "done"}, {"running", false}, {"stopped", stopped}};
             broadcastSseEvent(ev.dump());
 
             Core::Logger::info("Download execution completed");

@@ -18,6 +18,7 @@
 #include "core/UpdateChecker.hpp"
 #include "core/WorkerPool.hpp"
 #include "scrapers/ScraperUtils.hpp"
+#include "web/DownloadState.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -46,6 +47,69 @@ static int g_failures = 0;
             std::cerr << "FAIL: " << #cond << " (riga " << __LINE__ << ")\n";                      \
         }                                                                                          \
     } while (0)
+
+static void testDownloadState() {
+    Web::DownloadState state;
+    using Json = nlohmann::json;
+    auto emit = [&](Json event) {
+        CHECK(state.record(event));
+        return event;
+    };
+    emit({{"type", "started"}});
+    auto start = state.snapshot();
+    CHECK(start["running"] == true);
+    auto dl = emit({{"type", "progress"},
+                    {"series", "A_1"},
+                    {"episode", 2},
+                    {"phase", "downloading"},
+                    {"percent", 99}});
+    CHECK(dl.contains("log"));
+    auto pct = emit({{"type", "progress"},
+                     {"series", "A_1"},
+                     {"episode", 2},
+                     {"phase", "downloading"},
+                     {"percent", 100}});
+    CHECK(!pct.contains("log"));
+    auto wait = emit({{"type", "progress"},
+                      {"series", "A_1"},
+                      {"episode", 2},
+                      {"phase", "waiting_conversion"},
+                      {"percent", -1}});
+    CHECK(wait["task"]["percent"] == -1);
+    CHECK(state.snapshot()["tasks"].size() == 1);
+    emit({{"type", "progress"},
+          {"series", "A_1"},
+          {"episode", 2},
+          {"phase", "converting"},
+          {"percent", 12}});
+    CHECK(state.snapshot()["tasks"][0]["percent"] == 12);
+    emit({{"type", "finished"},
+          {"series", "B"},
+          {"episode", 3},
+          {"success", false},
+          {"error", "Fixture errore"}});
+    emit({{"type", "done"}, {"stopped", true}});
+    auto stopped = state.snapshot();
+    CHECK(stopped["running"] == false);
+    CHECK(stopped["stopped"] == true);
+    bool interrupted = false, error = false;
+    for (const auto& task : stopped["tasks"]) {
+        interrupted |= task["phase"] == "interrupted";
+        error |= task["phase"] == "error";
+    }
+    CHECK(interrupted && error);
+    CHECK(Web::DownloadState::key("A_1", 2) != Web::DownloadState::key("A", 12));
+    auto lastSequence = stopped["sequence"].get<std::uint64_t>();
+    emit({{"type", "started"}});
+    CHECK(state.snapshot()["tasks"].empty());
+    CHECK(state.snapshot()["runId"] == 2);
+    CHECK(state.snapshot()["sequence"].get<std::uint64_t>() > lastSequence);
+    for (int i = 0; i < 140; ++i)
+        emit({{"type", "skipped"}, {"series", std::to_string(i)}, {"reason", "Già aggiornata"}});
+    CHECK(state.snapshot()["events"].size() == 120);
+    Json queue = {{"type", "queue"}};
+    CHECK(!state.record(queue));
+}
 
 static void testCompareVersions() {
     using Core::UpdateChecker;
@@ -1813,6 +1877,7 @@ int main(int argc, char** argv) {
     testDbImporter();
     testShadowMode();
     testDbCutover();
+    testDownloadState();
     testConcurrentWrites();
     testQueueStore();
     testScheduler();
