@@ -7,26 +7,29 @@
   import OverallHeader from './OverallHeader.svelte';
   import ProgressList from './ProgressList.svelte';
   import RecentSeriesRow from './RecentSeriesRow.svelte';
+  import DownloadEventLog from './DownloadEventLog.svelte';
+  import { emptyDownloadState, applyDownloadEvent } from '../downloadState.js';
 
   let seriesList = $state([]);
-  let downloadRunning = $state(false);
-  let overallStatus = $state('Pronto.');
+  let run = $state(emptyDownloadState());
+  let starting = $state(false);
+  let hydration = $state(0);
+  let downloadRunning = $derived(run.running);
+  let overallStatus = $derived(run.status);
   let sseConnected = $state(false);
-  let sse = $state(null);
+  let sse = $state.raw(null);
   let error = $state('');
-  let logExpanded = $state(false);
-  let skipExpanded = $state(false);
-  let logEvents = $state([]);
-  let route = $state('home');
-
-  let seriesProgress = $state({});
-  let hasRun = $state(false);
-  let waitingExpanded = $state(false);
-
-  let summary = $state(null);
-  let stats = $state({ total: 0, done: 0, skipped: 0, errors: 0, dlTime: 0, convTime: 0 });
-  let phase = $state('idle');
-  let results = $state([]);
+  let hasRun = $derived(run.runId > 0);
+  let phase = $derived(run.phase);
+  let stats = $derived({ total: run.tasks.length,
+    done: run.tasks.filter(t => t.phase === 'completed').length,
+    skipped: run.tasks.filter(t => t.phase === 'skipped').length,
+    errors: run.tasks.filter(t => t.phase === 'error').length,
+    interrupted: run.tasks.filter(t => t.phase === 'interrupted').length,
+    dlTime: run.tasks.reduce((n, t) => n + (t.dlTime || 0), 0),
+    convTime: run.tasks.reduce((n, t) => n + (t.convTime || 0), 0),
+  });
+  let summary = $derived(phase === 'done' ? stats : null);
   let recentAdded = $state([]);
   let recentlyDownloaded = $state([]);
 
@@ -44,131 +47,60 @@
     } catch {}
   }
 
-  let taskValues = $derived(Object.values(seriesProgress));
-  let activeCount = $derived(taskValues.filter(t => t.isActive).length);
-  let doneCount = $derived(taskValues.filter(t => t.result === 'done').length);
-  let skippedCount = $derived(taskValues.filter(t => t.result === 'skipped').length);
-  let globalPercent = $derived.by(() => {
-    let vals = taskValues.filter(t => t.isActive && t.percent > 0);
-    if (vals.length === 0) return 0;
-    return Math.round(vals.reduce((a, t) => a + t.percent, 0) / vals.length);
-  });
-  let activeTasks = $derived(taskValues.filter(t => t.episode > 0 && t.isActive));
-  let doneTasks = $derived(taskValues.filter(t => t.result === 'done'));
-  let skippedTasks = $derived(taskValues.filter(t => t.result === 'skipped'));
-  let analysisSeries = $derived.by(() => {
-    let tasksBySeries = new Map();
-    for (let t of taskValues) {
-      let existing = tasksBySeries.get(t.seriesName);
-      if (!existing) { tasksBySeries.set(t.seriesName, []); existing = []; }
-      existing.push(t);
-    }
-    return seriesList.filter(s => {
-      let tasks = tasksBySeries.get(s.name);
-      if (!tasks || tasks.length === 0) return false;
-      return tasks.some(t => t.episode === 0 && t.result === null)
-          && !tasks.some(t => t.episode > 0);
-    });
-  });
-  let waitingSeries = $derived(seriesList.filter(s => !taskValues.some(t => t.seriesName === s.name)));
+  let taskValues = $derived(run.tasks);
+  let waitingSeries = $derived(run.running ? seriesList.filter(s =>
+    !taskValues.some(t => t.seriesName === s.name)) : []);
+  let syncing = false;
+  let buffered = [];
+  let disposed = false;
+  let resyncRequested = false;
 
-  function navigateTo(r) { route = r; }
-
-  function updateProgress(name, msg, ep) {
-    let taskKey = (ep > 0) ? `${name}_${ep}` : name;
-    let displayMsg = (ep > 0) ? `(Ep ${ep}) ${msg}` : msg;
-    let state = seriesProgress[taskKey];
-    if (!state) {
-      state = { seriesName: name, episode: ep || 0, key: taskKey, percent: 0, phaseMode: null, isActive: false, statusText: displayMsg, result: null };
-      seriesProgress = { ...seriesProgress, [taskKey]: state };
-      return;
-    }
-    if (state.result === 'done' || state.result === 'error') return;
-
-    if (msg === 'MODE:BOTH' || msg === 'MODE:DL' || msg === 'MODE:CONV') {
-      state.phaseMode = msg;
-      state.isActive = true;
-      state.statusText = displayMsg;
-      seriesProgress = { ...seriesProgress };
-      return;
-    }
-
-    if (msg.includes('\u2705')) {
-      state.percent = 100;
-      state.isActive = false;
-      state.result = 'done';
-      state.statusText = displayMsg;
-      seriesProgress = { ...seriesProgress };
-      return;
-    }
-
-    if (msg.includes('\u274C')) {
-      state.isActive = false;
-      state.result = 'error';
-      state.statusText = displayMsg;
-      seriesProgress = { ...seriesProgress };
-      return;
-    }
-
-    if (msg.includes('\uD83D\uDFAB') || msg.toLowerCase().includes('saltato')) {
-      state.isActive = false;
-      state.result = 'skipped';
-      state.statusText = displayMsg;
-      seriesProgress = { ...seriesProgress };
-      return;
-    }
-
-    let pct = msg.match(/(\d+)%/);
-    if (pct) {
-      let p = parseInt(pct[1]);
-      if (state.phaseMode === 'BOTH') {
-        state.percent = msg.includes('Conv') ? 50 + p / 2 : p / 2;
-      } else {
-        state.percent = p;
-      }
-      state.isActive = true;
-      state.statusText = displayMsg;
-      seriesProgress = { ...seriesProgress };
-      return;
-    }
-
-    state.isActive = true;
-    state.statusText = displayMsg;
-    seriesProgress = { ...seriesProgress };
-  }
-
-  function addLog(ev) {
-    logEvents = [...logEvents.slice(-199), ev];
+  function refreshStatus() {
+    if (syncing) resyncRequested = true;
+    else loadStatus();
   }
 
   async function loadStatus() {
+    if (syncing || disposed) return;
+    syncing = true;
+    buffered = [];
     try {
-      let [st, dl, seriesData] = await Promise.all([
-        api.status(),
+      let [dl, seriesData] = await Promise.all([
         api.download.status(),
         api.series.list()
       ]);
-      downloadRunning = dl.running;
+      if (disposed) return;
+      run = { ...emptyDownloadState(), ...dl };
+      hydration++;
       seriesList = seriesData.series || [];
+      error = '';
     } catch (e) {
       error = e.message;
+    } finally {
+      if (!disposed) for (const event of buffered) {
+        if (event.sequence > run.sequence + 1) resyncRequested = true;
+        run = applyDownloadEvent(run, event);
+      }
+      buffered = [];
+      syncing = false;
+      if (resyncRequested && !disposed) {
+        resyncRequested = false;
+        loadStatus();
+      }
     }
   }
 
   async function startDownload() {
-    seriesProgress = {};
-    logEvents = [];
-    summary = null;
-    stats = { total: 0, done: 0, skipped: 0, errors: 0, dlTime: 0, convTime: 0 };
-    results = [];
-    phase = 'analysis';
-    hasRun = true;
-    addLog({ type: 'overall', status: 'Avvio download...' });
+    if (starting || run.running) return;
+    starting = true;
+    error = '';
     try {
       await api.download.start();
-      downloadRunning = true;
+      refreshStatus();
     } catch (e) {
-      addLog({ type: 'error', message: e.message });
+      error = e.message;
+    } finally {
+      starting = false;
     }
   }
 
@@ -180,7 +112,7 @@
       const data = await api.config.get();
       stopWarning = data.config?.show_stop_warning !== false;
     } catch {
-      addLog({ type: 'error', message: 'Impossibile caricare le impostazioni. Usa valori predefiniti.' });
+      error = 'Impossibile caricare le impostazioni. Uso valori predefiniti.';
     }
   }
 
@@ -194,7 +126,7 @@
 
   function doStop() {
     showStopConfirm = false;
-    api.download.stop().catch(e => addLog({ type: 'error', message: e.message }));
+    api.download.stop().catch(e => error = e.message);
   }
 
   // Dettaglio read-only dalle righe home (stesso DetailModal di Gestione,
@@ -227,68 +159,17 @@
 
   function connectSse() {
     sse = api.sse();
-    sseConnected = true;
+    sse.onopen = () => { sseConnected = true; refreshStatus(); };
     sse.onmessage = (event) => {
       try {
-        let data = JSON.parse(event.data);
-        addLog(data);
-
-        switch (data.type) {
-          case 'progress':
-            updateProgress(data.series, data.message, data.episode);
-            break;
-          case 'overall':
-            overallStatus = data.status;
-            break;
-          case 'phase':
-            phase = data.phase;
-            if (data.phase === 'processing') {
-              overallStatus = 'Elaborazione in corso...';
-            }
-            break;
-          case 'finished':
-            stats.total++;
-            if (data.success) {
-              stats.done++;
-              stats.dlTime += Number(data.dlTime || 0);
-              stats.convTime += Number(data.convTime || 0);
-            } else {
-              stats.errors++;
-            }
-            let taskKey = (data.episode > 0) ? `${data.series}_${data.episode}` : data.series;
-            let suffix = data.episode ? ` (Ep ${data.episode})` : '';
-            results = [...results, { name: data.series + suffix, success: data.success, error: data.error || null, dlTime: Number(data.dlTime || 0), convTime: Number(data.convTime || 0), skipped: false }];
-            if (seriesProgress[taskKey]) {
-              let st = seriesProgress[taskKey];
-              st.percent = 100;
-              st.isActive = false;
-              st.result = data.success ? 'done' : 'error';
-              st.statusText = data.success ? (suffix + ' ✅ Completato') : 'Errore: ' + (data.error || '');
-              seriesProgress = { ...seriesProgress };
-            }
-            break;
-          case 'skipped':
-            stats.total++;
-            stats.skipped++;
-            results = [...results, { name: data.series, success: true, skipped: true, error: null, dlTime: 0, convTime: 0 }];
-            if (seriesProgress[data.series]) {
-              let st = seriesProgress[data.series];
-              st.isActive = false;
-              st.result = 'skipped';
-              st.statusText = data.reason;
-              seriesProgress = { ...seriesProgress };
-            } else {
-              seriesProgress = { ...seriesProgress, [data.series]: { seriesName: data.series, episode: 0, key: data.series, percent: 0, phaseMode: null, isActive: false, statusText: data.reason, result: 'skipped' } };
-            }
-            break;
-          case 'done':
-            downloadRunning = false;
-            overallStatus = 'Completato.';
-            phase = 'done';
-            summary = { ...stats };
-            loadRecentAdded();
-            loadRecentlyDownloaded();
-            break;
+        const data = JSON.parse(event.data);
+        if (!Number.isSafeInteger(data.sequence)) return;
+        if (!syncing && data.sequence > run.sequence + 1) loadStatus();
+        if (syncing) buffered.push(data);
+        else run = applyDownloadEvent(run, data);
+        if (data.type === 'done') {
+          loadRecentAdded();
+          loadRecentlyDownloaded();
         }
       } catch { /* ignore parse errors */ }
     };
@@ -304,6 +185,7 @@
   });
 
   onDestroy(() => {
+    disposed = true;
     if (sse) sse.close();
   });
 </script>
@@ -315,39 +197,29 @@
     {sseConnected}
     {phase}
     {summary}
-    {globalPercent}
-    {activeCount}
-    {doneCount}
-    {skippedCount}
+    {starting}
     onstart={startDownload}
     onstop={stopClicked}
   />
 
   {#if error}
-    <div class="error">{error}</div>
+    <div class="error" role="alert">{error}</div>
   {/if}
 
   {#if summary}
     <div class="summary-box">
-      <svg class="summary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      {#if !run.stopped && !summary.errors}
+        <svg class="summary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      {/if}
       <div class="summary-body">
-        <span class="summary-title">Download completato</span>
+        <span class="summary-title">{run.stopped ? 'Elaborazione interrotta' : summary.errors ? 'Elaborazione terminata con errori' : 'Elaborazione completata'}</span>
         <div class="summary-stats">
           <span class="stat stat-done">{summary.done} completate</span>
           <span class="stat stat-skipped">{summary.skipped} saltate</span>
           <span class="stat stat-error">{summary.errors} errori</span>
+          {#if summary.interrupted}<span class="stat stat-error">{summary.interrupted} interrotti</span>{/if}
           <span class="stat stat-total">{summary.total} totali</span>
         </div>
-        {#if results.length > 0}
-          <div class="summary-lists">
-            {#each results.filter(r => r.success && !r.skipped) as r}
-              <div class="summary-list done">✅ {r.name}</div>
-            {/each}
-            {#each results.filter(r => !r.success && !r.skipped) as r}
-              <div class="summary-list error">❌ {r.name} — {r.error}</div>
-            {/each}
-          </div>
-        {/if}
         {#if stats.dlTime > 0 || stats.convTime > 0}
           <div class="summary-times">
             Download: {stats.dlTime.toFixed(1)}s &middot; Conversione: {stats.convTime.toFixed(1)}s
@@ -355,7 +227,7 @@
         {/if}
       </div>
       <div class="summary-actions">
-        <button class="btn-primary btn-sm" onclick={startDownload}>Nuovo Download</button>
+        <button class="btn-primary btn-sm" onclick={startDownload} disabled={starting}>Nuovo Download</button>
         <button class="btn-secondary btn-sm" onclick={() => { history.pushState(null, '', '/gestione'); window.dispatchEvent(new PopStateEvent('popstate')); }}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
           Gestione Serie
@@ -391,47 +263,19 @@
         </div>
       </div>
     </div>
-  {:else if summary}
-    <div class="dashboard-tables">
-      <div class="table-col">
-        <div class="group-label">Ultime serie aggiunte</div>
-        <div class="series-list">
-          {#if recentAdded.length > 0}
-            {#each recentAdded as s, idx (s._file_index ?? s.name)}
-              <RecentSeriesRow item={s} index={idx} onopen={openHomeDetail} />
-            {/each}
-          {:else}
-            <p class="empty-text">Nessuna serie aggiunta</p>
-          {/if}
-        </div>
-      </div>
-      <div class="table-col">
-        <div class="group-label">Ultime serie scaricate</div>
-        <div class="series-list">
-          {#if recentlyDownloaded.length > 0}
-            {#each recentlyDownloaded as s, idx (s._file_index ?? s.name)}
-              <RecentSeriesRow item={s} index={idx} onopen={openHomeDetail} />
-            {/each}
-          {:else}
-            <p class="empty-text">Ancora nessun episodio scaricato</p>
-          {/if}
-        </div>
-      </div>
-    </div>
-  {:else if !summary}
+  {/if}
+  {#if hasRun}
     <ProgressList
-      {analysisSeries}
-      {activeTasks}
-      {doneTasks}
-      {skippedTasks}
+      tasks={taskValues}
       {waitingSeries}
+      {hydration}
     />
   {/if}
 
   <ConfirmModal
     show={showStopConfirm}
     title="Interrompere il download?"
-    message={'Sei sicuro di voler interrompere il download in corso?\n\nI file parzialmente scaricati verranno rimossi se l\'opzione "Pulizia Automatica" è attiva nelle impostazioni.'}
+    message={'Interrompere download e conversioni di questa elaborazione?\n\nLa conservazione dei file parziali segue le impostazioni di ripresa e pulizia.'}
     confirmText="Ferma Download"
     danger={true}
     onConfirm={doStop}
@@ -497,34 +341,7 @@
     {/if}
   {/if}
 
-  {#if logEvents.length > 0}
-    <div class="log-section">
-      <button class="log-toggle" onclick={() => logExpanded = !logExpanded}>
-        Log eventi ({logEvents.length}) {logExpanded ? '\u25BC' : '\u25B6'}
-      </button>
-      {#if logExpanded}
-        <div class="log-view">
-          {#each logEvents as ev, idx (idx)}
-            <div class="log-line type-{ev.type}">
-              {#if ev.type === 'progress'}
-                <strong>{ev.series}</strong>{ev.episode ? ` (Ep ${ev.episode})` : ''}: {ev.message}
-              {:else if ev.type === 'overall'}
-                <em>{ev.status}</em>
-              {:else if ev.type === 'finished'}
-                <strong>{ev.series}</strong>{ev.episode ? ` (Ep ${ev.episode})` : ''}: {ev.success ? 'Completato' : 'Errore'} ({Number(ev.dlTime).toFixed(1)}s / {Number(ev.convTime).toFixed(1)}s)
-              {:else if ev.type === 'skipped'}
-                <strong>{ev.series}</strong>: saltato -- {ev.reason}
-              {:else if ev.type === 'done'}
-                <span class="done-msg">Elaborazione completata.</span>
-              {:else}
-                {JSON.stringify(ev)}
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </div>
-  {/if}
+  <DownloadEventLog events={run.events} />
 </div>
 
 <style>
@@ -563,10 +380,6 @@
   .stat-error { color: var(--danger); }
   .stat-total { color: var(--text-muted); }
   .summary-times { font-size: 0.78rem; color: var(--text-muted-more); }
-  .summary-lists { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.2rem; }
-  .summary-list { font-size: 0.8rem; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .summary-list.done { color: var(--success); }
-  .summary-list.error { color: var(--danger); }
   .summary-actions { display: flex; gap: 0.5rem; flex-shrink: 0; align-items: flex-start; }
 
   .dashboard-tables {
@@ -578,9 +391,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-  }
-  .service-badge {
-    font-size: 0.68rem; color: var(--accent);
   }
   .empty-text {
     text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.85rem;
@@ -596,24 +406,6 @@
     text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.85rem;
   }
 
-  .log-section { margin-top: 0.5rem; }
-  .log-toggle {
-    background: none; border: none; color: var(--text-muted); cursor: pointer;
-    font-size: 0.8rem; padding: 0.25rem 0;
-  }
-  .log-toggle:hover { color: var(--text-secondary); }
-  .log-view {
-    background: var(--log-bg); border: 1px solid var(--border-color); border-radius: 8px;
-    padding: 0.75rem; font-family: 'Consolas', 'Menlo', 'Monaco', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Courier New', monospace;
-    font-weight: 500; font-size: 0.78rem; line-height: 1.5; color: var(--text-secondary);
-    max-height: 200px; overflow-y: auto; margin-top: 0.25rem;
-  }
-  .log-line { white-space: nowrap; }
-  .log-line :global(strong) { color: var(--accent-light); }
-  .log-line :global(em) { color: var(--text-muted); }
-  .done-msg { color: var(--success); }
-  :global(.type-finished) { color: var(--success); }
-
   @media (max-width: 768px) {
     .summary-box { flex-direction: column; align-items: stretch; gap: 0.75rem; }
     .summary-actions { flex-direction: column; align-items: stretch; }
@@ -621,6 +413,5 @@
     .summary-actions .btn-secondary { width: 100%; justify-content: center; }
     .summary-icon { display: none; }
 
-    .log-view { font-size: 0.65rem; max-height: 150px; }
   }
 </style>

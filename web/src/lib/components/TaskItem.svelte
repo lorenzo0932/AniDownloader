@@ -5,7 +5,25 @@
   let { variant = 'active', task = null, series = null, poster = '', index = 0 } = $props();
 </script>
 
-{#if variant === 'analysing' && series}
+{#if variant === 'phase' && task}
+  <article class="task-card phase-{task.phase}">
+    <div class="task-title">{task.seriesName}</div>
+    <div class="task-episode">{task.episode > 0 ? `Episodio ${task.episode}` : 'Serie'}</div>
+    {#if ['downloading', 'converting'].includes(task.phase) && task.percent >= 0}
+      <div class="task-progress">
+        <progress max="100" value={task.percent} aria-label={`${task.seriesName}: ${task.phase === 'downloading' ? 'download' : 'conversione'}`}></progress>
+        <span>{Math.round(task.percent)}%</span>
+      </div>
+    {/if}
+    {#if task.phase === 'waiting_conversion'}
+      <p class="task-detail ready">✓ Download completo</p>
+    {:else if task.phase === 'completed'}
+      <p class="task-detail ready">✓ Pronto</p>
+    {:else if task.detail}
+      <p class="task-detail">{task.detail}</p>
+    {/if}
+  </article>
+{:else if variant === 'analysing' && series}
   <div class="series-row analysing" style="--i:{index}">
     <img class="poster-thumb" src={poster} alt="" loading="lazy" decoding="async" width="40" height="56" />
     <div class="series-info">
@@ -49,6 +67,22 @@
 {/if}
 
 <style>
+  .task-card { min-width: 0; padding: 0.8rem; border: 1px solid var(--border-color); background: var(--bg-secondary); border-radius: 8px; }
+  .task-title { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+  .task-episode { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.15rem; }
+  .task-progress { display: flex; align-items: center; gap: 0.65rem; margin-top: 0.65rem; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  progress { appearance: none; width: 100%; min-width: 0; height: 8px; border: 0; border-radius: 4px; overflow: hidden; background: var(--border-color); accent-color: var(--accent); }
+  progress::-webkit-progress-bar { background: var(--border-color); }
+  progress::-webkit-progress-value { background: var(--accent); border-radius: 4px; }
+  progress::-moz-progress-bar { background: var(--accent); border-radius: 4px; }
+  .phase-converting progress { accent-color: var(--warning); }
+  .phase-converting progress::-webkit-progress-value { background: var(--warning); }
+  .phase-converting progress::-moz-progress-bar { background: var(--warning); }
+  .task-detail { margin: 0.4rem 0 0; font-size: 0.76rem; color: var(--text-muted); overflow-wrap: anywhere; }
+  .ready { color: var(--success); }
+  .phase-error { border-color: var(--danger); }
+  .phase-error .task-detail, .phase-interrupted .task-detail { color: var(--danger); }
+  .phase-waiting_conversion, .phase-completed, .phase-skipped, .phase-queued { padding: 0.6rem 0.8rem; }
   .series-row {
     display: flex; align-items: center; gap: 0.75rem;
     background: var(--bg-secondary); border-radius: 8px; padding: 0.5rem 0.75rem;

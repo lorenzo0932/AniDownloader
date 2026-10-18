@@ -46,6 +46,15 @@ Non aggiungere durate numeriche o copie dei keyframe nei componenti.
   testo scorrevole e chiusura/azioni non comprimibili. Safe-area al posto di
   padding inferiori fissi. Verificare anche il resize con il dialogo già aperto.
 - Progressi: interpolare solo il valore della barra, senza rilanciare ingressi.
+- Home in elaborazione: pannelli Conversione/Download affiancati, una colonna
+  fino a 768px; Scaricati in attesa sotto. Percentuali separate; nessuna barra
+  nell'attesa. Completati, Saltati e Da elaborare chiusi di default; Errori aperti.
+- Card episodio: `taskMotion.js` applica FLIP ai wrapper identificati da `key`,
+  anche fra contenitori. Movimento solo con origine e destinazione interamente
+  nel viewport; altrimenti dissolvenza locale. Nessun replay su snapshot/reload,
+  nessuno scroll automatico per inseguire una card, nessuna durata fuori dai token.
+- Cronologia Home: orari e soli passaggi significativi; percentuali nei pannelli,
+  non nel log. Autoscroll solo finché l'utente resta in fondo alla cronologia.
 - Evitare `transition: all`, ritardi proporzionali illimitati, rimbalzi e
   animazioni continue diverse dagli indicatori di caricamento.
 

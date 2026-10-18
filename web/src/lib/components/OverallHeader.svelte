@@ -1,13 +1,13 @@
 <script>
-  // Toolbar di avvio/stop download + stato complessivo + barra di progresso
-  // globale. Stato e azioni arrivano come props dal parent (StatusPage).
-  let { downloadRunning = false, overallStatus = '', sseConnected = false, phase = 'idle', summary = null,
-        globalPercent = 0, activeCount = 0, doneCount = 0, skippedCount = 0, onstart, onstop } = $props();
+  // Toolbar avvio/stop e stato complessivo. I progressi indipendenti delle
+  // fasi vivono nei pannelli, non in una media globale fuorviante.
+  let { downloadRunning = false, starting = false, overallStatus = '', sseConnected = false, phase = 'idle', summary = null,
+        onstart, onstop } = $props();
 </script>
 
-<div class="toolbar">
-  <button class="btn-primary" onclick={onstart} disabled={downloadRunning}>
-    Avvia Download
+<div class="toolbar" class:running={downloadRunning}>
+  <button class="btn-primary" onclick={onstart} disabled={downloadRunning || starting}>
+    {starting ? 'Avvio…' : 'Avvia Download'}
   </button>
   <button class="btn-danger" onclick={onstop} disabled={!downloadRunning}>
     Ferma Download
@@ -15,20 +15,12 @@
   {#if phase === 'analysis' && !summary}
     <span class="loading-spinner"></span>
   {/if}
-  <span class="status-label">{overallStatus}</span>
+  <span class="status-label" role="status">{overallStatus}</span>
   <span class="sse-badge" class:connected={sseConnected}>
-    {sseConnected ? 'SSE' : 'Disconnesso'}
+    {sseConnected ? 'In diretta' : 'Riconnessione…'}
   </span>
 </div>
 
-{#if globalPercent > 0}
-  <div class="global-bar-wrap">
-    <div class="global-bar">
-      <div class="global-bar-fill" style="width:{globalPercent}%"></div>
-    </div>
-    <span class="global-bar-text">{globalPercent}% ({activeCount} attive, {doneCount} completate, {skippedCount} saltate)</span>
-  </div>
-{/if}
 
 <style>
   .toolbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
@@ -58,22 +50,12 @@
     flex-shrink: 0;
   }
 
-  .global-bar-wrap { display: flex; align-items: center; gap: 0.75rem; }
-  .global-bar {
-    flex: 1; height: 10px; background: var(--border-color); border-radius: 5px; overflow: hidden;
-  }
-  .global-bar-fill {
-    height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-light));
-    border-radius: 5px; transition: width var(--motion-enter) var(--motion-ease-out);
-  }
-  .global-bar-text { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
-
   @media (max-width: 768px) {
-    .toolbar { flex-direction: column; align-items: stretch; }
-    .toolbar .btn-primary, .toolbar .btn-danger { width: 100%; justify-content: center; }
-    .status-label { text-align: center; }
-    .sse-badge { align-self: flex-end; }
-    .global-bar-wrap { flex-direction: column; align-items: stretch; gap: 0.25rem; }
-    .global-bar-text { white-space: normal; text-align: center; }
+    .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; }
+    .toolbar .btn-primary, .toolbar .btn-danger { grid-column: 2; grid-row: 1; min-height: 44px; padding: 0.5rem 0.75rem; }
+    .toolbar.running .btn-primary, .toolbar:not(.running) .btn-danger { display: none; }
+    .status-label { grid-column: 1; grid-row: 1; min-width: 0; overflow-wrap: anywhere; font-size: 0.85rem; }
+    .sse-badge { grid-column: 1 / -1; justify-self: start; }
+    .loading-spinner { display: none; }
   }
 </style>

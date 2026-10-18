@@ -1,17 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
-const { listMock } = vi.hoisted(() => ({ listMock: vi.fn() }));
+const { listMock, statusMock, startMock, sseMock } = vi.hoisted(() => ({
+  listMock: vi.fn(), statusMock: vi.fn(), startMock: vi.fn(),
+  sseMock: { onopen: null, onmessage: null, onerror: null, close: vi.fn() },
+}));
 vi.mock('../api.js', () => ({
   BASE: '',
   posterUrl: (p) => `/poster?path=${p}`,
   posterSrcSet: () => '',
   api: {
     status: async () => ({}),
-    download: { status: async () => ({ running: false }) },
+    download: { status: (...args) => statusMock(...args), start: (...args) => startMock(...args), stop: async () => ({}) },
     series: { list: (...args) => listMock(...args) },
     config: { get: async () => ({ config: {} }) },
-    sse: () => ({ onmessage: null, onerror: null, close() {} }),
+    sse: () => sseMock,
   },
 }));
 
@@ -44,6 +48,11 @@ const seriesFixture = () => [
 beforeEach(() => {
   document.body.style.overflow = '';
   listMock.mockReset();
+  statusMock.mockReset();
+  statusMock.mockResolvedValue({ running: false });
+  startMock.mockReset();
+  startMock.mockResolvedValue({});
+  sseMock.onopen = sseMock.onmessage = sseMock.onerror = null;
   listMock.mockImplementation(async (opts) => {
     const items = seriesFixture();
     if (opts?.sort === 'added' && opts?.dir === 'desc') return { series: [...items].reverse() };
@@ -78,5 +87,67 @@ describe('StatusPage home', () => {
     expect(screen.queryByText('Modifica')).toBeNull();
     expect(screen.queryByText('Elimina')).toBeNull();
     expect(document.body.style.overflow).toBe('hidden');
+  });
+
+  it('reload: ricostruisce gli episodi scaricati in attesa senza 99%', async () => {
+    statusMock.mockResolvedValue({ running: true, runId: 1, sequence: 4, phase: 'processing', tasks: [
+      { key: 'A', seriesName: 'Serie attesa', episode: 4, phase: 'waiting_conversion', percent: -1 },
+    ] });
+    const { container } = render(StatusPage);
+    await screen.findByText('Serie attesa');
+    expect(container.querySelector('#home-waiting').textContent).toContain('Serie attesa');
+    expect(screen.queryByText('99%')).toBeNull();
+    expect(container.querySelector('#home-waiting progress')).toBeNull();
+  });
+
+  it('SSE durante snapshot: applica solo gli eventi più nuovi', async () => {
+    let resolve;
+    statusMock.mockReturnValue(new Promise(r => { resolve = r; }));
+    const { container } = render(StatusPage);
+    await tick();
+    sseMock.onmessage({ data: JSON.stringify({ type: 'progress', runId: 1, sequence: 5,
+      task: { key: 'A', seriesName: 'Serie mobile', episode: 2, phase: 'converting', percent: 7 } }) });
+    resolve({ running: true, runId: 1, sequence: 4, phase: 'processing', tasks: [
+      { key: 'A', seriesName: 'Serie mobile', episode: 2, phase: 'waiting_conversion', percent: -1 },
+    ] });
+    await screen.findByText('7%');
+    expect(container.querySelector('#home-conversion').textContent).toContain('Serie mobile');
+    expect(screen.getAllByText('Serie mobile')).toHaveLength(1);
+  });
+
+  it('riconnessione: recupera snapshot senza dipendere dal replay SSE', async () => {
+    const { container } = render(StatusPage);
+    await screen.findAllByText('Naruto');
+    statusMock.mockResolvedValue({ running: true, runId: 1, sequence: 8, phase: 'processing', tasks: [
+      { key: 'A', seriesName: 'Recuperata', episode: 3, phase: 'converting', percent: 25 },
+    ] });
+    sseMock.onopen();
+    await screen.findByText('25%');
+    expect(container.querySelector('#home-conversion').textContent).toContain('Recuperata');
+  });
+
+  it('start fallito: errore visibile, nessuna falsa attività', async () => {
+    startMock.mockRejectedValue(new Error('Avvio rifiutato'));
+    render(StatusPage);
+    await screen.findAllByText('Naruto');
+    await fireEvent.click(screen.getByRole('button', { name: 'Avvia Download' }));
+    await screen.findByRole('alert');
+    expect(screen.getByRole('alert').textContent).toContain('Avvio rifiutato');
+    expect(screen.getByRole('button', { name: 'Ferma Download' }).disabled).toBe(true);
+    await waitFor(() => expect(startMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('SSE aperto durante il primo snapshot: risincronizza dopo la sottoscrizione', async () => {
+    let resolve;
+    statusMock.mockReturnValueOnce(new Promise(r => { resolve = r; }));
+    statusMock.mockResolvedValue({ running: true, runId: 1, sequence: 4, phase: 'processing', tasks: [
+      { key: 'A', seriesName: 'Tra snapshot e SSE', episode: 2, phase: 'waiting_conversion', percent: -1 },
+    ] });
+    render(StatusPage);
+    await tick();
+    sseMock.onopen();
+    resolve({ running: true, runId: 1, sequence: 3, phase: 'processing', tasks: [] });
+    await screen.findByText('Tra snapshot e SSE');
+    expect(statusMock).toHaveBeenCalledTimes(2);
   });
 });
