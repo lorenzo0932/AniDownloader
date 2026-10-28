@@ -23,7 +23,7 @@ namespace Core {
     void ExecutionEngine::run(const std::vector<Series>& seriesList, bool burstMode,
                               std::atomic<bool>& stopSignal, ProgressCb onProgress,
                               const StatusCb& onStatus, FinishedCb onTaskFinished,
-                              SkippedCb onTaskSkipped, const AnalysisCb& onAnalysisDone,
+                              const SkippedCb& onTaskSkipped, const AnalysisCb& onAnalysisDone,
                               ActivityCb onActivity) {
         onStatus("Analisi parallelizzata in corso...");
 
@@ -51,50 +51,49 @@ namespace Core {
             // riferimenti ai frame morti il broadcast SSE leggeva un this
             // corrotto (SIGSEGV). Il check su stopSignal li rende muti
             // subito dopo lo stop, senza eventi tardivi.
-            analysisThreads.emplace_back(
-                [&stopSignal, result, pending, s, onProgress, onTaskSkipped]() {
-                    if (stopSignal) {
-                        (*pending)--;
-                        return;
-                    }
+            analysisThreads.emplace_back([&stopSignal, result, pending, s, onProgress,
+                                          onTaskSkipped]() {
+                if (stopSignal) {
+                    (*pending)--;
+                    return;
+                }
 
-                    Series seriesCopy = s;
-                    seriesCopy.path = ScraperUtils::expandTilde(s.path);
-                    auto tasks = PlanningService::planSingleSeries(
-                        seriesCopy,
-                        [onProgress, &stopSignal, name = s.name](const std::string& stage) {
-                            if (onProgress && !stopSignal)
-                                onProgress(name, 0, stage);
-                        });
+                Series seriesCopy = s;
+                seriesCopy.path = ScraperUtils::expandTilde(s.path);
+                auto tasks = PlanningService::planSingleSeries(
+                    seriesCopy, [onProgress, &stopSignal, name = s.name](const std::string& stage) {
+                        if (onProgress && !stopSignal)
+                            onProgress(name, 0, stage);
+                    });
 
-                    if (stopSignal) {
-                        (*pending)--;
-                        return;
-                    }
+                if (stopSignal) {
+                    (*pending)--;
+                    return;
+                }
 
-                    bool hasWork = false;
-                    bool anyError = false;
+                bool hasWork = false;
+                bool anyError = false;
 
-                    {
-                        std::lock_guard<std::mutex> lock(result->mutex);
-                        for (const auto& t : tasks) {
-                            if (t.shouldProcess) {
-                                result->tasks.push_back({seriesCopy, t});
-                                hasWork = true;
-                            } else if (!t.errorMessage.empty()) {
-                                result->errors.push_back(s.name + ": " + t.errorMessage);
-                                anyError = true;
-                            }
+                {
+                    std::lock_guard<std::mutex> lock(result->mutex);
+                    for (const auto& t : tasks) {
+                        if (t.shouldProcess) {
+                            result->tasks.push_back({seriesCopy, t});
+                            hasWork = true;
+                        } else if (!t.errorMessage.empty()) {
+                            result->errors.push_back(s.name + ": " + t.errorMessage);
+                            anyError = true;
                         }
                     }
+                }
 
-                    if (!hasWork && !anyError) {
-                        if (onTaskSkipped)
-                            onTaskSkipped(s.name, "Già aggiornata");
-                    }
+                if (!hasWork && !anyError) {
+                    if (onTaskSkipped)
+                        onTaskSkipped(s.name, "Già aggiornata");
+                }
 
-                    (*pending)--;
-                });
+                (*pending)--;
+            });
         }
 
         while (*pending > 0 && !stopSignal) {
@@ -169,12 +168,13 @@ namespace Core {
                         if (onProgress)
                             onProgress(name, epNum, msg);
                     };
-                    MediaProcessor mp(taskProgressCb, stopSignal,
-                                      [onActivity, name = item.first.name,
-                                       ep = item.second.episodeNumber](const TaskProgress& progress) {
-                                          if (onActivity)
-                                              onActivity(name, ep, progress);
-                                      });
+                    MediaProcessor mp(
+                        taskProgressCb, stopSignal,
+                        [onActivity, name = item.first.name,
+                         ep = item.second.episodeNumber](const TaskProgress& progress) {
+                            if (onActivity)
+                                onActivity(name, ep, progress);
+                        });
                     ProcessResult res = mp.processTask(item.second, item.first, strategy);
 
                     // Feature 11: i parziali (.part/.part.aria2) vengono rimossi

@@ -118,8 +118,7 @@ namespace Core {
 
         // Host fino a '/', '?' o '#'; porta esplicita = non canonico (fallback).
         size_t hostEnd = after.find_first_of("/?#");
-        std::string hostPort =
-            (hostEnd == std::string::npos) ? after : after.substr(0, hostEnd);
+        std::string hostPort = (hostEnd == std::string::npos) ? after : after.substr(0, hostEnd);
         std::string rest = (hostEnd == std::string::npos) ? "/" : after.substr(hostEnd);
         if (hostPort.find(':') != std::string::npos) {
             // Host con porta (es. fixture locali/smoke): mai collassare sul

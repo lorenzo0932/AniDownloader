@@ -126,11 +126,11 @@ namespace Core {
     // array) mantiene la posizione indicizzata usata dall'API (_file_index).
     bool SeriesRepository::readAllFromDb(Database& db, std::vector<Series>& out) {
         out.clear();
-        auto sel = db.prepare(
-            "SELECT name, service, path, continue_series, is_high_priority, "
-            "passed_episodes, series_page_url, episode_list_selector, "
-            "download_link_selector, last_downloaded_at, last_downloaded_episode, "
-            "alternate_sources FROM series ORDER BY rowid;");
+        auto sel =
+            db.prepare("SELECT name, service, path, continue_series, is_high_priority, "
+                       "passed_episodes, series_page_url, episode_list_selector, "
+                       "download_link_selector, last_downloaded_at, last_downloaded_episode, "
+                       "alternate_sources FROM series ORDER BY rowid;");
         if (!sel.valid())
             return false;
         while (sel.step())
@@ -164,12 +164,11 @@ namespace Core {
         // DB pieno (o viceversa) deve generare l'allarme come contenuti diversi.
         if (esportato.size() == dalDb.size() && hashJson == hashDb)
             return;
-        Logger::error("Shadow DB: DIVERGENZA export (" +
-                      std::to_string(esportato.size()) + " serie, hash " + hashJson +
-                      ") vs DB (" + std::to_string(dalDb.size()) + " serie, hash " +
-                      hashDb + "): nessun auto-ripristino, recupero manuale da backup");
+        Logger::error("Shadow DB: DIVERGENZA export (" + std::to_string(esportato.size()) +
+                      " serie, hash " + hashJson + ") vs DB (" + std::to_string(dalDb.size()) +
+                      " serie, hash " + hashDb +
+                      "): nessun auto-ripristino, recupero manuale da backup");
     }
-
 
     std::size_t SeriesRepository::shadowChecks() const {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -334,17 +333,20 @@ namespace Core {
                 if (cur.valid && cur.mtime == m_lastWrite && cur.size == m_lastSize)
                     return m_cache.value();
             }
-            if (ensureShadowImported()) {
+            if (ensureShadowImported() && m_db.has_value()) {
                 std::vector<Series> rilette;
                 if (readAllFromDb(*m_db, rilette)) {
-                    m_cache = std::move(rilette);
-                    checkExportParity(m_cache.value());
+                    checkExportParity(rilette);
                     if (auto s = snapshotDbFiles(m_dbPath); s.valid) {
                         m_lastWrite = s.mtime;
                         m_lastSize = s.size;
                         m_haveStat = true;
                     }
-                    return m_cache.value();
+                    m_cache = std::move(rilette);
+                    // Guardia incollata al return: checkExportParity chiama
+                    // metodi che invalidano l'analisi di clang-tidy.
+                    if (m_cache.has_value())
+                        return m_cache.value();
                 }
                 Logger::error("Shadow DB: lettura fallita: " + m_db->lastError() +
                               " → fallback sul file JSON");
@@ -416,7 +418,8 @@ namespace Core {
                     // Il DB (fonte) ha comunque la scrittura: export/manutenzione
                     // danneggiata non deve sembrare una perdita dati.
                     Logger::error("Shadow DB: export JSON fallito (il DB conserva la "
-                                  "scrittura): " + std::string(e.what()));
+                                  "scrittura): " +
+                                  std::string(e.what()));
                 }
                 m_cache = seriesData; // Aggiorna la cache solo dopo il successo
                 if (auto s = snapshotDbFiles(m_dbPath); s.valid) {
@@ -481,7 +484,7 @@ namespace Core {
     }
 
     SeriesRepository::UpdateEsito SeriesRepository::updateSeries(std::size_t indice,
-                                                                const Series& serie) {
+                                                                 const Series& serie) {
         std::lock_guard<std::mutex> lock(m_mutex);
         UpdateEsito out;
         try {

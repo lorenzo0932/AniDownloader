@@ -1166,7 +1166,7 @@ static void testShadowMode() {
     }
     {
         auto dati = repo.loadSeriesData();
-        CHECK(dati.size() == 1); // fallback: l'export racconta l'ultimo stato
+        CHECK(dati.size() == 1);   // fallback: l'export racconta l'ultimo stato
         repo.saveSeriesData(dati); // mirror fallisce, export intatto
         CHECK(repo.shadowDivergences() == 1);
         CHECK(repo.loadSeriesData().size() == 1);
@@ -1662,22 +1662,26 @@ static void testSeriesIdentity() {
           seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
 
     // Host maiuscolo/minuscolo equivale...
-    CHECK(seriesIdentity("animeW_scraper", "https://WWW.ANIMEWORLD.AC/play/ghost-meets-gal.0H0eO") ==
-          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(
+        seriesIdentity("animeW_scraper", "https://WWW.ANIMEWORLD.AC/play/ghost-meets-gal.0H0eO") ==
+        seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
     // ...ma il path che cambia case NON equivale (ID con maiuscole/minuscole).
-    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/Ghost-Meets-Gal.0H0eO") !=
-          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(
+        seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/Ghost-Meets-Gal.0H0eO") !=
+        seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
 
     // Mirror .so verificato (301 a .ac) equivale al canonico.
-    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.so/play/ghost-meets-gal.0H0eO") ==
-          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(
+        seriesIdentity("animeW_scraper", "https://www.animeworld.so/play/ghost-meets-gal.0H0eO") ==
+        seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
     // Host estraneo mai equivalente.
     CHECK(seriesIdentity("animeW_scraper", "https://evil.example.com/play/ghost-meets-gal.0H0eO") !=
           seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
 
     // Trailing slash / fragment / query non cambiano l'identità serie.
-    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO/") ==
-          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(
+        seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO/") ==
+        seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
     CHECK(seriesIdentity("animeW_scraper",
                          "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO#trama") ==
           seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
@@ -1688,8 +1692,9 @@ static void testSeriesIdentity() {
           seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
 
     // Stesso path su servizi diversi resta diverso; stesso titolo non conta.
-    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO") !=
-          seriesIdentity("animeU_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(
+        seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO") !=
+        seriesIdentity("animeU_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
     CHECK(seriesIdentity("animeU_scraper", "https://animeunity.to/watch/ghost/1") !=
           seriesIdentity("animeU_scraper", "https://animeunity.to/watch/gal/1"));
 
@@ -1732,7 +1737,8 @@ static void testRepositoryAtomic() {
     CHECK(!addA.identity.empty());
     CHECK(addA.identity ==
           Core::seriesIdentity("animeW_scraper", "https://www.animeworld.so/play/serie-a.AAAA1"));
-    auto dupA = repo.addSeries(makeSeries("A-copia", "https://www.animeworld.so/play/serie-a.AAAA1/"));
+    auto dupA =
+        repo.addSeries(makeSeries("A-copia", "https://www.animeworld.so/play/serie-a.AAAA1/"));
     CHECK(dupA.esito == SeriesRepository::MutazioneEsito::Duplicato);
     CHECK(dupA.indice == 0);
     CHECK(repo.snapshotSeriesData().size() == 1);

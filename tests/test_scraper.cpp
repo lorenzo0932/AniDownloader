@@ -160,8 +160,8 @@ static void testAnimeWParseTooltip() {
 
     // Fixture reale da /api/tooltip/7169
     auto d = AnimeWScraper::parseTooltip(readFixture("discover_tooltip.html"));
-    CHECK(d.trama ==
-          "Spin-off di Cardfight!! Vanguard incentrato su due ragazze che aspirano a diventare idol.");
+    CHECK(d.trama == "Spin-off di Cardfight!! Vanguard incentrato su due ragazze che aspirano a "
+                     "diventare idol.");
     CHECK(d.voto == "5.44");
     CHECK(d.stato == "In corso");
     CHECK(d.dataUscita == "05 Settembre 2026");
@@ -184,8 +184,9 @@ static void testAnimeWParseSeriesMetadata() {
 
     // Fixture reale compatta (og:image + div.desc + dt/dd Stato/Generi/Anno)
     auto meta = AnimeWScraper::parseSeriesMetadata(readFixture("serie_metadata.html"));
-    CHECK(meta.posterUrl ==
-          "https://img.animeworld.ac/copertine/3f283002b47c62b1e5d311c45f95c97e1670624488_full.jpg");
+    CHECK(
+        meta.posterUrl ==
+        "https://img.animeworld.ac/copertine/3f283002b47c62b1e5d311c45f95c97e1670624488_full.jpg");
     CHECK(meta.trama ==
           "Nel Villaggio della Foglia, la squadra di Konohamaru è stata promossa a Genin.");
     CHECK(meta.stato == "Finito");

@@ -52,17 +52,17 @@ namespace Core {
         // Rete: scarica una pagina Scopri (path "/filter" oppure "/search" con
         // parametri già validati dal chiamante; l'encoding è a carico di cpr)
         // e il tooltip di una card.
-        static DiscoverPage fetchDiscoverPage(
-            const std::string& path,
-            const std::vector<std::pair<std::string, std::string>>& params);
+        static DiscoverPage
+        fetchDiscoverPage(const std::string& path,
+                          const std::vector<std::pair<std::string, std::string>>& params);
         static DiscoverDetail fetchTooltip(const std::string& tooltipId);
 
         // ---- METADATI SERIE (pagina /play): poster HD + trama + stato/anno/generi ----
         struct SeriesMetadata {
-            std::string posterUrl; // og:image (copertina HD)
-            std::string trama;     // div.desc
-            std::string stato;     // dt Stato
-            std::string anno;      // dt Anno (solo anno, es. "2007")
+            std::string posterUrl;           // og:image (copertina HD)
+            std::string trama;               // div.desc
+            std::string stato;               // dt Stato
+            std::string anno;                // dt Anno (solo anno, es. "2007")
             std::vector<std::string> generi; // dt Generi (link)
         };
 

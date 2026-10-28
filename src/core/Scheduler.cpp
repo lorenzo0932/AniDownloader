@@ -7,7 +7,6 @@
 #include "core/Logger.hpp"
 #include "core/QueueStore.hpp"
 #include "core/SeriesRepository.hpp"
-#include "core/SeriesRepository.hpp"
 
 #include <algorithm>
 #include <chrono>

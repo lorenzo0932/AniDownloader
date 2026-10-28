@@ -32,5 +32,7 @@ CheckOptions:
     value: '@TODO;@FIXME;intenzionale'
   # httpGetWithRetry(url, headers, maxRetries, retryDelayMs): i due int sono
   # già nominati in modo non ambiguo; il rischio di scambio è solo teorico.
+  # seriesIdentity(service, url): coppia fissa e documentata, sempre passata
+  # nell'ordine giusto da tutti i chiamanti (coperta dai test di identità).
   - key: bugprone-easily-swappable-parameters.IgnoredParameterNames
-    value: 'maxRetries;retryDelayMs'
+    value: 'maxRetries;retryDelayMs;service;url'

@@ -113,9 +113,13 @@ namespace Core {
         desc = std::regex_replace(desc, std::regex("^\\s+|\\s+$"), "");
         // Unescape XML: i writer Kodi-compatibili (incluso il nostro)
         // salvano &amp; &lt; ecc., il frontend mostra testo puro.
-        const std::pair<const char*, const char*> table[] = {
-            {"&lt;", "<"}, {"&gt;", ">"}, {"&quot;", "\""}, {"&#039;", "'"},
-            {"&#x27;", "'"}, {"&apos;", "'"}, {"&amp;", "&"}};
+        constexpr std::array<std::pair<const char*, const char*>, 7> table{{{"&lt;", "<"},
+                                                                            {"&gt;", ">"},
+                                                                            {"&quot;", "\""},
+                                                                            {"&#039;", "'"},
+                                                                            {"&#x27;", "'"},
+                                                                            {"&apos;", "'"},
+                                                                            {"&amp;", "&"}}};
         for (const auto& [ent, ch] : table) {
             size_t pos = 0;
             while ((pos = desc.find(ent, pos)) != std::string::npos)
@@ -141,10 +145,18 @@ namespace Core {
         out.reserve(s.size());
         for (char c : s) {
             switch (c) {
-            case '&': out += "&amp;"; break;
-            case '<': out += "&lt;"; break;
-            case '>': out += "&gt;"; break;
-            default: out += c; break;
+            case '&':
+                out += "&amp;";
+                break;
+            case '<':
+                out += "&lt;";
+                break;
+            case '>':
+                out += "&gt;";
+                break;
+            default:
+                out += c;
+                break;
             }
         }
         return out;
