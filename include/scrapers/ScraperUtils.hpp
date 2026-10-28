@@ -84,7 +84,7 @@ namespace Core {
         // retryDelayMs: delay iniziale tra i tentativi (default 2000ms), raddoppia ad ogni
         // tentativo
         static cpr::Response httpGetWithRetry(const cpr::Url& url, const cpr::Header& headers = {},
-                                               int maxRetries = 3, int retryDelayMs = 2000,
-                                               const cpr::Parameters& params = {});
+                                              int maxRetries = 3, int retryDelayMs = 2000,
+                                              const cpr::Parameters& params = {});
     };
 } // namespace Core

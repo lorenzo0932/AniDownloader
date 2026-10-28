@@ -35,7 +35,7 @@ namespace Core {
         void run(const std::vector<Series>& seriesList, bool burstMode,
                  std::atomic<bool>& stopSignal, ProgressCb onProgress, const StatusCb& onStatus,
                  FinishedCb onTaskFinished,
-                 SkippedCb onTaskSkipped, // AGGIUNTO
+                 const SkippedCb& onTaskSkipped, // AGGIUNTO
                  const AnalysisCb& onAnalysisDone, ActivityCb onActivity = {});
 
       private:

@@ -148,11 +148,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Versione pinnata: l'apt del runner cambia con l'immagine e sposta le
+      # regole di wrapping. 21.1.8 è la stessa usata in locale.
       - name: Install clang-format
-        run: sudo apt-get install -y -qq clang-format
+        run: pipx install clang-format==21.1.8
 
       - name: Check formatting
         run: >
+          clang-format --version &&
           clang-format --dry-run --Werror
           $(git ls-files 'include/**/*.hpp' 'src/**/*.cpp' 'tests/*.cpp' | grep -v embedded_web_data.cpp)
 

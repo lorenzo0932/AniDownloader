@@ -1,12 +1,14 @@
 #include "scrapers/AnimeWScraper.hpp"
 #include "core/Logger.hpp"
 #include "scrapers/ScraperUtils.hpp"
+#include <array>
 #include <cpr/cpr.h>
 #include <cstdlib>
 #include <cstring>
 #include <format>
 #include <nlohmann/json.hpp>
 #include <regex>
+#include <string_view>
 
 using json = nlohmann::json;
 
@@ -113,9 +115,14 @@ namespace Core {
         // strip tag annidati (es. <div class="watchlist-tag">Anime</div> nel Tipo)
         static const std::regex tagRegex(R"(<[^>]*>)");
         v = std::regex_replace(v, tagRegex, "");
-        const std::pair<const char*, const char*> table[] = {
-            {"&amp;", "&"}, {"&quot;", "\""}, {"&#039;", "'"}, {"&#x27;", "'"},
-            {"&apos;", "'"}, {"&lt;", "<"}, {"&gt;", ">"}, {"&nbsp;", " "}};
+        constexpr std::array<std::pair<const char*, const char*>, 8> table{{{"&amp;", "&"},
+                                                                            {"&quot;", "\""},
+                                                                            {"&#039;", "'"},
+                                                                            {"&#x27;", "'"},
+                                                                            {"&apos;", "'"},
+                                                                            {"&lt;", "<"},
+                                                                            {"&gt;", ">"},
+                                                                            {"&nbsp;", " "}}};
         for (const auto& [ent, ch] : table) {
             size_t pos = 0;
             while ((pos = v.find(ent, pos)) != std::string::npos)
@@ -140,8 +147,8 @@ namespace Core {
     }
 
     // Contenuto grezzo del <dd> che segue <dt>Etichetta:</dt>.
-    static std::string dtDdBlock(const std::string& html, const std::string& label) {
-        std::regex re("<dt>\\s*" + label + ":\\s*</dt>\\s*<dd>([\\s\\S]*?)</dd>",
+    static std::string dtDdBlock(const std::string& html, std::string_view label) {
+        std::regex re("<dt>\\s*" + std::string(label) + ":\\s*</dt>\\s*<dd>([\\s\\S]*?)</dd>",
                       std::regex_constants::icase);
         std::smatch m;
         if (!std::regex_search(html, m, re))
@@ -154,9 +161,8 @@ namespace Core {
         if (html.empty())
             return meta;
 
-        static const std::regex ogImageRegex(
-            R"raw(<meta[^>]+og:image"[^>]*content="([^"]+)")raw",
-            std::regex_constants::icase);
+        static const std::regex ogImageRegex(R"raw(<meta[^>]+og:image"[^>]*content="([^"]+)")raw",
+                                             std::regex_constants::icase);
         static const std::regex descRegex(R"raw(<div\s+class="desc">([\s\S]*?)</div>)raw",
                                           std::regex_constants::icase);
         static const std::regex genreLinkRegex(R"raw(<a[^>]*>([^<]+)</a>)raw",
@@ -170,16 +176,15 @@ namespace Core {
         meta.anno = cleanMetaText(dtDdBlock(html, "Anno"));
         std::string generiBlock = dtDdBlock(html, "Generi");
         if (!generiBlock.empty()) {
-            for (auto it = std::sregex_iterator(generiBlock.begin(), generiBlock.end(),
-                                                genreLinkRegex);
+            for (auto it =
+                     std::sregex_iterator(generiBlock.begin(), generiBlock.end(), genreLinkRegex);
                  it != std::sregex_iterator(); ++it)
                 meta.generi.push_back(cleanMetaText((*it)[1].str()));
         }
         return meta;
     }
 
-    AnimeWScraper::SeriesMetadata
-    AnimeWScraper::fetchSeriesMetadata(const std::string& pageUrl) {
+    AnimeWScraper::SeriesMetadata AnimeWScraper::fetchSeriesMetadata(const std::string& pageUrl) {
         SeriesMetadata meta;
         if (pageUrl.empty())
             return meta;
@@ -190,8 +195,8 @@ namespace Core {
             if (r.status_code == 200 && !r.text.empty())
                 meta = parseSeriesMetadata(r.text);
             else
-                Core::Logger::warn(std::format("Metadati: fetch {} fallito (status {})", pageUrl,
-                                               r.status_code));
+                Core::Logger::warn(
+                    std::format("Metadati: fetch {} fallito (status {})", pageUrl, r.status_code));
         } catch (const std::exception& e) {
             Core::Logger::warn(std::format("Metadati: errore fetch {}: {}", pageUrl, e.what()));
         }
@@ -250,9 +255,13 @@ namespace Core {
     // Decodifica minima entità HTML nei titoli/trame (il sito usa UTF-8 diretto,
     // ma qualche alt/title contiene &amp; &quot; &#039;).
     static std::string decodeEntities(std::string s) {
-        const std::pair<const char*, const char*> table[] = {
-            {"&amp;", "&"}, {"&quot;", "\""}, {"&#039;", "'"}, {"&apos;", "'"},
-            {"&lt;", "<"}, {"&gt;", ">"}, {"&nbsp;", " "}};
+        constexpr std::array<std::pair<const char*, const char*>, 7> table{{{"&amp;", "&"},
+                                                                            {"&quot;", "\""},
+                                                                            {"&#039;", "'"},
+                                                                            {"&apos;", "'"},
+                                                                            {"&lt;", "<"},
+                                                                            {"&gt;", ">"},
+                                                                            {"&nbsp;", " "}}};
         for (const auto& [ent, ch] : table) {
             size_t pos = 0;
             while ((pos = s.find(ent, pos)) != std::string::npos)
@@ -266,7 +275,8 @@ namespace Core {
         if (html.empty())
             return page;
 
-        // Card: <a href="/play/..." class="poster" data-tip="api/tooltip/NNNN"><img src="..." alt="...">
+        // Card: <a href="/play/..." class="poster" data-tip="api/tooltip/NNNN"><img src="..."
+        // alt="...">
         // ... <a ... class="name">Titolo</a>
         static const std::regex cardRegex(
             R"raw(<a\s+href="(/play/[^"]+)"\s+class="poster"\s+data-tip="api/tooltip/(\d+)">\s*<img[^>]*src="([^"]+)"[^>]*alt="([^"]*)")raw",
@@ -282,8 +292,8 @@ namespace Core {
         std::vector<Raw> posters;
         for (auto it = std::sregex_iterator(html.begin(), html.end(), cardRegex);
              it != std::sregex_iterator(); ++it) {
-            posters.push_back({(*it)[1].str(), (*it)[2].str(), (*it)[3].str(),
-                               (*it)[4].str(), static_cast<size_t>(it->position())});
+            posters.push_back({(*it)[1].str(), (*it)[2].str(), (*it)[3].str(), (*it)[4].str(),
+                               static_cast<size_t>(it->position())});
         }
 
         // Il titolo testuale (name) segue il poster: primo match dopo ogni poster.
@@ -317,8 +327,9 @@ namespace Core {
     }
 
     // Estrae il contenuto di <div class="meta"><label>Etichetta:</label> ... <span>valore</span>
-    static std::string metaValue(const std::string& html, const std::string& label) {
-        std::regex re("<label>\\s*" + label + ":\\s*</label>\\s*<span>\\s*([\\s\\S]*?)\\s*</span>",
+    static std::string metaValue(const std::string& html, std::string_view label) {
+        std::regex re("<label>\\s*" + std::string(label) +
+                          ":\\s*</label>\\s*<span>\\s*([\\s\\S]*?)\\s*</span>",
                       std::regex_constants::icase);
         std::smatch m;
         if (!std::regex_search(html, m, re))
@@ -358,8 +369,7 @@ namespace Core {
         d.dataUscita = metaValue(html, "Data di uscita");
 
         static const std::regex genreBlockRegex(
-            R"raw(<label>\s*Genere:\s*</label>([\s\S]*?)</div>)raw",
-            std::regex_constants::icase);
+            R"raw(<label>\s*Genere:\s*</label>([\s\S]*?)</div>)raw", std::regex_constants::icase);
         static const std::regex genreLinkRegex(R"raw(<a[^>]*>([^<]+)</a>)raw",
                                                std::regex_constants::icase);
         if (std::regex_search(html, m, genreBlockRegex)) {
@@ -372,8 +382,7 @@ namespace Core {
     }
 
     AnimeWScraper::DiscoverPage AnimeWScraper::fetchDiscoverPage(
-        const std::string& path,
-        const std::vector<std::pair<std::string, std::string>>& params) {
+        const std::string& path, const std::vector<std::pair<std::string, std::string>>& params) {
         DiscoverPage page;
         cpr::Header headers = {{"User-Agent", ScraperUtils::platformUserAgent()},
                                {"Referer", kAnimeWorldBaseUrl + "/"}};
@@ -381,8 +390,8 @@ namespace Core {
         for (const auto& [k, v] : params)
             cprParams.Add({k, v});
         try {
-            cpr::Response r = ScraperUtils::httpGetWithRetry(
-                cpr::Url{playerApiBase() + path}, headers, 3, 2000, cprParams);
+            cpr::Response r = ScraperUtils::httpGetWithRetry(cpr::Url{playerApiBase() + path},
+                                                             headers, 3, 2000, cprParams);
             if (r.status_code == 200 && !r.text.empty())
                 page = parseDiscoverPage(r.text);
             else
@@ -396,8 +405,7 @@ namespace Core {
 
     AnimeWScraper::DiscoverDetail AnimeWScraper::fetchTooltip(const std::string& tooltipId) {
         DiscoverDetail d;
-        if (tooltipId.empty() ||
-            tooltipId.find_first_not_of("0123456789") != std::string::npos)
+        if (tooltipId.empty() || tooltipId.find_first_not_of("0123456789") != std::string::npos)
             return d;
         cpr::Header headers = {{"User-Agent", ScraperUtils::platformUserAgent()},
                                {"Referer", kAnimeWorldBaseUrl + "/"}};

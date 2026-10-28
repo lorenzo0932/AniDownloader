@@ -12,7 +12,6 @@
 #include "core/ThumbCache.hpp"
 #include "scrapers/AnimeWScraper.hpp"
 #include "scrapers/ScraperUtils.hpp"
-#include "scrapers/AnimeWScraper.hpp"
 #include "web/embedded_web.hpp"
 
 #include <algorithm>
@@ -345,8 +344,8 @@ namespace Web {
             try {
                 cpr::Header imgHeaders = {{"User-Agent", Core::ScraperUtils::platformUserAgent()},
                                           {"Referer", "https://www.animeworld.ac/"}};
-                cpr::Response r = Core::ScraperUtils::httpGetWithRetry(
-                    cpr::Url{meta.posterUrl}, imgHeaders, 2, 2000);
+                cpr::Response r = Core::ScraperUtils::httpGetWithRetry(cpr::Url{meta.posterUrl},
+                                                                       imgHeaders, 2, 2000);
                 if (r.status_code == 200 && r.text.size() > 1024)
                     Core::savePosterOnce(series.path, r.text);
             } catch (const std::exception& e) {
@@ -418,57 +417,50 @@ namespace Web {
                                            std::string(e.what()));
                     }
                 }
-                sendJson(res, successJson({{"index", esito.indice},
-                                                   {"identity", esito.identity}}));
+                sendJson(res, successJson({{"index", esito.indice}, {"identity", esito.identity}}));
             } catch (const std::exception& e) {
                 sendJson(res, errorJson("Invalid series data: " + std::string(e.what())), 400);
             }
         });
 
-        m_svr.Put(R"(/api/series/(\d+))",
-                  [this](const httplib::Request& req, httplib::Response& res) {
-                      try {
-                          auto idx = std::stoi(req.matches[1]);
-                          if (idx < 0) {
-                              sendJson(res, errorJson("Index out of range"), 404);
-                              return;
-                          }
-                          // Precedenza storica: indice fuori range → 404 anche
-                          // con body invalido (l'update atomico resta l'autorità
-                          // finale contro le gare).
-                          if (static_cast<size_t>(idx) >=
-                              m_seriesRepository.snapshotSeriesData().size()) {
-                              sendJson(res, errorJson("Index out of range"), 404);
-                              return;
-                          }
-                          auto body = nlohmann::json::parse(req.body);
-                          auto serie = body.get<Core::Series>();
-                          auto esito = m_seriesRepository.updateSeries(
-                              static_cast<size_t>(idx), serie);
-                          if (esito.esito ==
-                              Core::SeriesRepository::MutazioneEsito::NonTrovato) {
-                              sendJson(res, errorJson("Index out of range"), 404);
-                              return;
-                          }
-                          if (esito.esito ==
-                              Core::SeriesRepository::MutazioneEsito::Duplicato) {
-                              auto err = errorJson("Serie già in gestione", 409);
-                              err["error_code"] = "series_already_managed";
-                              err["identity"] = esito.identity;
-                              sendJson(res, err, 409);
-                              return;
-                          }
-                          if (esito.esito ==
-                              Core::SeriesRepository::MutazioneEsito::ErroreStorage) {
-                              sendJson(res, errorJson("Storage error: " + esito.errore, 500),
-                                       500);
-                              return;
-                          }
-                          sendJson(res, successJson({{"identity", esito.identity}}));
-                      } catch (const std::exception& e) {
-                          sendJson(res, errorJson("Invalid data: " + std::string(e.what())), 400);
-                      }
-                  });
+        m_svr.Put(R"(/api/series/(\d+))", [this](const httplib::Request& req,
+                                                 httplib::Response& res) {
+            try {
+                auto idx = std::stoi(req.matches[1]);
+                if (idx < 0) {
+                    sendJson(res, errorJson("Index out of range"), 404);
+                    return;
+                }
+                // Precedenza storica: indice fuori range → 404 anche
+                // con body invalido (l'update atomico resta l'autorità
+                // finale contro le gare).
+                if (static_cast<size_t>(idx) >= m_seriesRepository.snapshotSeriesData().size()) {
+                    sendJson(res, errorJson("Index out of range"), 404);
+                    return;
+                }
+                auto body = nlohmann::json::parse(req.body);
+                auto serie = body.get<Core::Series>();
+                auto esito = m_seriesRepository.updateSeries(static_cast<size_t>(idx), serie);
+                if (esito.esito == Core::SeriesRepository::MutazioneEsito::NonTrovato) {
+                    sendJson(res, errorJson("Index out of range"), 404);
+                    return;
+                }
+                if (esito.esito == Core::SeriesRepository::MutazioneEsito::Duplicato) {
+                    auto err = errorJson("Serie già in gestione", 409);
+                    err["error_code"] = "series_already_managed";
+                    err["identity"] = esito.identity;
+                    sendJson(res, err, 409);
+                    return;
+                }
+                if (esito.esito == Core::SeriesRepository::MutazioneEsito::ErroreStorage) {
+                    sendJson(res, errorJson("Storage error: " + esito.errore, 500), 500);
+                    return;
+                }
+                sendJson(res, successJson({{"identity", esito.identity}}));
+            } catch (const std::exception& e) {
+                sendJson(res, errorJson("Invalid data: " + std::string(e.what())), 400);
+            }
+        });
 
         m_svr.Delete(
             R"(/api/series/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
@@ -568,12 +560,14 @@ namespace Web {
 
     // ---- SCOPRI ----
     void WebServer::setupDiscoverRoutes() {
-        // GET /api/discover?keyword=&genre=1,4&genre_mode=&season=&year=&type=&status=&studio=&dub=&sort=&page=1
+        // GET
+        // /api/discover?keyword=&genre=1,4&genre_mode=&season=&year=&type=&status=&studio=&dub=&sort=&page=1
         // Con keyword si interroga /search (full-text server-side), altrimenti /filter.
         // Risponde una pagina del sito (~40 card) + maxPage; il frontend pagina con "carica altri".
         m_svr.Get("/api/discover", [this](const httplib::Request& req, httplib::Response& res) {
             try {
-                std::string keyword = req.has_param("keyword") ? req.get_param_value("keyword") : "";
+                std::string keyword =
+                    req.has_param("keyword") ? req.get_param_value("keyword") : "";
                 if (keyword.size() > 100)
                     keyword = keyword.substr(0, 100);
 
@@ -591,7 +585,8 @@ namespace Web {
                 static const std::regex idsRegex(R"(^[0-9,]+$)");
                 static const std::regex seasonRegex(
                     R"(^(winter|spring|summer|fall|unknown)(,(winter|spring|summer|fall|unknown))*$)");
-                static const std::regex langRegex(R"(^(jp|it|ch|kr|en|fr)(,(jp|it|ch|kr|en|fr))*$)");
+                static const std::regex langRegex(
+                    R"(^(jp|it|ch|kr|en|fr)(,(jp|it|ch|kr|en|fr))*$)");
                 std::vector<std::pair<std::string, std::string>> params;
                 params.emplace_back("page", std::to_string(page));
                 if (!keyword.empty()) {
@@ -601,8 +596,8 @@ namespace Web {
                     // il sito vuole i generi ripetuti (?genre=1&genre=4), non
                     // uniti da virgola. Si inoltrano tutti i valori validi.
                     static const std::unordered_set<std::string> allowedKeys = {
-                        "genre",  "genre_mode", "season", "year", "type",
-                        "status", "studio",     "language", "dub", "sort"};
+                        "genre",  "genre_mode", "season",   "year", "type",
+                        "status", "studio",     "language", "dub",  "sort"};
                     for (const auto& [key, v] : req.params) {
                         std::string k(key);
                         if (allowedKeys.find(k) == allowedKeys.end())
@@ -621,8 +616,8 @@ namespace Web {
                         else
                             ok = std::regex_match(v, idsRegex);
                         if (!ok) {
-                            Core::Logger::warn(
-                                std::format("/api/discover: parametro '{}' non valido, ignorato", key));
+                            Core::Logger::warn(std::format(
+                                "/api/discover: parametro '{}' non valido, ignorato", key));
                             continue;
                         }
                         params.emplace_back(key, v);
@@ -651,28 +646,29 @@ namespace Web {
         });
 
         // GET /api/discover/tooltip?id=NNNN — dettaglio lazy di una card.
-        m_svr.Get("/api/discover/tooltip", [this](const httplib::Request& req, httplib::Response& res) {
-            try {
-                std::string id = req.has_param("id") ? req.get_param_value("id") : "";
-                static const std::regex idRegex(R"(^\d{1,10}$)");
-                if (!std::regex_match(id, idRegex)) {
-                    sendJson(res, errorJson("Parametro 'id' non valido"), 400);
-                    return;
-                }
-                auto d = Core::AnimeWScraper::fetchTooltip(id);
-                nlohmann::json generi = nlohmann::json::array();
-                for (const auto& g : d.generi)
-                    generi.push_back(g);
-                sendJson(res, successJson({{"trama", d.trama},
-                                           {"voto", d.voto},
-                                           {"stato", d.stato},
-                                           {"dataUscita", d.dataUscita},
-                                           {"nomiAlternativi", d.nomiAlternativi},
-                                           {"generi", std::move(generi)}}));
-            } catch (const std::exception& e) {
-                sendJson(res, errorJson("Tooltip failed: " + std::string(e.what())), 500);
-            }
-        });
+        m_svr.Get("/api/discover/tooltip",
+                  [this](const httplib::Request& req, httplib::Response& res) {
+                      try {
+                          std::string id = req.has_param("id") ? req.get_param_value("id") : "";
+                          static const std::regex idRegex(R"(^\d{1,10}$)");
+                          if (!std::regex_match(id, idRegex)) {
+                              sendJson(res, errorJson("Parametro 'id' non valido"), 400);
+                              return;
+                          }
+                          auto d = Core::AnimeWScraper::fetchTooltip(id);
+                          nlohmann::json generi = nlohmann::json::array();
+                          for (const auto& g : d.generi)
+                              generi.push_back(g);
+                          sendJson(res, successJson({{"trama", d.trama},
+                                                     {"voto", d.voto},
+                                                     {"stato", d.stato},
+                                                     {"dataUscita", d.dataUscita},
+                                                     {"nomiAlternativi", d.nomiAlternativi},
+                                                     {"generi", std::move(generi)}}));
+                      } catch (const std::exception& e) {
+                          sendJson(res, errorJson("Tooltip failed: " + std::string(e.what())), 500);
+                      }
+                  });
     }
 
     // ---- BROWSE ----

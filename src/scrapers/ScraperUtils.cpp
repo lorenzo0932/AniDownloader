@@ -157,8 +157,8 @@ namespace Core {
     }
 
     cpr::Response ScraperUtils::httpGetWithRetry(const cpr::Url& url, const cpr::Header& headers,
-                                                  int maxRetries, int retryDelayMs,
-                                                  const cpr::Parameters& params) {
+                                                 int maxRetries, int retryDelayMs,
+                                                 const cpr::Parameters& params) {
         cpr::Response lastResponse;
         for (int attempt = 1; attempt <= maxRetries; ++attempt) {
             try {
