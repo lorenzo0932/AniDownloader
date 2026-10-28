@@ -4,12 +4,14 @@
 #include "core/ExecutionEngine.hpp"
 #include "core/Scheduler.hpp"
 #include "core/SeriesRepository.hpp"
+#include "web/DownloadState.hpp"
 
 #include <atomic>
 #include <filesystem>
 #include <functional>
 #include <httplib.h>
 #include <memory>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <queue>
 #include <string>
@@ -46,6 +48,8 @@ namespace Web {
         std::atomic<bool> m_downloadRunning{false};
         std::atomic<bool> m_stopSignal{false};
         std::thread m_downloadThread;
+        std::mutex m_downloadStateMutex;
+        DownloadState m_downloadState;
 
         // SSE event broadcast
         std::mutex m_sseMutex;

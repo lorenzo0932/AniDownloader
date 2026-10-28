@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import TaskItem from './TaskItem.svelte';
 
 const seriesFixture = { name: 'My Series' };
@@ -60,5 +60,16 @@ describe('TaskItem', () => {
     expect(screen.getByText('My Series')).toBeTruthy();
     expect(screen.queryByText('Analisi...')).toBeNull();
     expect(screen.queryByText('Downloading...')).toBeNull();
+  });
+  it('riga fase: miniatura con fallback e percentuale indipendente', async () => {
+    const { container } = render(TaskItem, { variant: 'phase', poster: '/poster.webp',
+      task: taskFixture({ phase: 'converting', detail: 'Codifica HEVC', percent: 12 }) });
+    expect(container.querySelector('.task-poster').getAttribute('src')).toBe('/poster.webp');
+    expect(screen.getByText('Episodio 3')).toBeTruthy();
+    expect(screen.getByText('12%')).toBeTruthy();
+    expect(screen.queryByText('Codifica HEVC')).toBeNull();
+    await fireEvent.error(container.querySelector('.task-poster'));
+    expect(container.querySelector('img.task-poster')).toBeNull();
+    expect(container.querySelector('.placeholder')).toBeTruthy();
   });
 });

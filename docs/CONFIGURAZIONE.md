@@ -21,6 +21,7 @@ Auto-generato al primo avvio. Supporta i seguenti campi:
 | `max_network_retries` | int | `3` | Tentativi massimi per HTTP/aria2c |
 | `retry_delay_ms` | int | `2000` | Delay iniziale tra retry (raddoppia ogni tentativo) |
 | `convert_to_h265` | bool | `true` | Conversione HEVC post-download |
+| `burst_on_manual_start` | bool | `true` | Download avviati a mano dalla UI: risorse piene (85% CPU) invece del ritmo contenuto del background. Lo scheduler non legge questa chiave |
 | `num_chunks` | int | `0` | Chunk FFmpeg (`0` = auto, `1` = no chunk, `>1` = chunk parallelo) |
 | `auto_cleanup_on_close` | bool | `true` | Pulizia file parziali alla chiusura |
 

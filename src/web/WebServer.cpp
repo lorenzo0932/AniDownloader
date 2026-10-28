@@ -7,6 +7,7 @@
 #include "core/MediaProcessor.hpp"
 #include "core/PlanningService.hpp"
 #include "core/QueueStore.hpp"
+#include "core/SeriesIdentity.hpp"
 #include "core/SeriesUtils.hpp"
 #include "core/ThumbCache.hpp"
 #include "scrapers/AnimeWScraper.hpp"
@@ -98,6 +99,9 @@ namespace Web {
           m_seriesRepository(resolveJsonPath(configManager),
                              Core::SeriesRepository::dbPathFor(resolveJsonPath(configManager))),
           m_scheduler(configManager, resolveJsonPath(configManager).string()) {
+        // Demone: scheduler e route CRUD condividono lo stesso repository
+        // (un solo mutex sulle serie). Prima di start(), mai dopo.
+        m_scheduler.useRepository(&m_seriesRepository);
         // Ogni client SSE occupa un thread del pool per l'intera connessione:
         // pool dinamico proporzionale alla macchina (coerente con lo stile del
         // resto del codice, es. getExecutionStrategy), minimo garantito 16.
@@ -191,11 +195,16 @@ namespace Web {
     }
 
     void WebServer::broadcastSseEvent(const std::string& eventJson) {
+        // Stesso ordine per snapshot e SSE, anche con callback concorrenti.
+        std::lock_guard<std::mutex> stateLock(m_downloadStateMutex);
+        auto event = nlohmann::json::parse(eventJson);
+        m_downloadState.record(event);
+        const auto serialized = event.dump();
         std::lock_guard<std::mutex> lock(m_sseMutex);
         for (auto& [id, queue] : m_sseQueues) {
             if (queue.size() >= kMaxSseQueueSize)
                 queue.pop();
-            queue.push(eventJson);
+            queue.push(serialized);
         }
     }
 
@@ -358,13 +367,15 @@ namespace Web {
         // ---- SERIES ----
         m_svr.Get("/api/series", [this](const httplib::Request& req, httplib::Response& res) {
             try {
-                auto vec = m_seriesRepository.loadSeriesData();
+                auto vec = m_seriesRepository.snapshotSeriesData();
                 nlohmann::json data = nlohmann::json::array();
                 for (size_t i = 0; i < vec.size(); ++i) {
                     nlohmann::json entry = vec[i];
                     auto path = entry.value("path", "");
                     entry["local_episode_count"] = path.empty() ? 0 : Core::countVideoFiles(path);
                     entry["_file_index"] = static_cast<uint64_t>(i);
+                    entry["identity"] = Core::seriesIdentity(entry.value("service", ""),
+                                                             entry.value("series_page_url", ""));
                     data.push_back(std::move(entry));
                 }
                 std::string sortField = req.has_param("sort") ? req.get_param_value("sort") : "";
@@ -382,9 +393,20 @@ namespace Web {
             try {
                 auto body = nlohmann::json::parse(req.body);
                 auto series = body.get<Core::Series>();
-                auto vec = m_seriesRepository.loadSeriesData();
-                vec.push_back(series);
-                m_seriesRepository.saveSeriesData(vec);
+                // Mutazione atomica nel repository: il vincolo anti-duplicato
+                // vive lì (una sola sezione critica), non nel controller.
+                auto esito = m_seriesRepository.addSeries(series);
+                if (esito.esito == Core::SeriesRepository::MutazioneEsito::Duplicato) {
+                    auto err = errorJson("Serie già in gestione", 409);
+                    err["error_code"] = "series_already_managed";
+                    err["identity"] = esito.identity;
+                    sendJson(res, err, 409);
+                    return;
+                }
+                if (esito.esito == Core::SeriesRepository::MutazioneEsito::ErroreStorage) {
+                    sendJson(res, errorJson("Storage error: " + esito.errore, 500), 500);
+                    return;
+                }
                 // Metadati una tantum (solo AnimeWorld, solo se spuntato nel
                 // form): poster + tvshow.nfo, best-effort — l'aggiunta riesce
                 // comunque. Mai sovrascritture.
@@ -396,7 +418,8 @@ namespace Web {
                                            std::string(e.what()));
                     }
                 }
-                sendJson(res, successJson({{"index", vec.size() - 1}}));
+                sendJson(res, successJson({{"index", esito.indice},
+                                                   {"identity", esito.identity}}));
             } catch (const std::exception& e) {
                 sendJson(res, errorJson("Invalid series data: " + std::string(e.what())), 400);
             }
@@ -406,15 +429,42 @@ namespace Web {
                   [this](const httplib::Request& req, httplib::Response& res) {
                       try {
                           auto idx = std::stoi(req.matches[1]);
-                          auto body = nlohmann::json::parse(req.body);
-                          auto vec = m_seriesRepository.loadSeriesData();
-                          if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
+                          if (idx < 0) {
                               sendJson(res, errorJson("Index out of range"), 404);
                               return;
                           }
-                          vec[idx] = body.get<Core::Series>();
-                          m_seriesRepository.saveSeriesData(vec);
-                          sendJson(res, successJson());
+                          // Precedenza storica: indice fuori range → 404 anche
+                          // con body invalido (l'update atomico resta l'autorità
+                          // finale contro le gare).
+                          if (static_cast<size_t>(idx) >=
+                              m_seriesRepository.snapshotSeriesData().size()) {
+                              sendJson(res, errorJson("Index out of range"), 404);
+                              return;
+                          }
+                          auto body = nlohmann::json::parse(req.body);
+                          auto serie = body.get<Core::Series>();
+                          auto esito = m_seriesRepository.updateSeries(
+                              static_cast<size_t>(idx), serie);
+                          if (esito.esito ==
+                              Core::SeriesRepository::MutazioneEsito::NonTrovato) {
+                              sendJson(res, errorJson("Index out of range"), 404);
+                              return;
+                          }
+                          if (esito.esito ==
+                              Core::SeriesRepository::MutazioneEsito::Duplicato) {
+                              auto err = errorJson("Serie già in gestione", 409);
+                              err["error_code"] = "series_already_managed";
+                              err["identity"] = esito.identity;
+                              sendJson(res, err, 409);
+                              return;
+                          }
+                          if (esito.esito ==
+                              Core::SeriesRepository::MutazioneEsito::ErroreStorage) {
+                              sendJson(res, errorJson("Storage error: " + esito.errore, 500),
+                                       500);
+                              return;
+                          }
+                          sendJson(res, successJson({{"identity", esito.identity}}));
                       } catch (const std::exception& e) {
                           sendJson(res, errorJson("Invalid data: " + std::string(e.what())), 400);
                       }
@@ -424,13 +474,19 @@ namespace Web {
             R"(/api/series/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
                 try {
                     auto idx = std::stoi(req.matches[1]);
-                    auto vec = m_seriesRepository.loadSeriesData();
-                    if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
+                    if (idx < 0) {
                         sendJson(res, errorJson("Index out of range"), 404);
                         return;
                     }
-                    vec.erase(vec.begin() + idx);
-                    m_seriesRepository.saveSeriesData(vec);
+                    auto esito = m_seriesRepository.removeSeries(static_cast<size_t>(idx));
+                    if (esito.esito == Core::SeriesRepository::MutazioneEsito::NonTrovato) {
+                        sendJson(res, errorJson("Index out of range"), 404);
+                        return;
+                    }
+                    if (esito.esito == Core::SeriesRepository::MutazioneEsito::ErroreStorage) {
+                        sendJson(res, errorJson("Storage error: " + esito.errore, 500), 500);
+                        return;
+                    }
                     sendJson(res, successJson());
                 } catch (const std::exception& e) {
                     sendJson(res, errorJson("Invalid request: " + std::string(e.what())), 400);
@@ -459,7 +515,7 @@ namespace Web {
                   [this](const httplib::Request& req, httplib::Response& res) {
                       try {
                           auto idx = std::stoi(req.matches[1]);
-                          auto vec = m_seriesRepository.loadSeriesData();
+                          auto vec = m_seriesRepository.snapshotSeriesData();
                           if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
                               sendJson(res, errorJson("Index out of range"), 404);
                               return;
@@ -476,7 +532,7 @@ namespace Web {
                                                         httplib::Response& res) {
             try {
                 auto idx = std::stoi(req.matches[1]);
-                auto vec = m_seriesRepository.loadSeriesData();
+                auto vec = m_seriesRepository.snapshotSeriesData();
                 if (idx < 0 || static_cast<size_t>(idx) >= vec.size()) {
                     sendJson(res, errorJson("Index out of range"), 404);
                     return;
@@ -583,6 +639,7 @@ namespace Web {
                     e["pageUrl"] = it.pageUrl;
                     e["posterUrl"] = it.posterUrl;
                     e["tooltipId"] = it.tooltipId;
+                    e["identity"] = Core::discoverIdentity(it.pageUrl);
                     items.push_back(std::move(e));
                 }
                 sendJson(res, successJson({{"items", std::move(items)},
@@ -965,18 +1022,24 @@ namespace Web {
                 return;
             }
             try {
-                bool burst = true;
+                // Burst dei download manuali: scelta dell'utente in Impostazioni
+                // (default ON). La UI non invia più il campo; un `burst`
+                // esplicito nel body vince comunque (client futuri).
+                bool burst = loadConfigJson().value("burst_on_manual_start", true);
                 if (!req.body.empty()) {
                     auto body = nlohmann::json::parse(req.body);
-                    burst = body.value("burst", true);
+                    burst = body.value("burst", burst);
                 }
-                auto& seriesList = m_seriesRepository.loadSeriesData();
+                auto seriesList = m_seriesRepository.snapshotSeriesData();
                 if (seriesList.empty()) {
                     m_downloadRunning.store(false);
                     sendJson(res, errorJson("No series configured"), 400);
                     return;
                 }
                 sendJson(res, successJson({{"message", "Download started"}}));
+                Core::Logger::info(std::format("Download manuale: modalità {}",
+                                               burst ? "burst (risorse piene)"
+                                                     : "silenziosa (risorse contenute)"));
                 runDownloads(seriesList, burst);
             } catch (const std::exception& e) {
                 m_downloadRunning.store(false);
@@ -1023,7 +1086,9 @@ namespace Web {
         });
 
         m_svr.Get("/api/download/status", [this](const httplib::Request&, httplib::Response& res) {
-            sendJson(res, successJson({{"running", m_downloadRunning.load()}}));
+            std::lock_guard<std::mutex> lock(m_downloadStateMutex);
+            res.set_header("Cache-Control", "no-store");
+            sendJson(res, successJson(m_downloadState.snapshot()));
         });
 
         // ---- SSE ----
@@ -1181,6 +1246,7 @@ namespace Web {
 
         m_stopSignal.store(false);
         m_downloadRunning.store(true);
+        broadcastSseEvent(nlohmann::json({{"type", "started"}}).dump());
 
         m_downloadThread = std::thread([this, seriesList, burst]() {
             // Feature 11: lock transazionale (planning → download → save).
@@ -1192,6 +1258,7 @@ namespace Web {
                                      {"status", "Già in corso: un'altra esecuzione è attiva"}};
                 broadcastSseEvent(ev.dump());
                 m_downloadRunning.store(false);
+                broadcastSseEvent(nlohmann::json({{"type", "done"}, {"stopped", true}}).dump());
                 return;
             }
 
@@ -1204,10 +1271,15 @@ namespace Web {
             engine.run(
                 seriesList, burst, m_stopSignal,
                 [this](const std::string& name, int ep, const std::string& msg) {
-                    nlohmann::json ev = {{"type", "progress"}, {"series", name}, {"message", msg}};
-                    if (ep > 0)
-                        ev["episode"] = ep;
-                    broadcastSseEvent(ev.dump());
+                    // I messaggi episodio restano per i consumer CLI. La Home
+                    // usa esclusivamente l'observer strutturato qui sotto.
+                    if (ep == 0)
+                        broadcastSseEvent(nlohmann::json({{"type", "progress"},
+                                                          {"series", name},
+                                                          {"episode", 0},
+                                                          {"phase", "analysing"},
+                                                          {"message", msg}})
+                                              .dump());
                 },
                 [this](const std::string& status) {
                     nlohmann::json ev = {{"type", "overall"}, {"status", status}};
@@ -1223,6 +1295,7 @@ namespace Web {
                                          {"series", report.name},
                                          {"episode", report.episodeNumber},
                                          {"success", report.success},
+                                         {"interrupted", !report.success && m_stopSignal.load()},
                                          {"dlTime", report.dlTime},
                                          {"convTime", report.convTime},
                                          {"error", report.error}};
@@ -1235,6 +1308,16 @@ namespace Web {
                 [this]() {
                     nlohmann::json ev = {{"type", "phase"}, {"phase", "processing"}};
                     broadcastSseEvent(ev.dump());
+                },
+                [this](const std::string& name, int ep, const Core::TaskProgress& progress) {
+                    broadcastSseEvent(nlohmann::json({{"type", "progress"},
+                                                      {"series", name},
+                                                      {"episode", ep},
+                                                      {"phase", Core::phaseName(progress.phase)},
+                                                      {"percent", progress.percent},
+                                                      {"detail", progress.detail},
+                                                      {"message", progress.detail}})
+                                          .dump());
                 });
 
             if (!maxEpisodes.empty()) {
@@ -1247,10 +1330,11 @@ namespace Web {
                 m_seriesRepository.applyDownloadedEpisodes(maxEpisodes, buf.data());
             }
 
+            const bool stopped = m_stopSignal.load();
             m_downloadRunning.store(false);
             m_stopSignal.store(false);
 
-            nlohmann::json ev = {{"type", "done"}, {"running", false}};
+            nlohmann::json ev = {{"type", "done"}, {"running", false}, {"stopped", stopped}};
             broadcastSseEvent(ev.dump());
 
             Core::Logger::info("Download execution completed");

@@ -7,6 +7,7 @@
 #include "core/Logger.hpp"
 #include "core/QueueStore.hpp"
 #include "core/SeriesRepository.hpp"
+#include "core/SeriesRepository.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -55,7 +56,11 @@ namespace Core {
         m_pool.onKind("check", [this](const QueueTask& task) {
             (void)task;
             std::atomic<bool> maiAbortito{false}; // 2-bis: il giro non si interrompe
-            CheckOutcome esito = CheckRunner::runOnce(m_config, m_jsonPath, false, maiAbortito);
+            CheckOutcome esito;
+            if (m_repo != nullptr)
+                esito = CheckRunner::runOnce(m_config, *m_repo, false, maiAbortito);
+            else
+                esito = CheckRunner::runOnce(m_config, m_jsonPath, false, maiAbortito);
             if (!esito.eseguito) {
                 // CLI manuale in corso: si rimanda (backoff del pool).
                 if (esito.salto == CheckOutcome::Salto::Occupato)
@@ -96,6 +101,8 @@ namespace Core {
         m_pausa.store(inPausa);
         m_pool.pausa(inPausa);
     }
+
+    void Scheduler::useRepository(SeriesRepository* repo) noexcept { m_repo = repo; }
 
     void
     Scheduler::onEvento(std::function<void(const std::string& tipo, const QueueTask& task)> cb) {

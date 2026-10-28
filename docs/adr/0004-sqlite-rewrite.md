@@ -25,6 +25,13 @@
    divergenze per 7 giorni su impianto reale + canale `--dev` prima di
    stabile. `main` non si tocca finché settimane di esercizio reale non
    escludono bug.
+   *Deroga registrata (2026-10-17, con il maintainer)*: cutover eseguito a
+   ~4 giorni di shadow-run a zero divergenze (audit parità 26/26 campo per
+   campo, un solo scarto cosmetico `alternate_sources`). Gate aggiuntivo
+   sostitutivo: backup completo dei dati + **drill di restore verificato**
+   su copia dei dati reali prima dell'installazione. La finestra di rollback
+   resta aperta di default: export JSON riscritto a ogni scrittura, il
+   binario precedente torna su letture JSON senza perdere aggiornamenti.
 6. **Notifiche**: master ON/OFF (default OFF) + sorgente solo UI /
    solo backend / entrambi + icona `logo.png`. Backend senza schermo:
    casella-con-badge in UI.

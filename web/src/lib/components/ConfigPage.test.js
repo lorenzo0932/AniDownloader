@@ -47,13 +47,14 @@ describe('ConfigPage controlli automatici', () => {
     thumbsMock.mockResolvedValue(null);
   });
 
-  it('default con backend vuoto: schedulazione ON/15, notifiche OFF', async () => {
+  it('default con backend vuoto: schedulazione ON/15, notifiche OFF, burst ON', async () => {
     configGetMock.mockResolvedValue({ config: {} });
     render(ConfigPage);
     await waitFor(() => expect(screen.getByLabelText('Controllo periodico nuovi episodi')).toBeTruthy());
     expect(screen.getByLabelText('Controllo periodico nuovi episodi').checked).toBe(true);
     expect(screen.getByLabelText('Ogni quanti minuti').value).toBe('15');
     expect(screen.getByLabelText('Notifiche nuovi episodi').checked).toBe(false);
+    expect(screen.getByLabelText('Download manuali con priorità massima (burst)').checked).toBe(true);
   });
 
   it('valori backend riflessi e salvati', async () => {
@@ -81,5 +82,13 @@ describe('ConfigPage controlli automatici', () => {
     render(ConfigPage);
     await waitFor(() => expect(screen.getByLabelText('Ogni quanti minuti').value).toBe('15'));
     expect(screen.getByLabelText('Controllo periodico nuovi episodi').checked).toBe(true);
+  });
+
+  it('errore al primo caricamento: mostra errore senza renderizzare un form incompleto', async () => {
+    configGetMock.mockRejectedValue(new Error('Configurazione non disponibile'));
+    render(ConfigPage);
+    expect(await screen.findByText('Configurazione non disponibile')).toBeTruthy();
+    expect(screen.queryByText('Salva Modifiche')).toBeNull();
+    expect(configSetMock).not.toHaveBeenCalled();
   });
 });

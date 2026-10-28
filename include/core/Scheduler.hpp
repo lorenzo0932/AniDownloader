@@ -18,6 +18,7 @@ namespace Config {
 
 namespace Core {
     struct QueueTask;
+    class SeriesRepository;
 
     struct SchedulerStato {
         bool attivo{false};
@@ -47,6 +48,11 @@ namespace Core {
         void pausa(bool inPausa);
         void onEvento(std::function<void(const std::string& tipo, const QueueTask& task)> cb);
 
+        // Condivide il repository del demone (web + scheduler stessa istanza:
+        // un solo mutex sulle serie). Chiamare prima di start(); mai dopo.
+        // Senza wiring il giro crea un'istanza propria (CLI/test).
+        void useRepository(SeriesRepository* repo) noexcept;
+
         [[nodiscard]] bool running() const noexcept;
         [[nodiscard]] SchedulerStato stato() const;
 
@@ -58,6 +64,7 @@ namespace Core {
         Config::AppConfigManager& m_config;
         std::string m_jsonPath;
         std::string m_dbPath;
+        SeriesRepository* m_repo{nullptr};
         WorkerPool m_pool;
         std::function<void(const std::string& tipo, const QueueTask& task)> m_onEvento;
         std::thread m_thread;

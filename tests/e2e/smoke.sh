@@ -172,9 +172,18 @@ make_media "$CLI_SBX/media/SerieA" SerieA
 make_media "$CLI_SBX/media/SerieB" SerieB
 
 # ─────────────────────────── CASI CLI ───────────────────────────
+# Semina l'export serie e AZZERA i file del DB (.db/-wal/-shm): post-cutover
+# (ADR-004 §6) il DB è autorevole, quindi un seed su cartella con DB residuo
+# verrebbe ignorato. Il reset riproduce "cartella dati di nuovo vergine".
+seed_data() { # $1 = path del series_data.json
+    cat > "$1"
+    local dir; dir="$(dirname "$1")"
+    rm -f "$dir/series_data.db" "$dir/series_data.db-wal" "$dir/series_data.db-shm"
+}
+
 echo "[1/3] CLI: serie vuote"
 
-echo "[]" > "$CLI_SBX/AniDownloader/series_data.json"
+echo "[]" | seed_data "$CLI_SBX/AniDownloader/series_data.json"
 set +e
 OUT=$(run_cli 2>&1)
 CODE=$?
@@ -189,7 +198,7 @@ fi
 echo "[2/3] CLI: URL non raggiungibili → skip, JSON invariato"
 
 printf '[{"name":"SerieA","service":"animeW_scraper","path":"%s","series_page_url":"https://example.invalid/anime/seriea"},{"name":"SerieB","service":"animeW_scraper","path":"%s","series_page_url":"https://example.invalid/anime/serieb"}]' \
-    "$CLI_SBX/media/SerieA" "$CLI_SBX/media/SerieB" > "$CLI_SBX/AniDownloader/series_data.json"
+    "$CLI_SBX/media/SerieA" "$CLI_SBX/media/SerieB" | seed_data "$CLI_SBX/AniDownloader/series_data.json"
 SHA_BEFORE=$(file_sha "$CLI_SBX/AniDownloader/series_data.json")
 
 if run_cli --burst >"$RPT/t2_burst.log" 2>&1; then
@@ -280,7 +289,7 @@ done
 FIX_PORT=$(cat "$STATIC_SBX/port" 2>/dev/null || echo "")
 if [ -n "$FIX_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$FIX_PORT/serie.html"; then
     printf '[{"name":"Serie","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/serie.html"},{"name":"Serie2","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/serie2.html"}]' \
-        "$STATIC_SBX/media/Serie" "$FIX_PORT" "$STATIC_SBX/media/Serie2" "$FIX_PORT" > "$STATIC_SBX/AniDownloader/series_data.json"
+        "$STATIC_SBX/media/Serie" "$FIX_PORT" "$STATIC_SBX/media/Serie2" "$FIX_PORT" | seed_data "$STATIC_SBX/AniDownloader/series_data.json"
     SHA_BEFORE=$(file_sha "$STATIC_SBX/AniDownloader/series_data.json")
 
     if XDG_CONFIG_HOME="$STATIC_SBX" XDG_CACHE_HOME="$STATIC_SBX/cache" \
@@ -400,7 +409,7 @@ if [ -n "$SCN_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$SCN_PORT/s
     dd if=/dev/urandom of="$SCEN_SBX/media/Serie1/Serie1_Ep_01.mp4" bs=1M count=1 status=none 2>/dev/null || true
     printf '{"convert_to_h265":true}' > "$SCEN_SBX/AniDownloader/config.json"
     printf '[{"name":"Serie1","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s1.html"}]' \
-        "$SCEN_SBX/media/Serie1" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+        "$SCEN_SBX/media/Serie1" "$SCN_PORT" | seed_data "$SCEN_SBX/AniDownloader/series_data.json"
     SHA_S1=$(file_sha "$SCEN_SBX/AniDownloader/series_data.json")
     scen_run s1
     if ! grep -q 'Pianifico conversione locale H265' "$SCEN_LOG"; then
@@ -425,7 +434,7 @@ if [ -n "$SCN_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$SCN_PORT/s
         && make_h264_media "$SCEN_SBX/media/Serie3" Serie3; then
         printf '{"convert_to_h265":true}' > "$SCEN_SBX/AniDownloader/config.json"
         printf '[{"name":"Serie2","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s2.html"}]' \
-            "$SCEN_SBX/media/Serie2" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+            "$SCEN_SBX/media/Serie2" "$SCN_PORT" | seed_data "$SCEN_SBX/AniDownloader/series_data.json"
         scen_run s2a
         if grep -q 'Pianifico conversione locale H265' "$SCEN_LOG"; then
             pass "S2a: conversione pianificata (h264 → hevc)"
@@ -440,7 +449,7 @@ if [ -n "$SCN_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$SCN_PORT/s
 
         printf '{"convert_to_h265":false}' > "$SCEN_SBX/AniDownloader/config.json"
         printf '[{"name":"Serie3","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s2.html"}]' \
-            "$SCEN_SBX/media/Serie3" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+            "$SCEN_SBX/media/Serie3" "$SCN_PORT" | seed_data "$SCEN_SBX/AniDownloader/series_data.json"
         scen_run s2b
         if ! grep -q 'Pianifico conversione locale H265' "$SCEN_LOG"; then
             pass "S2b: nessuna conversione pianificata (convert_to_h265=false)"
@@ -459,7 +468,7 @@ if [ -n "$SCN_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$SCN_PORT/s
     # --- S3: continue + passed_episodes=2 → offset numerazione (Ep_03, Ep_04) ---
     printf '{"convert_to_h265":false}' > "$SCEN_SBX/AniDownloader/config.json"
     printf '[{"name":"Serie4","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s3.html","continue":true,"passed_episodes":2}]' \
-        "$SCEN_SBX/media/Serie4" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+        "$SCEN_SBX/media/Serie4" "$SCN_PORT" | seed_data "$SCEN_SBX/AniDownloader/series_data.json"
     scen_run s3
     if [ "$(find "$SCEN_SBX/media/Serie4" -name '*_Ep_03.mp4' | wc -l)" -eq 1 ] \
         && [ "$(find "$SCEN_SBX/media/Serie4" -name '*_Ep_04.mp4' | wc -l)" -eq 1 ] \
@@ -471,7 +480,7 @@ if [ -n "$SCN_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$SCN_PORT/s
 
     # --- S4: lastDownloaded=3 + media vuota → prossimo episodio = 4 (fix feature 11, 1 file) ---
     printf '[{"name":"Serie5","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s4.html","last_downloaded_episode":3}]' \
-        "$SCEN_SBX/media/Serie5" "$SCN_PORT" > "$SCEN_SBX/AniDownloader/series_data.json"
+        "$SCEN_SBX/media/Serie5" "$SCN_PORT" | seed_data "$SCEN_SBX/AniDownloader/series_data.json"
     scen_run s4
     if [ "$(find "$SCEN_SBX/media/Serie5" -name '*_Ep_04.mp4' | wc -l)" -eq 1 ] \
         && [ "$(find "$SCEN_SBX/media/Serie5" -name '*_Ep_0*.mp4' | wc -l)" -eq 1 ]; then
@@ -483,7 +492,7 @@ if [ -n "$SCN_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$SCN_PORT/s
     # --- S5: priorità alta → entrambe le serie completate ---
     printf '[{"name":"Serie6","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s5.html","is_high_priority":true},{"name":"Serie7","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s5.html","is_high_priority":false}]' \
         "$SCEN_SBX/media/Serie6" "$SCN_PORT" "$SCEN_SBX/media/Serie7" "$SCN_PORT" \
-        > "$SCEN_SBX/AniDownloader/series_data.json"
+        | seed_data "$SCEN_SBX/AniDownloader/series_data.json"
     scen_run s5
     if [ "$(find "$SCEN_SBX/media/Serie6" -name '*_Ep_0*.mp4' | wc -l)" -eq 1 ] \
         && [ "$(find "$SCEN_SBX/media/Serie7" -name '*_Ep_0*.mp4' | wc -l)" -eq 1 ]; then
@@ -509,7 +518,7 @@ start_slow_server || true
 if [ -n "$SLOW_PORT" ]; then
     printf '[{"name":"SerieA","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/block"},{"name":"SerieB","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/block"}]' \
         "$CLI_SBX/media/SerieA" "$SLOW_PORT" "$CLI_SBX/media/SerieB" "$SLOW_PORT" \
-        > "$CLI_SBX/AniDownloader/series_data.json"
+        | seed_data "$CLI_SBX/AniDownloader/series_data.json"
     SHA_BEFORE=$(file_sha "$CLI_SBX/AniDownloader/series_data.json")
 
     run_cli >"$RPT/t3.log" 2>&1 &
@@ -537,7 +546,7 @@ fi
 make_media "$WEB_SBX/media/SerieA" SerieA
 make_media "$WEB_SBX/media/SerieB" SerieB
 printf '[{"name":"SerieA","service":"animeW_scraper","path":"%s","series_page_url":"https://example.invalid/anime/seriea"},{"name":"SerieB","service":"animeW_scraper","path":"%s","series_page_url":"https://example.invalid/anime/serieb"}]' \
-    "$WEB_SBX/media/SerieA" "$WEB_SBX/media/SerieB" > "$WEB_SBX/AniDownloader/series_data.json"
+    "$WEB_SBX/media/SerieA" "$WEB_SBX/media/SerieB" | seed_data "$WEB_SBX/AniDownloader/series_data.json"
 
 start_web_server || true
 if [ -z "${PORT:-}" ]; then

@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { fly } from 'svelte/transition';
+  import { pageEnter } from '../motion.js';
   import { api } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
 
@@ -26,7 +26,7 @@
   onMount(load);
 </script>
 
-<div transition:fly={{ y: 8, duration: 200 }}>
+<div in:pageEnter|global>
   <div class="header-row">
     <h2>Server Logs</h2>
     <div class="controls">
@@ -60,7 +60,6 @@
   .btn-primary {
     padding: 0.5rem 1.25rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
-    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .error {
@@ -70,18 +69,13 @@
   .center { display: flex; justify-content: center; padding: 2rem; }
   .spinner-sm {
     width: 24px; height: 24px; border: 2px solid var(--border-color); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin 0.8s linear infinite;
+    border-radius: 50%; animation: motion-spin var(--motion-spinner) linear infinite;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
   .log-view {
     background: var(--log-bg); border: 1px solid var(--border-color); border-radius: 12px;
     padding: 1rem; font-family: 'Consolas', 'Menlo', 'Monaco', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Courier New', monospace;
     font-weight: 500; font-size: 0.78rem; line-height: 1.5; color: var(--text-secondary); max-height: 70vh;
     overflow-y: auto; white-space: pre-wrap; word-break: break-all;
-    animation: fadeIn 0.3s ease-out;
-  }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
   }
 </style>

@@ -11,17 +11,20 @@
 #include "core/QueueStore.hpp"
 #include "core/Scheduler.hpp"
 #include "core/Series.hpp"
+#include "core/SeriesIdentity.hpp"
 #include "core/SeriesRepository.hpp"
 #include "core/SeriesUtils.hpp"
 #include "core/ThumbCache.hpp"
 #include "core/UpdateChecker.hpp"
 #include "core/WorkerPool.hpp"
 #include "scrapers/ScraperUtils.hpp"
+#include "web/DownloadState.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <atomic>
+#include <barrier>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
@@ -44,6 +47,69 @@ static int g_failures = 0;
             std::cerr << "FAIL: " << #cond << " (riga " << __LINE__ << ")\n";                      \
         }                                                                                          \
     } while (0)
+
+static void testDownloadState() {
+    Web::DownloadState state;
+    using Json = nlohmann::json;
+    auto emit = [&](Json event) {
+        CHECK(state.record(event));
+        return event;
+    };
+    emit({{"type", "started"}});
+    auto start = state.snapshot();
+    CHECK(start["running"] == true);
+    auto dl = emit({{"type", "progress"},
+                    {"series", "A_1"},
+                    {"episode", 2},
+                    {"phase", "downloading"},
+                    {"percent", 99}});
+    CHECK(dl.contains("log"));
+    auto pct = emit({{"type", "progress"},
+                     {"series", "A_1"},
+                     {"episode", 2},
+                     {"phase", "downloading"},
+                     {"percent", 100}});
+    CHECK(!pct.contains("log"));
+    auto wait = emit({{"type", "progress"},
+                      {"series", "A_1"},
+                      {"episode", 2},
+                      {"phase", "waiting_conversion"},
+                      {"percent", -1}});
+    CHECK(wait["task"]["percent"] == -1);
+    CHECK(state.snapshot()["tasks"].size() == 1);
+    emit({{"type", "progress"},
+          {"series", "A_1"},
+          {"episode", 2},
+          {"phase", "converting"},
+          {"percent", 12}});
+    CHECK(state.snapshot()["tasks"][0]["percent"] == 12);
+    emit({{"type", "finished"},
+          {"series", "B"},
+          {"episode", 3},
+          {"success", false},
+          {"error", "Fixture errore"}});
+    emit({{"type", "done"}, {"stopped", true}});
+    auto stopped = state.snapshot();
+    CHECK(stopped["running"] == false);
+    CHECK(stopped["stopped"] == true);
+    bool interrupted = false, error = false;
+    for (const auto& task : stopped["tasks"]) {
+        interrupted |= task["phase"] == "interrupted";
+        error |= task["phase"] == "error";
+    }
+    CHECK(interrupted && error);
+    CHECK(Web::DownloadState::key("A_1", 2) != Web::DownloadState::key("A", 12));
+    auto lastSequence = stopped["sequence"].get<std::uint64_t>();
+    emit({{"type", "started"}});
+    CHECK(state.snapshot()["tasks"].empty());
+    CHECK(state.snapshot()["runId"] == 2);
+    CHECK(state.snapshot()["sequence"].get<std::uint64_t>() > lastSequence);
+    for (int i = 0; i < 140; ++i)
+        emit({{"type", "skipped"}, {"series", std::to_string(i)}, {"reason", "Già aggiornata"}});
+    CHECK(state.snapshot()["events"].size() == 120);
+    Json queue = {{"type", "queue"}};
+    CHECK(!state.record(queue));
+}
 
 static void testCompareVersions() {
     using Core::UpdateChecker;
@@ -317,6 +383,39 @@ static void testConfigMigration() {
         writeCfg(R"({"auto_cleanup_on_close":true,"resume_interrupted_downloads":true})");
         Config::AppConfigManager m(cfgPath);
         CHECK(m.get<bool>("resume_interrupted_downloads", true) == true);
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
+static void testBurstOnManualStartDefault() {
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_burst_cfg";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+#ifdef _WIN32
+    _putenv_s("XDG_CONFIG_HOME", dir.string().c_str());
+#else
+    setenv("XDG_CONFIG_HOME", dir.string().c_str(), 1);
+#endif
+    auto cfgPath = dir / "AniDownloader" / "config.json";
+    std::filesystem::create_directories(cfgPath.parent_path());
+
+    auto writeCfg = [&](const std::string& body) {
+        std::ofstream f(cfgPath);
+        f << body;
+    };
+
+    {
+        // Config storica senza la chiave → merge dei default: burst ON.
+        writeCfg("{}");
+        Config::AppConfigManager m(cfgPath);
+        CHECK(m.get<bool>("burst_on_manual_start", false) == true);
+    }
+    {
+        // Scelta utente esplicita dalle Impostazioni → vince sul default.
+        writeCfg(R"({"burst_on_manual_start":false})");
+        Config::AppConfigManager m(cfgPath);
+        CHECK(m.get<bool>("burst_on_manual_start", true) == false);
     }
 
     std::filesystem::remove_all(dir);
@@ -991,9 +1090,10 @@ static void testDbImporter() {
     fs::remove_all(dir, ec);
 }
 
-// Shadow mode: JSON autorevole, DB rispecchiato e verificato; divergenza
-// rilevata senza rompere il JSON. Concorrenza: due handle in write-write
-// non perdono righe. Cleanup sempre.
+// Cutover (ADR-004 §6): il DB è la fonte; il JSON è export + fallback.
+// Il mirror resta una verifica su ogni scrittura (divergenza contata,
+// salvataggio non bloccato). Concorrenza: due handle in write-write non
+// perdono righe. Cleanup sempre.
 static void testShadowMode() {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "anidl_test_shadow";
@@ -1031,42 +1131,145 @@ static void testShadowMode() {
     repo.saveSeriesData(due);
     CHECK(repo.shadowChecks() == 1);
     CHECK(repo.shadowDivergences() == 0);
-    // Primo avvio: import automatico con backup verificato.
+    // Primo avvio senza export precedente: il mirror semina direttamente il
+    // DB (nessun import, nessun .bak: il file non esisteva).
     CHECK(fs::exists(dbPath));
     {
-        bool bak = false;
-        for (const auto& entry : fs::directory_iterator(dir))
-            bak = bak || entry.path().string().find(".bak.") != std::string::npos;
-        CHECK(bak);
+        Core::Database db(dbPath);
+        auto sel = db.prepare("SELECT COUNT(*) FROM series;");
+        CHECK(sel.valid() && sel.step() && sel.columnInt(0) == 2);
     }
-    // Letture restano dal JSON.
-    CHECK(repo.loadSeriesData().size() == 2);
+    // Letture dal DB autorevole (ordine righe = ordine array del JSON).
+    auto lette = repo.loadSeriesData();
+    CHECK(lette.size() == 2);
+    CHECK(lette[0].name == "Alpha");
 
-    // Corrompo il DB fuori dal Repository: la scrittura dopo rileva la
-    // divergenza (mirror riscrive tutto: torna a 0 alla save successiva).
+    // Modifica esterna al DB (altro processo): post-cutover è la verità, la
+    // ricarica ne tiene conto grazie allo stat combinato di .db + -wal.
     {
         Core::Database db(dbPath);
         CHECK(db.execute("DELETE FROM series WHERE name='Beta';"));
     }
     {
         auto dati = repo.loadSeriesData();
+        CHECK(dati.size() == 1); // DB autorevole: la cancellazione esterna vince
         repo.saveSeriesData(dati);
         CHECK(repo.shadowChecks() == 2);
-        CHECK(repo.shadowDivergences() == 0); // mirror riscrive: autod Riparato
+        CHECK(repo.shadowDivergences() == 0); // mirror coerente con la fonte
     }
     {
-        // Divergenza vera: riga extra nel DB che il mirror non spiega.
-        // Il mirror fa DELETE+INSERT totale, quindi per osservare una
-        // divergenza persistente serve un DB non scrivibile: directory sola
-        // lettura non basta (WAL). Caso coperto: DB con schema illeggibile.
+        // DB rotto (tabella assente): la lettura casca sul export JSON
+        // (comportamento pre-cutover) e la scrittura conta la divergenza
+        // senza bloccare il salvataggio.
         Core::Database db(dbPath);
         CHECK(db.execute("DROP TABLE series;"));
     }
     {
         auto dati = repo.loadSeriesData();
-        repo.saveSeriesData(dati); // mirror fallisce, JSON intatto
+        CHECK(dati.size() == 1); // fallback: l'export racconta l'ultimo stato
+        repo.saveSeriesData(dati); // mirror fallisce, export intatto
         CHECK(repo.shadowDivergences() == 1);
+        CHECK(repo.loadSeriesData().size() == 1);
+    }
+
+    fs::remove_all(dir, ec);
+}
+
+// Cutover DB fonte (ADR-004 §6): import automatico (DB vuoto + export con
+// dati), letture dal DB con restart, export aggiornato a ogni save, recupero
+// da export con DB svuotato, fallback con file DB illeggibile. Cleanup sempre.
+static void testDbCutover() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_cutover";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    const fs::path jsonPath = dir / "series_data.json";
+    const fs::path dbPath = Core::SeriesRepository::dbPathFor(jsonPath);
+
+    Core::Series a;
+    a.name = "Alpha";
+    a.service = "animew";
+    a.path = "/tmp/a";
+    a.seriesPageUrl = "https://x/a";
+    a.passedEpisodes = 1;
+    Core::Series b = a;
+    b.name = "Beta";
+    b.seriesPageUrl = "https://x/b";
+
+    // 1) primo avvio: export pre-cutover con dati, DB assente → import auto + lettura dal DB.
+    {
+        nlohmann::json arr = std::vector<Core::Series>{a, b};
+        std::ofstream f(jsonPath);
+        f << arr.dump(4);
+        f.close(); // il repository legge il file: nessun buffer in sospeso
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        auto r = repo.loadSeriesData();
+        CHECK(r.size() == 2);
+        CHECK(r[0].name == "Alpha"); // ordine rowid = ordine atteso dall'API
+        CHECK(fs::exists(dbPath));
+    }
+
+    // 2) restart simulato: nuova istanza leggale dal DB (righe > 0, niente import).
+    {
+        Core::SeriesRepository repo(jsonPath, dbPath);
         CHECK(repo.loadSeriesData().size() == 2);
+    }
+
+    // 3) ogni scrittura aggiorna anche l'export: addSeries → export con 3.
+    {
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        Core::Series c = a;
+        c.name = "Gamma";
+        c.seriesPageUrl = "https://x/c";
+        auto esito = repo.addSeries(c);
+        CHECK(esito.esito == Core::SeriesRepository::MutazioneEsito::Ok);
+        std::ifstream f(jsonPath);
+        auto arr = nlohmann::json::parse(f);
+        CHECK(arr.is_array() && arr.size() == 3);
+        CHECK(repo.loadSeriesData().size() == 3);
+        CHECK(repo.shadowDivergences() == 0);
+    }
+
+    // 4) DB svuotato fuori dal Repository (disastro) → auto-import dall'export.
+    {
+        {
+            Core::Database db(dbPath);
+            CHECK(db.execute("DELETE FROM series;"));
+        }
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        CHECK(repo.loadSeriesData().size() == 3);
+        CHECK(repo.shadowDivergences() == 0);
+    }
+
+    // 5) DB illeggibile (file non-SQLite) → fallback sull'export: lette e
+    //    scritture proseguono senza perdita (mirror segnala la divergenza).
+    {
+        fs::rename(dbPath, dir / "db.sano.bak", ec);
+        CHECK(!ec);
+        {
+            std::ofstream f(dbPath, std::ios::binary | std::ios::trunc);
+            f << "questo non è un database SQLite";
+            f.close(); // il repository apre il file: nessun buffer in sospeso
+        }
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        CHECK(repo.loadSeriesData().size() == 3);
+        Core::Series d = a;
+        d.name = "Delta";
+        d.seriesPageUrl = "https://x/d";
+        auto esito = repo.addSeries(d);
+        CHECK(esito.esito == Core::SeriesRepository::MutazioneEsito::Ok); // salvato sull'export
+        CHECK(repo.loadSeriesData().size() == 4);
+        CHECK(repo.shadowDivergences() >= 1); // mirror impossibile: contatore
+        // ripristino: export (4 serie) resta la copia di riferimento per il drill
+        for (const char* suffix : {"", "-wal", "-shm"}) {
+            std::error_code rm;
+            fs::remove(fs::path(dbPath.string() + suffix), rm);
+        }
+        fs::rename(dir / "db.sano.bak", dbPath, ec);
+        CHECK(!ec);
     }
 
     fs::remove_all(dir, ec);
@@ -1446,6 +1649,202 @@ static void testNfoPosterOnce() {
     std::filesystem::remove_all(dir);
 }
 
+// Identità serie (B0): relativo AW == assoluto canonico, host
+// case-insensitive, path case-sensitive, episodio mai collassato.
+static void testSeriesIdentity() {
+    using Core::discoverIdentity;
+    using Core::seriesIdentity;
+
+    // Relativo del catalogo == assoluto su host ufficiale.
+    CHECK(seriesIdentity("animeW_scraper", "/play/ghost-meets-gal.0H0eO") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(discoverIdentity("/play/ghost-meets-gal.0H0eO") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // Host maiuscolo/minuscolo equivale...
+    CHECK(seriesIdentity("animeW_scraper", "https://WWW.ANIMEWORLD.AC/play/ghost-meets-gal.0H0eO") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    // ...ma il path che cambia case NON equivale (ID con maiuscole/minuscole).
+    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/Ghost-Meets-Gal.0H0eO") !=
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // Mirror .so verificato (301 a .ac) equivale al canonico.
+    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.so/play/ghost-meets-gal.0H0eO") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    // Host estraneo mai equivalente.
+    CHECK(seriesIdentity("animeW_scraper", "https://evil.example.com/play/ghost-meets-gal.0H0eO") !=
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // Trailing slash / fragment / query non cambiano l'identità serie.
+    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO/") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(seriesIdentity("animeW_scraper",
+                         "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO#trama") ==
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // URL episodio NON diventa identità della serie.
+    CHECK(seriesIdentity("animeW_scraper",
+                         "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO/abc123") !=
+          seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+
+    // Stesso path su servizi diversi resta diverso; stesso titolo non conta.
+    CHECK(seriesIdentity("animeW_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO") !=
+          seriesIdentity("animeU_scraper", "https://www.animeworld.ac/play/ghost-meets-gal.0H0eO"));
+    CHECK(seriesIdentity("animeU_scraper", "https://animeunity.to/watch/ghost/1") !=
+          seriesIdentity("animeU_scraper", "https://animeunity.to/watch/gal/1"));
+
+    // AU: mirror storico .so equivale al canonico .to, host case-insensitive.
+    CHECK(seriesIdentity("animeU_scraper", "https://animeunity.so/watch/ghost/1") ==
+          seriesIdentity("animeU_scraper", "https://animeunity.to/watch/ghost/1"));
+
+    // Vuoti mai validi.
+    CHECK(seriesIdentity("", "https://www.animeworld.ac/play/x.y").empty());
+    CHECK(seriesIdentity("animeW_scraper", "").empty());
+    CHECK(seriesIdentity("animeW_scraper", "   ").empty());
+}
+
+// Mutazioni atomiche del repository: vincolo anti-duplicato, concorrenza con
+// barriera (mai sleep), nessun bypass read-modify-save, errori propagati.
+static void testRepositoryAtomic() {
+    using Core::SeriesRepository;
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_repo_atomic";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    auto jsonPath = dir / "series_data.json";
+
+    auto makeSeries = [](const std::string& name, const std::string& url) {
+        Core::Series s;
+        s.name = name;
+        s.service = "animeW_scraper";
+        s.path = "/tmp/" + name;
+        s.seriesPageUrl = url;
+        return s;
+    };
+
+    SeriesRepository repo(jsonPath);
+    const std::string urlA = "https://www.animeworld.ac/play/serie-a.AAAA1";
+    const std::string urlB = "https://www.animeworld.ac/play/serie-b.BBBB2";
+
+    // Add ok con identity; mirror .so considerato duplicato.
+    auto addA = repo.addSeries(makeSeries("A", urlA));
+    CHECK(addA.esito == SeriesRepository::MutazioneEsito::Ok);
+    CHECK(addA.indice == 0);
+    CHECK(!addA.identity.empty());
+    CHECK(addA.identity ==
+          Core::seriesIdentity("animeW_scraper", "https://www.animeworld.so/play/serie-a.AAAA1"));
+    auto dupA = repo.addSeries(makeSeries("A-copia", "https://www.animeworld.so/play/serie-a.AAAA1/"));
+    CHECK(dupA.esito == SeriesRepository::MutazioneEsito::Duplicato);
+    CHECK(dupA.indice == 0);
+    CHECK(repo.snapshotSeriesData().size() == 1);
+    CHECK(repo.shadowChecks() == 0); // JSON-only: nessun mirror aggiunto
+
+    // Update stessa serie/stessa identity ammesso (correzione altri campi).
+    Core::Series aMod = makeSeries("A", urlA);
+    aMod.path = "/tmp/A-nuovo";
+    auto updSame = repo.updateSeries(0, aMod);
+    CHECK(updSame.esito == SeriesRepository::MutazioneEsito::Ok);
+    CHECK(repo.snapshotSeriesData()[0].path == "/tmp/A-nuovo");
+
+    // Update verso identità di un'altra serie rifiutato, senza modifiche.
+    CHECK(repo.addSeries(makeSeries("B", urlB)).esito == SeriesRepository::MutazioneEsito::Ok);
+    Core::Series bConflict = makeSeries("B", urlA);
+    auto updConf = repo.updateSeries(1, bConflict);
+    CHECK(updConf.esito == SeriesRepository::MutazioneEsito::Duplicato);
+    CHECK(repo.snapshotSeriesData()[1].seriesPageUrl == urlB);
+    // Indice assente: 404 logico.
+    CHECK(repo.updateSeries(9, makeSeries("X", urlB)).esito ==
+          SeriesRepository::MutazioneEsito::NonTrovato);
+    CHECK(repo.removeSeries(9).esito == SeriesRepository::MutazioneEsito::NonTrovato);
+
+    // Due thread, stessa identity, partenza sincronizzata: uno Ok, uno Duplicato.
+    {
+        auto dir2 = std::filesystem::temp_directory_path() / "anidl_test_repo_race";
+        std::filesystem::remove_all(dir2);
+        std::filesystem::create_directories(dir2);
+        SeriesRepository race(dir2 / "series_data.json");
+        std::barrier sync(2);
+        SeriesRepository::AddEsito r1, r2;
+        std::thread t1([&] {
+            sync.arrive_and_wait();
+            r1 = race.addSeries(makeSeries("R", urlA));
+        });
+        std::thread t2([&] {
+            sync.arrive_and_wait();
+            r2 = race.addSeries(makeSeries("R-bis", urlA));
+        });
+        t1.join();
+        t2.join();
+        int okCount = (r1.esito == SeriesRepository::MutazioneEsito::Ok ? 1 : 0) +
+                      (r2.esito == SeriesRepository::MutazioneEsito::Ok ? 1 : 0);
+        int dupCount = (r1.esito == SeriesRepository::MutazioneEsito::Duplicato ? 1 : 0) +
+                       (r2.esito == SeriesRepository::MutazioneEsito::Duplicato ? 1 : 0);
+        CHECK(okCount == 1);
+        CHECK(dupCount == 1);
+        CHECK(race.snapshotSeriesData().size() == 1);
+        std::filesystem::remove_all(dir2);
+    }
+
+    // Due add diverse concorrenti: entrambe presenti.
+    {
+        auto dir3 = std::filesystem::temp_directory_path() / "anidl_test_repo_race2";
+        std::filesystem::remove_all(dir3);
+        std::filesystem::create_directories(dir3);
+        SeriesRepository race(dir3 / "series_data.json");
+        std::barrier sync(2);
+        SeriesRepository::AddEsito r1, r2;
+        std::thread t1([&] {
+            sync.arrive_and_wait();
+            r1 = race.addSeries(makeSeries("R1", urlA));
+        });
+        std::thread t2([&] {
+            sync.arrive_and_wait();
+            r2 = race.addSeries(makeSeries("R2", urlB));
+        });
+        t1.join();
+        t2.join();
+        CHECK(r1.esito == SeriesRepository::MutazioneEsito::Ok);
+        CHECK(r2.esito == SeriesRepository::MutazioneEsito::Ok);
+        CHECK(race.snapshotSeriesData().size() == 2);
+        std::filesystem::remove_all(dir3);
+    }
+
+    // Remove + avanzamento: nessuna resurrezione della serie rimossa.
+    CHECK(repo.removeSeries(0).esito == SeriesRepository::MutazioneEsito::Ok);
+    CHECK(repo.snapshotSeriesData().size() == 1);
+    CHECK(repo.applyDownloadedEpisodes({{"B", 3}}, "2026-10-12T00:00:00Z"));
+    auto snap = repo.snapshotSeriesData();
+    CHECK(snap.size() == 1);
+    CHECK(snap[0].name == "B");
+    CHECK(snap[0].lastDownloadedEpisode == 3);
+
+    // Snapshot precedente resta valido dopo nuove scritture.
+    auto prima = repo.snapshotSeriesData();
+    CHECK(repo.addSeries(makeSeries("C", "https://www.animeworld.ac/play/serie-c.CCCC3")).esito ==
+          SeriesRepository::MutazioneEsito::Ok);
+    CHECK(prima.size() == 1);
+    CHECK(repo.snapshotSeriesData().size() == 2);
+
+    // Errore storage deterministico (parent del JSON è un file regolare):
+    // esito tipizzato, cache/dati vecchi integri, niente throw.
+    {
+        auto dir4 = std::filesystem::temp_directory_path() / "anidl_test_repo_err";
+        std::filesystem::remove_all(dir4);
+        std::filesystem::create_directories(dir4);
+        auto blocker = dir4 / "blocco";
+        {
+            std::ofstream f(blocker);
+            f << "non una directory";
+        }
+        SeriesRepository rotto(blocker / "series_data.json");
+        auto bad = rotto.addSeries(makeSeries("E", urlA));
+        CHECK(bad.esito == SeriesRepository::MutazioneEsito::ErroreStorage);
+        CHECK(!bad.errore.empty());
+        std::filesystem::remove_all(dir4);
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--try-lock") {
         Core::InstanceLock l(argv[2]);
@@ -1456,8 +1855,11 @@ int main(int argc, char** argv) {
     testSeriesJsonRoundtrip();
     testScraperUtils();
     testSeriesRepository();
+    testSeriesIdentity();
+    testRepositoryAtomic();
     testCacheMtimeReload();
     testConfigMigration();
+    testBurstOnManualStartDefault();
     testInstanceLock(argv[0]);
     testPublishNoReplace();
     testParseMountTable();
@@ -1474,6 +1876,8 @@ int main(int argc, char** argv) {
     testDatabase();
     testDbImporter();
     testShadowMode();
+    testDbCutover();
+    testDownloadState();
     testConcurrentWrites();
     testQueueStore();
     testScheduler();

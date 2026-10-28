@@ -78,6 +78,7 @@ Lista delle serie.
     "series": [
         {
             "_file_index": 0,
+            "identity": "animeW_scraper:/play/one-piece.HASH",
             "name": "One Piece",
             "path": "~/Video/Anime/One Piece",
             "series_page_url": "https://animeworld.so/...",
@@ -92,6 +93,11 @@ Lista delle serie.
     ]
 }
 ```
+
+`identity`: stringa opaca calcolata dal server (servizio + URL canonico).
+Il frontend la confronta come stringa, senza normalizzare URL in JS.
+Stessa serie su mirror verificato (es. `.so`/`.ac`) ha stessa identity;
+stesso titolo con URL diversi resta distinto.
 
 ---
 
@@ -118,11 +124,23 @@ una tantum `folder.jpg` (locandina HD) e `tvshow.nfo` (trama, generi, anno,
 stato) nella cartella serie — solo se non esistono già, mai sovrascritture.
 Best-effort: se fallisce, l'aggiunta riesce comunque.
 
-Risposta:
+Risposta (successo):
 
 ```json
-{"success": true}
+{"success": true, "index": 3, "identity": "animeW_scraper:/play/one-piece.HASH"}
 ```
+
+Duplicato (stessa serie già in gestione, anche da mirror verificato):
+
+```json
+{"error": "Serie già in gestione", "code": 409, "error_code": "series_already_managed", "identity": "animeW_scraper:/play/one-piece.HASH"}
+```
+
+`code` resta numerico (allineato allo status HTTP); il motivo applicativo è
+in `error_code`. Il controllo è atomico nel repository: due richieste
+concorrenti sullo stesso repository non creano due copie. La garanzia vale
+per thread dello stesso processo; due daemon sullo stesso JSON restano
+fuori garanzia (lock interprocesso via `exec.lock` per i giri, non per CRUD).
 
 ---
 
@@ -130,11 +148,14 @@ Risposta:
 
 Modifica la serie all'indice `index`.
 
-Corpo: stesso formato di POST. Risposta:
+Corpo: stesso formato di POST. Risposta (successo):
 
 ```json
-{"success": true}
+{"success": true, "identity": "animeW_scraper:/play/one-piece.HASH"}
 ```
+
+Il cambio URL verso una serie già gestita da un altro indice è rifiutato
+con lo stesso 409 `series_already_managed` (nessuna modifica applicata).
 
 ---
 
@@ -270,10 +291,14 @@ Risposta:
     "success": true, "page": 1, "maxPage": 122,
     "items": [
         {"titolo": "Naruto Shippuden", "pageUrl": "/play/naruto-shippuden.v3U8a",
-         "posterUrl": "https://img.animeworld.ac/locandine/01ec....png", "tooltipId": "193"}
+         "posterUrl": "https://img.animeworld.ac/locandine/01ec....png", "tooltipId": "193",
+         "identity": "animeW_scraper:/play/naruto-shippuden.v3U8a"}
     ]
 }
 ```
+
+Ogni item espone `identity` (stessa regola di `GET /api/series`): il badge
+"In gestione" si decide confrontando stringhe, senza parsing URL nel browser.
 
 I poster sono URL diretti (`img.animeworld.ac`): il frontend li carica senza proxy.
 
@@ -490,7 +515,9 @@ Risposta:
 
 ### `POST /api/download/start`
 
-Avvia i download.
+Avvia i download. Il corpo è opzionale: la UI non lo invia e la modalità
+arriva dalla config `burst_on_manual_start` (default `true`); un `burst`
+esplicito nel corpo vince per quella richiesta.
 
 ```json
 {"burst": true}
@@ -499,7 +526,7 @@ Avvia i download.
 Risposta:
 
 ```json
-{"success": true}
+{"success": true, "message": "Download started"}
 ```
 
 ---
@@ -516,14 +543,44 @@ Ferma i download in corso.
 
 ### `GET /api/download/status`
 
-Stato del download engine.
+Snapshot osservativo del run manuale avviato dalla Home. `running` resta
+disponibile; i campi aggiuntivi permettono di ricostruire la UI dopo reload o
+riconnessione. Risposta `Cache-Control: no-store`.
 
 ```json
 {
     "success": true,
-    "running": true
+    "running": true,
+    "runId": 1,
+    "sequence": 42,
+    "phase": "processing",
+    "status": "Elaborazione in corso",
+    "stopped": false,
+    "tasks": [
+        {"key": "[\"One Piece\",1]", "seriesName": "One Piece", "episode": 1,
+         "phase": "waiting_conversion", "percent": -1,
+         "detail": "Download completo · attesa di uno slot", "dlTime": 0.0, "convTime": 0.0}
+    ],
+    "events": []
 }
 ```
+
+`key` è opaca per il client; identifica una coppia serie/episodio nel run,
+non sostituisce l'identità canonica del repository. `percent=-1` significa
+assenza di una percentuale misurabile: non visualizzare una barra fittizia.
+Le percentuali di download e conversione sono indipendenti.
+
+Fasi episodio: `queued`, `analysing` (episodio 0), `downloading`,
+`verifying_download`, `waiting_conversion`, `converting`, `finalizing`,
+`completed`, `error`, `interrupted`, `skipped`. Il download concluso passa
+alla verifica, quindi all'attesa conversione senza rimanere al 99%.
+Se non serve conversione passa direttamente al completamento dopo la verifica.
+
+`events` conserva al massimo 120 passaggi significativi, con `id`, `timestamp`
+(millisecondi Unix), `type`, `series`, `episode` e, quando presente, `task`.
+Non contiene ogni aggiornamento percentuale. Task ed eventi restano in memoria
+fino al run successivo o al riavvio del demone; non sono una coda persistente.
+Non rappresentano i singoli episodi del giro background dello scheduler.
 
 ---
 
@@ -532,24 +589,37 @@ Stato del download engine.
 SSE (Server-Sent Events) per aggiornamenti live.
 
 ```
-event: progress
-data: {"type":"progress","series":"One Piece","message":"Analisi...","episode":0}
+data: {"type":"started","runId":1,"sequence":1,"timestamp":1792300000000}
 
-event: progress
-data: {"type":"progress","series":"One Piece","message":"DL 45%","episode":1}
+data: {"type":"progress","series":"One Piece","message":"Trasferimento in corso","episode":1,"phase":"downloading","percent":45,"runId":1,"sequence":42,"timestamp":1792300001000,"task":{"key":"[\"One Piece\",1]","seriesName":"One Piece","episode":1,"phase":"downloading","percent":45,"detail":"Trasferimento in corso","dlTime":0.0,"convTime":0.0}}
 
-event: progress
-data: {"type":"progress","series":"One Piece","message":"Conv 67%","episode":1}
+```
 
-event: finished
+Gli eventi `finished`, `skipped` e `done` mantengono i campi precedenti e
+ricevono anch'essi `runId`, `sequence`, `timestamp`; esempio dei campi base:
+
+```
 data: {"type":"finished","series":"One Piece","episode":1,"success":true,"dlTime":12.5,"convTime":34.2}
 
-event: skipped
 data: {"type":"skipped","series":"One Piece","reason":"Già aggiornata"}
 
-event: done
-data: {"type":"done"}
+data: {"type":"done","running":false,"stopped":false}
 ```
+
+Il trasporto usa righe `data:`, non eventi SSE nominati: leggere `onmessage`
+e discriminare con `type`. Snapshot e SSE condividono un ordine `sequence`
+globale nel processo. Il client bufferizza gli eventi durante la richiesta
+snapshot e applica soltanto quelli con sequenza successiva; al reconnect o
+a un salto di sequenza rilegge lo snapshot. Al riavvio del demone le sequenze
+ripartono: sostituire lo stato alla nuova connessione, non confrontarlo con
+quello del processo precedente.
+
+Gli eventi che modificano un episodio includono `task`, la sua proiezione
+aggiornata; quelli significativi includono `log`, da aggiungere alla cronologia.
+`started` azzera il run precedente. `done.stopped=true` non è un successo:
+gli episodi non terminali diventano `interrupted`. `finished.interrupted`
+distingue uno stop da un errore. Il campo `message` è solo presentazione:
+mai dedurre la fase da testi, percentuali nel testo, emoji o marker `MODE:*`.
 
 Eventi coda (dal 3.0, scheduler interno):
 
@@ -564,8 +634,10 @@ Il client si connette con `EventSource` nativo del browser.
 
 **Campi evento progress:**
 - `series` — nome della serie
-- `message` — messaggio di stato (`"Analisi..."`, `"DL 45%"`, `"Conv 50%"`, `"MODE:DL"`, ecc.)
+- `message` — messaggio di presentazione, non un protocollo da interpretare
 - `episode` — numero episodio (0 durante analisi, >0 in download/conversione)
+- `phase`, `percent`, `detail` — fase e progresso strutturati (`detail` per episodi)
+- `task` — proiezione aggiornata dell'episodio, inclusa anche in `finished`/`skipped`
 
 **Campi evento finished:**
 - `series` — nome della serie

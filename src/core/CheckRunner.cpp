@@ -20,9 +20,17 @@ namespace Core {
         std::atomic<bool>& stop,
         std::function<void(const std::string&, int, const std::string&)> onProgress,
         std::function<void(const std::string&)> onOverall) {
-        CheckOutcome esito;
         SeriesRepository repo(jsonPath, SeriesRepository::dbPathFor(jsonPath));
-        auto serie = repo.loadSeriesData();
+        return runOnce(config, repo, burst, stop, std::move(onProgress), std::move(onOverall));
+    }
+
+    CheckOutcome CheckRunner::runOnce(
+        Config::AppConfigManager& config, SeriesRepository& repo, bool burst,
+        std::atomic<bool>& stop,
+        std::function<void(const std::string&, int, const std::string&)> onProgress,
+        std::function<void(const std::string&)> onOverall) {
+        CheckOutcome esito;
+        auto serie = repo.snapshotSeriesData();
         if (serie.empty()) {
             esito.salto = CheckOutcome::Salto::Vuoto;
             esito.nota = "nessuna serie configurata";

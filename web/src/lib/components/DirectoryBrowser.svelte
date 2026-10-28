@@ -1,6 +1,6 @@
 <script>
   import { untrack } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { overlayExit, panelExit } from '../motion.js';
   import { api } from '../api.js';
   import ConfirmModal from './ConfirmModal.svelte';
 
@@ -243,8 +243,8 @@
 </script>
 
 {#if show}
-  <div class="browser-overlay" out:fade={{ duration: 150 }} onclick={oncancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
-    <div class="browser-modal" out:fly={{ y: 16, duration: 200 }} onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
+  <div class="browser-overlay" out:overlayExit onclick={oncancel} onkeydown={handleKeydown} role="dialog" aria-modal="true" tabindex="-1">
+    <div class="browser-modal" out:panelExit onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
       <div class="browser-header">
         <button type="button" class="btn-icon-sm side-toggle" onclick={() => sidebarOpen = !sidebarOpen}
                 title="Posizioni e dischi" aria-label="Posizioni e dischi" aria-expanded={sidebarOpen}>
@@ -430,7 +430,7 @@
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
     background: var(--overlay); z-index: 400;
     display: flex; align-items: center; justify-content: center;
-    animation: fadeIn 0.15s ease;
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
     border: none; padding: 0; cursor: default;
   }
   .browser-modal {
@@ -442,7 +442,7 @@
     width: 680px; max-width: 94vw;
     height: 560px; max-height: 88vh;
     display: flex; flex-direction: column;
-    animation: panelIn 0.2s ease-out;
+    animation: motion-panel var(--motion-layout) var(--motion-ease-out);
     box-shadow: 0 12px 40px rgba(0,0,0,0.5);
   }
   .browser-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
@@ -499,7 +499,6 @@
     padding: 0.45rem 0.7rem; font-size: 0.8rem;
     background: none; border: 1px solid var(--btn-cancel-border);
     border-radius: 6px; color: var(--text-secondary); cursor: pointer; flex-shrink: 0;
-    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel-sm:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .browser-sort-bar {
@@ -594,19 +593,14 @@
   .btn-cancel {
     padding: 0.55rem 1.1rem; background: none; border: 1px solid var(--btn-cancel-border);
     border-radius: 8px; color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-primary {
     padding: 0.55rem 1.1rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
-    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
 
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes panelIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
 
   @media (max-width: 768px) {
     .browser-modal {

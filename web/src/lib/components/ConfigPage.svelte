@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { fly } from 'svelte/transition';
+  import { pageEnter } from '../motion.js';
   import { api, BASE } from '../api.js';
   import { getTheme, setTheme } from '../theme.svelte.js';
   import Dropdown from '../Dropdown.svelte';
@@ -35,6 +35,7 @@
     show_close_warning: true,
     auto_cleanup_on_close: true,
     convert_to_h265: true,
+    burst_on_manual_start: true,
     num_chunks: 0,
     max_network_retries: 3,
     retry_delay_ms: 2000,
@@ -127,7 +128,7 @@
   onMount(() => { load(); loadCacheInfo(); });
 </script>
 
-<div transition:fly={{ y: 8, duration: 200 }}>
+<div in:pageEnter|global>
 <h2>Impostazioni AniDownloader</h2>
 
 {#if error}
@@ -136,7 +137,7 @@
 
 {#if busy}
   <div class="center"><div class="spinner-sm"></div></div>
-{:else}
+{:else if config.notifiche && config.scheduling}
   <div class="form-card">
     <form onsubmit={(e) => { e.preventDefault(); save(); }}>
       <DirectoryBrowser
@@ -165,6 +166,17 @@
               <label for="convert_to_h265">Abilita compressione H.265 (HEVC)</label>
             </div>
             <p class="field-hint">Riduce le dimensioni del file (~50%) mantenendo la qualit&agrave;.</p>
+
+            <hr class="field-sep" />
+
+            <div class="checkbox-row">
+              <input id="burst_on_manual_start" type="checkbox" bind:checked={config.burst_on_manual_start} />
+              <label for="burst_on_manual_start">Download manuali con priorit&agrave; massima (burst)</label>
+            </div>
+            <p class="field-hint">
+              Usa ~85% della CPU invece del 50% dei controlli automatici: pi&ugrave; veloce quando sei al PC,
+              con pi&ugrave; calore e consumo. Vale dal prossimo avvio; lo scheduler resta sempre contenuto.
+            </p>
 
             <hr class="field-sep" />
 
@@ -303,18 +315,13 @@
   .center { display: flex; justify-content: center; padding: 2rem; }
   .spinner-sm {
     width: 24px; height: 24px; border: 2px solid var(--border-color); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin 0.8s linear infinite;
+    border-radius: 50%; animation: motion-spin var(--motion-spinner) linear infinite;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
   .form-card {
     background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px;
     padding: 1.5rem; max-width: 1100px;
     margin: 0 auto;
-    animation: fadeIn 0.3s ease-out;
-  }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
   }
   .group-box {
     margin-bottom: 1.5rem; padding-bottom: 1rem;
@@ -366,16 +373,14 @@
   .btn-primary {
     padding: 0.6rem 1.5rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
-    transition: background 0.15s ease;
   }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-cancel {
     padding: 0.6rem 1.25rem; background: none; border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
   }
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-  .saved-msg { color: var(--success); font-size: 0.85rem; }
+  .saved-msg { color: var(--success); font-size: 0.85rem; animation: motion-fade var(--motion-enter) var(--motion-ease-out); }
 
   .settings-columns {
     display: flex;

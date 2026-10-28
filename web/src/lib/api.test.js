@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { api, posterUrl, posterSrcSet, BASE } from './api.js';
+import { api, posterUrl, posterSrcSet, BASE, isSeriesDuplicateError } from './api.js';
 
 function jsonResponse(data, status = 200, statusText = '') {
   return {
@@ -149,10 +149,11 @@ describe('api.config / download / logs / status', () => {
     expect(fetch).toHaveBeenCalledWith(BASE + '/api/config', expect.objectContaining({ method: 'PUT', body: JSON.stringify(data) }));
   });
 
-  it('download.start: POST /api/download/start con burst', async () => {
+  it('download.start: POST /api/download/start senza body (burst deciso dal backend)', async () => {
     fetch.mockResolvedValue(jsonResponse({}));
-    await api.download.start(false);
-    expect(fetch).toHaveBeenCalledWith(BASE + '/api/download/start', expect.objectContaining({ method: 'POST', body: JSON.stringify({ burst: false }) }));
+    await api.download.start();
+    expect(fetch).toHaveBeenCalledWith(BASE + '/api/download/start', expect.objectContaining({ method: 'POST' }));
+    expect(fetch.mock.calls[0][1].body).toBeUndefined();
   });
 
   it('download.stop: POST /api/download/stop senza body', async () => {
@@ -249,6 +250,20 @@ describe('api.browse', () => {
     const err = await api.browse.remove('/media/Alpha', false).catch((e) => e);
     expect(err.status).toBe(409);
     expect(err.count).toBe(12);
+    // Niente error_code/identity: non è un duplicato serie.
+    expect(err.error_code).toBeUndefined();
+    expect(isSeriesDuplicateError(err)).toBe(false);
+  });
+
+  it('add 409 duplicato: ApiError con error_code e identity', async () => {
+    fetch.mockResolvedValue(
+      jsonResponse({ success: false, error: 'Serie già in gestione', code: 409, error_code: 'series_already_managed', identity: 'animeW_scraper:/play/x.y' }, 409),
+    );
+    const err = await api.series.add({ name: 'X' }).catch((e) => e);
+    expect(err.status).toBe(409);
+    expect(err.error_code).toBe('series_already_managed');
+    expect(err.identity).toBe('animeW_scraper:/play/x.y');
+    expect(isSeriesDuplicateError(err)).toBe(true);
   });
 });
 

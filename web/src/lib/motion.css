@@ -1,0 +1,51 @@
+/* Tempi e distanze sono impostati da initMotion: niente numeri duplicati. */
+@keyframes motion-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes motion-rise {
+  from { opacity: 0; transform: translateY(var(--motion-distance)); }
+  to { transform: none; }
+}
+@keyframes motion-panel {
+  from { opacity: 0; transform: translateY(var(--motion-distance)) scale(var(--motion-panel-scale)); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes motion-scale {
+  from { opacity: 0; transform: scale(var(--motion-panel-scale)); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes motion-spin { to { transform: rotate(360deg); } }
+@keyframes motion-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* Solo i controlli: mai comprimere card, poster o pannelli interi. */
+:where(button):not(.card-open, .row-open, .detail-poster-btn) {
+  transition: background-color var(--motion-fast) var(--motion-ease-out),
+    color var(--motion-fast) var(--motion-ease-out),
+    border-color var(--motion-fast) var(--motion-ease-out),
+    opacity var(--motion-fast) var(--motion-ease-out),
+    scale var(--motion-fast) var(--motion-ease-out);
+}
+:where(button):not(.card-open, .row-open, .detail-poster-btn):enabled:active { scale: 0.97; }
+:where(input, select) {
+  transition: border-color var(--motion-fast) var(--motion-ease-out),
+    background-color var(--motion-fast) var(--motion-ease-out);
+}
+
+:where(.error, .discover-error, .discover-notice, .empty, .empty-text, .summary-box) {
+  animation: motion-fade var(--motion-enter) var(--motion-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+  :where(button):enabled:active { scale: none !important; }
+  .detail-poster-btn:hover .detail-poster { transform: none !important; filter: none !important; }
+}

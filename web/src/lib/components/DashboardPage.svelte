@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { fly } from 'svelte/transition';
+  import { pageEnter } from '../motion.js';
   import { api, BASE, posterUrl, posterSrcSet } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
   import ConfirmModal from './ConfirmModal.svelte';
@@ -291,7 +291,7 @@
 
 </script>
 
-<div transition:fly={{ y: 8, duration: 200 }}>
+<div in:pageEnter|global>
 <div class="header-row">
   <h2>Gestione Serie</h2>
 </div>
@@ -386,15 +386,70 @@
   {@const s = series.find(item => item._file_index === detailIndex)}
   {#if s}
     <DetailModal
-      series={s}
-      description={descriptions[detailIndex]}
+      title={s.name || s.title}
       poster={posterSrc(s)}
       srcset={posterSet(s)}
       fullPoster={posterUrl(s.path, 1080)}
       onclose={closeDetail}
-      onedit={() => { const idx = detailIndex; closeDetail(); openEdit(idx, 'detail'); }}
-      onremove={() => { const idx = detailIndex; closeDetail(); promptRemove(idx); }}
-    />
+    >
+      {#snippet meta()}
+        {#if s.service}
+          <span class="card-service">{s.service === 'animeU_scraper' ? 'AnimeU' : 'AnimeW'}</span>
+        {/if}
+        {#if s.continue}
+          <span class="detail-badge">Continua numerazione</span>
+        {/if}
+        {#if s.is_high_priority}
+          <span class="detail-badge detail-badge-warn">Alta Priorit&agrave;</span>
+        {/if}
+      {/snippet}
+      {#snippet body()}
+        {#if descriptions[detailIndex]}
+          <div class="detail-desc">
+            <p>{descriptions[detailIndex]}</p>
+          </div>
+        {:else}
+          <div class="detail-desc detail-desc-empty">Nessuna descrizione disponibile.</div>
+        {/if}
+      {/snippet}
+      {#snippet details()}
+        <div class="detail-stats">
+          <div class="detail-stat">
+            <span class="detail-stat-label">Episodi in locale</span>
+            <span class="detail-stat-value">
+              {s.local_episode_count ?? '?'}
+              {#if (s.passed_episodes ?? 0) > 0 && s.local_episode_count !== s.passed_episodes}
+                <span class="detail-stat-diff">(config: {s.passed_episodes})</span>
+              {/if}
+            </span>
+          </div>
+          <div class="detail-stat">
+            <span class="detail-stat-label">Percorso</span>
+            <span class="detail-stat-value detail-stat-path" title={s.path}>{s.path || '—'}</span>
+          </div>
+          <div class="detail-stat">
+            <span class="detail-stat-label">URL</span>
+            {#if s.series_page_url || s.url}
+              <a class="detail-stat-value detail-stat-url" href={s.series_page_url || s.url} target="_blank" rel="noopener noreferrer" title={s.series_page_url || s.url}>{s.series_page_url || s.url}</a>
+            {:else}
+              <span class="detail-stat-value detail-stat-url">—</span>
+            {/if}
+          </div>
+        </div>
+      {/snippet}
+      {#snippet actions()}
+        <div class="detail-actions">
+          <button class="btn-primary action-edit" onclick={() => { const idx = detailIndex; closeDetail(); openEdit(idx, 'detail'); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Modifica
+          </button>
+          <button class="btn-danger action-delete" onclick={() => { const idx = detailIndex; closeDetail(); promptRemove(idx); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            Elimina
+          </button>
+        </div>
+      {/snippet}
+    </DetailModal>
   {:else}
     <div class="error">Serie con ID {detailIndex} non trovata. Potrebbe essere stata eliminata.</div>
   {/if}
@@ -415,7 +470,6 @@
     background: none; border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); cursor: pointer; padding: 0.5rem;
     display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .btn-icon-only:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 
@@ -454,9 +508,8 @@
   .center { display: flex; justify-content: center; padding: 2rem; }
   .spinner-sm {
     width: 24px; height: 24px; border: 2px solid var(--border-color); border-top-color: var(--accent);
-    border-radius: 50%; animation: spin 0.8s linear infinite;
+    border-radius: 50%; animation: motion-spin var(--motion-spinner) linear infinite;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
 
   .fab {
     position: fixed; right: 1.5rem;
@@ -465,11 +518,9 @@
     display: flex; align-items: center; justify-content: center;
     cursor: pointer; z-index: 150;
     box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-    transition: transform 0.2s ease, opacity 0.2s ease, background 0.2s ease;
     bottom: 112px;
   }
-  .fab:hover { background: var(--accent-hover); transform: scale(1.08); }
-  .fab:active { transform: scale(0.95); }
+  .fab:hover { background: var(--accent-hover); }
 
   @media (max-width: 768px) {
     .header-row { flex-wrap: wrap; gap: 0.5rem; }

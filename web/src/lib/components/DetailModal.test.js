@@ -22,23 +22,10 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
   };
 }
 
-const seriesFixture = () => ({
-  _file_index: 0,
-  name: 'One Piece',
-  path: '/media/one-piece',
-  service: 'animeW_scraper',
-  continue: true,
-  is_high_priority: true,
-  local_episode_count: 100,
-  passed_episodes: 0,
-  series_page_url: 'https://example.com/one-piece',
-});
-
 const renderModal = (over = {}) => {
-  const handlers = { onclose: vi.fn(), onedit: vi.fn(), onremove: vi.fn() };
+  const handlers = { onclose: vi.fn() };
   const props = {
-    series: seriesFixture(),
-    description: 'Pirati gommosi.',
+    title: 'One Piece',
     poster: '/poster480',
     srcset: '',
     fullPoster: '/poster1080',
@@ -50,13 +37,14 @@ const renderModal = (over = {}) => {
 };
 
 describe('DetailModal', () => {
-  it('render: titolo, meta, azioni', () => {
+  it('render: titolo con aria-labelledby, meta/body/details/actions via snippet', () => {
     const { container } = renderModal();
-    expect(screen.getByText('One Piece')).toBeTruthy();
-    expect(screen.getByText('Alta Priorità')).toBeTruthy();
-    expect(screen.getByText('Modifica')).toBeTruthy();
-    expect(screen.getByText('Elimina')).toBeTruthy();
-    expect(container.querySelector('.detail-actions')).toBeTruthy();
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog.getAttribute('aria-labelledby')).toBeTruthy();
+    expect(screen.getByText('One Piece').getAttribute('id')).toBe(
+      dialog.getAttribute('aria-labelledby'));
+    // Senza snippet actions: niente action-row (Home sola lettura).
+    expect(container.querySelector('.detail-actions')).toBeNull();
   });
 
   it('back "Serie": chiude (torna alle serie)', async () => {
