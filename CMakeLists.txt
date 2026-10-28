@@ -11,6 +11,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF) # Disabilita estensioni specifiche (es. GNU), aumenta la portabilità
 
+# Windows: windows.h definisce le macro min/max che rompono std::min/std::max
+# (MSVC C2589). NOMINMAX è globale perché il macro leak arriva da include
+# di terze parti, non solo dai file che includono windows.h direttamente.
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
+
 # --- OTTIMIZZAZIONI C++ AVANZATE ---
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
