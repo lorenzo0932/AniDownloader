@@ -884,6 +884,131 @@ static void testSortAdded() {
     CHECK(d[2].value("name", "") == "media");
 }
 
+// sortSeries sui campi reali delle serie (non solo "added"): numeri, booleani,
+// date mancanti/null, fallback name→title, input non-object e campo invalido.
+static void testSortSeriesFields() {
+    // local_episode_count: confronto numerico, non lessicografico.
+    auto epAsc = []() {
+        return nlohmann::json::array({
+            {{"name", "B"}, {"local_episode_count", 12}},
+            {{"name", "A"}, {"local_episode_count", 24}},
+            {{"name", "C"}, {"local_episode_count", 2}},
+        });
+    };
+    auto d = epAsc();
+    Core::sortSeries(d, "local_episode_count", false);
+    CHECK(d[0].value("name", "") == "C"); // 2
+    CHECK(d[1].value("name", "") == "B"); // 12
+    CHECK(d[2].value("name", "") == "A"); // 24
+    d = epAsc();
+    Core::sortSeries(d, "local_episode_count", true);
+    CHECK(d[0].value("name", "") == "A"); // 24
+    CHECK(d[1].value("name", "") == "B"); // 12
+    CHECK(d[2].value("name", "") == "C"); // 2
+
+    // continue: booleano, false prima di true in ascendente.
+    auto booleans = []() {
+        return nlohmann::json::array({
+            {{"name", "X"}, {"continue", false}},
+            {{"name", "Y"}, {"continue", true}},
+            {{"name", "Z"}, {"continue", false}},
+        });
+    };
+    d = booleans();
+    Core::sortSeries(d, "continue", false);
+    CHECK(d[0]["continue"] == false);
+    CHECK(d[1]["continue"] == false);
+    CHECK(d[2]["continue"] == true);
+    d = booleans();
+    Core::sortSeries(d, "continue", true);
+    CHECK(d[0]["continue"] == true);
+    CHECK(d[1]["continue"] == false);
+    CHECK(d[2]["continue"] == false);
+
+    // last_downloaded_at: campo assente e null valgono entrambi vuoto
+    // (prima in asc, ultimi in desc); fra i due vuoti l'ordine non è stabile.
+    auto dates = []() {
+        return nlohmann::json::array({
+            {{"name", "recent"}, {"last_downloaded_at", "2025-06-01"}},
+            {{"name", "old"}},
+            {{"name", "mid"}, {"last_downloaded_at", "2024-01-15"}},
+            {{"name", "null"}, {"last_downloaded_at", nullptr}},
+        });
+    };
+    auto isEmptyDate = [](const nlohmann::json& item) {
+        const auto name = item.value("name", "");
+        return name == "old" || name == "null";
+    };
+    d = dates();
+    Core::sortSeries(d, "last_downloaded_at", false);
+    CHECK(isEmptyDate(d[0]));
+    CHECK(isEmptyDate(d[1]));
+    CHECK(d[0].value("name", "") != d[1].value("name", ""));
+    CHECK(d[2].value("name", "") == "mid");
+    CHECK(d[3].value("name", "") == "recent");
+    d = dates();
+    Core::sortSeries(d, "last_downloaded_at", true);
+    CHECK(d[0].value("name", "") == "recent");
+    CHECK(d[1].value("name", "") == "mid");
+    CHECK(isEmptyDate(d[2]));
+    CHECK(isEmptyDate(d[3]));
+    CHECK(d[2].value("name", "") != d[3].value("name", ""));
+
+    // name: fallback su title e confronto case-insensitive.
+    // Lowercase unici per non dipendere dalla stabilità di std::sort.
+    d = nlohmann::json::array({
+        {{"title", "zebra"}, {"local_episode_count", 1}},
+        {{"name", "alpha"}, {"local_episode_count", 2}},
+        {{"name", "BETA"}, {"local_episode_count", 3}},
+        {{"title", "gamma"}, {"local_episode_count", 4}},
+    });
+    Core::sortSeries(d, "name", false);
+    auto displayName = [](const nlohmann::json& j) -> std::string {
+        auto n = j.value("name", j.value("title", nlohmann::json("")));
+        return n.is_null() ? "" : n.get<std::string>();
+    };
+    CHECK(displayName(d[0]) == "alpha");
+    CHECK(displayName(d[1]) == "BETA");
+    CHECK(displayName(d[2]) == "gamma");
+    CHECK(displayName(d[3]) == "zebra");
+
+    // Elementi non-object: nessuna eccezione, nessuna perdita, e la stringa
+    // vuota li porta davanti ai conteggi numerici in ascendente.
+    d = nlohmann::json::array({
+        nlohmann::json{{"name", "valid"}, {"local_episode_count", 5}},
+        nlohmann::json(42),
+        nlohmann::json("string"),
+        nlohmann::json{{"name", "valid2"}, {"local_episode_count", 3}},
+    });
+    bool threw = false;
+    try {
+        Core::sortSeries(d, "local_episode_count", false);
+    } catch (...) {
+        threw = true;
+    }
+    CHECK(!threw);
+    CHECK(d.size() == 4);
+    CHECK(!d[0].is_object());
+    std::vector<int> counts;
+    for (const auto& item : d) {
+        if (item.is_object() && item.contains("local_episode_count"))
+            counts.push_back(item["local_episode_count"].get<int>());
+    }
+    CHECK(counts.size() == 2);
+    CHECK(counts[0] == 3);
+    CHECK(counts[1] == 5);
+
+    // Campo non valido: ordine e contenuto invariati.
+    d = nlohmann::json::array({
+        {{"name", "b"}, {"local_episode_count", 2}},
+        {{"name", "a"}, {"local_episode_count", 1}},
+    });
+    Core::sortSeries(d, "nonexistent_field", true);
+    CHECK(d.size() == 2);
+    CHECK(d[0].value("name", "") == "b");
+    CHECK(d[1].value("name", "") == "a");
+}
+
 // Database: open/migrate idempotente, statement bind/step, transazioni
 // commit/rollback. Fixture in tmp con cleanup sempre.
 static void testDatabase() {
@@ -1879,6 +2004,7 @@ int main(int argc, char** argv) {
     testNfoPosterOnce();
     testThumbCache();
     testSortAdded();
+    testSortSeriesFields();
     testDatabase();
     testDbImporter();
     testShadowMode();
