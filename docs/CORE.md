@@ -89,7 +89,7 @@ Conversione FFmpeg con strategie:
 
 **Direct encoding** (chunks ≤ 1):
 ```
-ffmpeg -i input -c:v libx265 -crf 23 -preset veryfast -threads N output
+ffmpeg -i input -c:v libx265 -crf 25 -preset veryfast -threads N output
 ```
 
 **Chunked encoding** (chunks > 1, default dinamico):

@@ -328,8 +328,10 @@ namespace Core {
                 std::string nicePrefix = "start \"\" /b /low ";
 #endif
 
+                // CRF 25: -19% di bitrate rispetto a CRF 23 con VMAF 93.2
+                // (94.5 a CRF 23), sotto la soglia di percezione.
                 std::string baseArgs =
-                    std::format("-c:v libx265 -crf 23 -preset veryfast -threads {} "
+                    std::format("-c:v libx265 -crf 25 -preset veryfast -threads {} "
                                 "-x265-params \"hist-scenecut=1\" -c:a copy",
                                 strategy.threadsPerFFmpeg);
 
