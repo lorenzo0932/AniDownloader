@@ -41,7 +41,7 @@
 8. **CLI**: resta manuale/one-shot + debug; silent-schedulato in pensione;
    `--web` diventa il demone completo (web + scheduler).
 
-## Fasi (dettagli in `plan/soa-rewrite.md`, gitignored)
+## Fasi (dettagli in `plan/archivio/soa-rewrite.md`, gitignored)
 
 B1 `Database` + schema → B2 importatore → B3 cutover (`BREAKING CHANGE:`,
 major `3.0.0`) → B4 scheduler + settings UI → B5 autostart 3 OS →
@@ -49,6 +49,13 @@ B6 engine a code (tabella `tasks`, worker pool, backoff, stop cooperativo).
 
 ## Riferimenti
 
-- `plan/soa-rewrite.md` (B0–B6, specifica estesa)
-- `plan/adr-003-rewrite-deferred.md` (superata da questa ADR)
+- `plan/archivio/soa-rewrite.md` (B0–B6, specifica estesa)
+- `plan/archivio/adr-003-rewrite-deferred.md` (superata da questa ADR)
 - `plan/adr-002-windows-logon-task.md`, `plan/adr-001-mtime-over-rewrite.md`
+
+## Addendum 2026-11-01
+
+Correzione di soli riferimenti: i piani conclusi sono stati spostati in
+`plan/archivio/` (cartella locale, gitignored). Nessun cambio alle decisioni.
+Stato di attuazione: B0–B6 completati e mergiati; notifiche (§6) ancora
+aperte.
