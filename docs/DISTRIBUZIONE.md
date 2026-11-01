@@ -91,7 +91,7 @@ resta solo il task `AniDownloader_WebServer` (AtLogOn, `--web --silent`).
 |----|------------|-------|
 | Linux | `anidownloaderd.service` (systemd user) via `install.sh` | reale |
 | Windows | Task `AniDownloader_WebServer` (AtLogOn) via `install.ps1` | ? (da verificare su macchina reale) |
-| macOS | `packaging/macos/com.anidownloader.daemon.plist` (installazione manuale con `launchctl`, vedi commento nel file) | gap (testing HW differito) |
+| macOS | `packaging/macos/com.anidownloader.daemon.plist` (installazione manuale con `launchctl`, log in `/tmp`; vedi commento nel file) | gap (testing HW differito) |
 
 ## Matrice di parità Linux / Windows / macOS
 
@@ -105,11 +105,13 @@ Stato verificato (`CI` = compilazione+smoke in GitHub Actions;
 | Test C++ completi | CI reale | — (solo build) | — (solo build) |
 | Installer interattivo | `install.sh` reale | `install.ps1` ? | gap (`install-mac.sh` da scrivere, Fase 1) |
 | Demone all'avvio (web + scheduler) | systemd service reale | Task AtLogOn ? | plist manuale (gap testing reale) |
-| Notifiche desktop | ? | ? (delta da verificare, Fase 2) | gap |
+| Notifiche desktop | non implementate (feature aperta) | non implementate (feature aperta) | non implementate (feature aperta) |
 | Uninstall | `uninstall.sh` reale | `uninstall.ps1` ? | gap |
 
 > Mai dichiarare parità senza check su macchina reale: le celle `?`
 > richiedono testing utente con checklist (Fasi 1–2 del piano).
+> Le notifiche desktop non sono ancora implementate su nessun OS: i toggle
+> in Impostazioni sono persistiti ma non producono invii.
 
 ## GitHub Releases
 
@@ -150,10 +152,10 @@ File di versione aggiornati automaticamente: `CMakeLists.txt`
 ### Naming convention
 
 ```
-AniDownloader-v2.1.0-linux-x86_64.flatpak
-anidownloaderd-v2.1.0-linux-x86_64.tar.gz
-AniDownloader_2.1.0_x64-setup.exe      (NSIS)
-AniDownloader_2.1.0_aarch64.dmg
+AniDownloader-v3.0.0-dev.5-linux-x86_64.flatpak
+anidownloaderd-v3.0.0-dev.5-linux-x86_64.tar.gz
+AniDownloader_3.0.0-dev.5_x64-setup.exe      (NSIS)
+AniDownloader_3.0.0-dev.5_aarch64.dmg
 ```
 
 Pattern reali (vedi `.github/workflows/`):
@@ -191,8 +193,9 @@ bash ci/verify.sh   # vedi ci/Dockerfile
 ## Installazione headless manuale
 
 ```bash
-# Download da GitHub Releases
-curl -fsSL "https://github.com/lorenzo0932/AniDownloader/releases/download/v2.1.0/anidownloaderd-v2.1.0-linux-x86_64.tar.gz" \
+# Download da GitHub Releases (sostituire TAG con la release desiderata)
+TAG=v3.0.0-dev.5
+curl -fsSL "https://github.com/lorenzo0932/AniDownloader/releases/download/$TAG/anidownloaderd-$TAG-linux-x86_64.tar.gz" \
   | tar xzf - -C ~/.local/share/anidownloader-headless/
 
 # Oppure via install.sh

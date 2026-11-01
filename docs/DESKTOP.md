@@ -40,13 +40,20 @@ Il binary Rust:
 ```json
 {
     "productName": "AniDownloader",
-    "version": "2.1.0",
+    "identifier": "com.anidownloader.desktop",
+    "app": {
+        "enableGTKAppId": true
+    },
     "bundle": {
+        "active": true,
         "externalBin": ["binaries/anidownloaderd"],
         "targets": ["nsis", "dmg"]
     }
 }
 ```
+
+La versione non è più in `tauri.conf.json`: deriva da
+`src-tauri/Cargo.toml` (aggiornato da release-please).
 
 > Su Linux il desktop è distribuito come **Flatpak** (`flatpak/com.anidownloader.desktop.yml`,
 > AppImage deprecata): `tauri build --no-bundle` produce il binario che il
@@ -91,6 +98,7 @@ tauri-plugin-notification = "=2.3.3"
 tauri-plugin-dialog = "=2.7.2"
 tauri-plugin-fs = "=2.5.1"
 tauri-plugin-shell = "=2.3.5"
+tauri-plugin-opener = "=2.5.4"
 ```
 
 > Le versioni sono pinnate (`=`) per riproducibilità tra CI e build locale

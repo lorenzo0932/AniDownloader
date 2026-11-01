@@ -5,64 +5,68 @@
 AniDownloader è un sistema **monolitico C++20** che integra:
 
 - Motore di download/conversione multi-thread
+- Scheduler interno + coda persistente su SQLite (ADR-004)
 - Scrapers nativi per siti streaming italiani
 - Server HTTP (REST + SSE) per UI web
 - Frontend Svelte 5 embedded nel binario
-- Wrapper desktop Tauri v2 (Rust)
+- Wrapper desktop Tauri v2 (Rust) con il backend come sidecar
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   main.cpp                           │
-│  CLI dispatcher: --web / --burst / (silent)          │
-└─────────┬─────────────────────────────────┬──────────┘
-          │ --web                            │ CLI
-          ▼                                  ▼
-┌─────────────────────┐       ┌─────────────────────────┐
-│   Web::WebServer    │       │  Core::ExecutionEngine   │
-│  (cpp-httplib)      │       │  (multi-thread worker)   │
-│                     │       │                          │
-│  ┌───────────────┐  │       │  ┌──────────────────┐   │
-│  │ SSE broadcast │  │       │  │ MediaProcessor   │   │
-│  │ live progress │  │       │  │ per serie/task   │   │
-│  └───────────────┘  │       │  └────────┬─────────┘   │
-│                     │       │           │               │
-│  Embedded Svelte 5  │       │           ▼               │
-│  frontend (.html)   │       │  ┌──────────────────┐   │
-└─────────────────────┘       │  │ PlanningService  │   │
-                              │  │ → Scraper        │   │
-                              │  └──────────────────┘   │
-                              └─────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                        main.cpp                              │
+│     CLI dispatcher: --web / --burst / (silent)               │
+└───────────┬──────────────────────────────────────┬───────────┘
+            │ --web                                │ CLI
+            ▼                                      ▼
+┌───────────────────────────┐        ┌─────────────────────────┐
+│     Web::WebServer        │        │  Core::CheckRunner      │
+│     (cpp-httplib)         │        │  (CLI: un giro)         │
+│                           │        │   └ ExecutionEngine     │
+│  REST + SSE broadcast     │        │      ├ PlanningService  │
+│  Embedded Svelte 5        │        │      └ MediaProcessor   │
+│                           │        │  aria2c + ffmpeg        │
+│  Core::Scheduler          │        └─────────────────────────┘
+│   └ WorkerPool (coda)     │
+│      └ CheckRunner        │
+└───────────┬───────────────┘
+            ▼
+┌──────────────────────────────────────────────────────────────┐
+│           SQLite (fonte autorevole) + JSON (export/fallback)  │
+│  series_data.db: series, tasks, kv, migrations                │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Namespace
 
 | Namespace | Ruolo | Header | Source |
 |-----------|-------|--------|--------|
-| `Core` | Motore principale, download, conversione, log | `include/core/*.hpp` | `src/core/*.cpp` |
+| `Core` | Motore, scheduler, coda, DB, download, conversione, log, scraper | `include/core/*.hpp`, `include/scrapers/*.hpp` | `src/core/*.cpp`, `src/scrapers/*.cpp` |
 | `Config` | Gestione configurazione, percorsi | `include/config/*.hpp` | `src/config/*.cpp` |
-| `Web` | Server HTTP, frontend, JWT | `include/web/*.hpp` | `src/web/*.cpp` |
-| `Scrapers` | Scraper astratti e concreti | `include/scrapers/*.hpp` | `src/scrapers/*.cpp` |
+| `Web` | Server HTTP, SSE, frontend embedded | `include/web/*.hpp` | `src/web/*.cpp` |
+
+Le classi scraper (`BaseScraper`, `AnimeWScraper`, `AnimeUScraper`) vivono in
+`namespace Core`, non in un namespace separato.
 
 ## Flusso dati (CLI mode)
 
 ```
-1. main.cpp → SeriesRepository::loadSeriesData()
+1. main.cpp → CheckRunner::runOnce()
+                ↓ (InstanceLock, repository o JSON)
+2. SeriesRepository::snapshotSeriesData()  (DB, fallback JSON)
                 ↓
-2. ExecutionEngine::run()
-    ├── per ogni serie: thread separato
+3. ExecutionEngine::run()
+    ├── per ogni serie: planning parallelo
     │   └── PlanningService::planSingleSeries()
     │       └── Scraper::planSeriesTask()
     │           ├── AnimeW: lista episodi + endpoint statico /api/episode/info
     │           ├── ScraperUtils::computeNextNeeded()
     │           └── restituisce DownloadTask[]
-    │
     ├── sorting per priorità
-    │
-    └── thread pool (maxConcurrentTasks × 2)
+    └── worker pool (maxConcurrentTasks × 2)
         └── MediaProcessor::processTask()
-            ├── MediaProbe:: → check esistente
+            ├── MediaProbe → check esistente
             ├── aria2c → download
-            ├── MediaProbe:: → verifica
+            ├── MediaProbe → verifica
             └── [se H265] ffmpeg → conversione
 ```
 
@@ -70,13 +74,27 @@ AniDownloader è un sistema **monolitico C++20** che integra:
 
 ```
 1. main.cpp → Web::WebServer::start()
-2. httplib server in ascolto su :8989
+2. httplib in ascolto su :8989
 3. Frontend Svelte connesso via EventSource (SSE)
-4. POST /api/download/start → runDownloads()
-    └── stesso flusso CLI, con callback SSE
-5. Ogni progress/result → broadcastSseEvent()
-6. Frontend aggiorna dashboard in tempo reale
+4. Scheduler interno → QueueStore (SQLite) → WorkerPool
+     └── handler "check" → CheckRunner (giro di controllo serie)
+5. POST /api/download/start → run manuale (ExecutionEngine) con callback SSE
+6. Ogni progress/result/evento coda → broadcastSseEvent()
+7. Frontend aggiorna Home, Gestione e log in tempo reale
 ```
+
+Run manuale e scheduler sono **due percorsi distinti**: la coda persistente
+serve oggi solo i controlli periodici. Una pipeline condivisa è progettata
+ma non ancora implementata.
+
+## Persistenza
+
+- `series_data.db` — SQLite vendored (`third_party/sqlite`), fonte
+  autorevole. Tabelle: `series`, `tasks`, `kv`, `migrations`.
+- `series_data.json` — export della tabella `series`, riscritto a ogni
+  modifica; serve come fallback di rollback per il binario precedente.
+- `SeriesRepository` è l'unico punto di mutazione: cache invalidata su
+  (mtime,size) del DB, mutazioni atomiche anti-duplicato.
 
 ## Dipendenze C++
 
@@ -85,8 +103,10 @@ AniDownloader è un sistema **monolitico C++20** che integra:
 | nlohmann/json | 3.11.3 | JSON parsing/serializzazione |
 | cpr (libcpr) | 1.10.5 | HTTP requests (scrapers, GitHub API) |
 | cpp-httplib | 0.18.1 | Server HTTP/SSE |
-| OpenSSL::Crypto | (sistema) | AES-256-GCM, PBKDF2 per JWT |
+| SQLite | amalgamation vendored | Persistenza serie e coda |
 | Threads | (sistema) | parallelismo |
+
+TLS/HTTPS è fornito da libcurl (via cpr); non c'è autenticazione né JWT.
 
 ## File embedding
 
@@ -104,3 +124,4 @@ frontend esterne.
 - `Config::PathHelper` astrae i path (XDG su Linux, APPDATA su Windows)
 - `ScraperUtils::Q()` quoting shell differente per POSIX/Windows
 - `ScraperUtils::DEVNULL()` redirezione output nulla cross-platform
+- Autostart: systemd (Linux), Task Scheduler (Windows), LaunchAgent (macOS)

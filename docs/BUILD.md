@@ -18,6 +18,9 @@ sudo pacman -S cmake gcc curl openssl nodejs npm
 brew install cmake node
 ```
 
+Opzionali per lo sviluppo: `ninja` e `ccache` (usati dal preset `dev`).
+SQLite è vendored in `third_party/sqlite`: nessuna dipendenza di sistema.
+
 ### Per Tauri (app nativa desktop)
 
 ```bash
@@ -61,7 +64,22 @@ npm run tauri:build   # tauri-cli pinnato in package.json (riproducibile)
 # CI e build locale compilano lo stesso toolchain.
 ```
 
-Output: `build/AniDownloader`
+### Preset di sviluppo
+
+```bash
+cmake --preset dev        # Ninja + ccache, build Debug in ./build
+cmake --build --preset dev
+
+# fallback senza Ninja/ccache
+cmake --preset dev-slow
+cmake --build --preset dev-slow
+```
+
+I preset compilano con `-j16`: non usare `-j$(nproc)` su macchine con molti
+core (rischio OOM con il link LTO).
+
+Output: `build/AniDownloader` (e `build/test_core`, `test_media`,
+`test_scraper`).
 
 ## Opzioni CMake
 
@@ -69,6 +87,7 @@ Output: `build/AniDownloader`
 |---------|---------|-------------|
 | `CMAKE_BUILD_TYPE` | `Release` | `Release`, `Debug`, `RelWithDebInfo` |
 | `-G Ninja` | (auto) | Usa Ninja invece di Make |
+| `ANIDOWNLOADER_NATIVE_MARCH` | `OFF` | Ottimizza per la CPU locale; il binario **non è distribuibile** (SIGILL su CPU senza le stesse istruzioni) |
 
 ### Build di debug
 

@@ -30,13 +30,15 @@ Stato dell'applicazione.
 
 ```json
 {
-    "success": true,
-    "version": "2.1.0",
+    "version": "3.0.0-dev.4",
     "port": 8989,
     "downloadRunning": false,
     "sseClients": 0
 }
 ```
+
+Questa risposta non ha il campo `success`: è l'unico endpoint informativo
+storico che restituisce l'oggetto nudo.
 
 ### `GET /api/scheduler/status` (dal 3.0)
 
@@ -88,6 +90,7 @@ Lista delle serie.
             "passed_episodes": 1100,
             "last_downloaded_at": "2026-07-28T15:30:00Z",
             "last_downloaded_episode": 1115,
+            "local_episode_count": 1115,
             "alternate_sources": [...]
         }
     ]
@@ -98,6 +101,10 @@ Lista delle serie.
 Il frontend la confronta come stringa, senza normalizzare URL in JS.
 Stessa serie su mirror verificato (es. `.so`/`.ac`) ha stessa identity;
 stesso titolo con URL diversi resta distinto.
+
+`local_episode_count`: numero di file video presenti nella cartella della
+serie, calcolato a ogni richiesta. `_file_index` è l'indice stabile usato
+da PUT/DELETE.
 
 ---
 
@@ -478,15 +485,26 @@ Legge la configurazione corrente.
 {
     "success": true,
     "config": {
+        "json_file_path": "/home/user/.config/AniDownloader/series_data.json",
+        "output_dir": "/home/user/Video",
+        "log_file_path": "/home/user/.config/AniDownloader/logs/app.log",
+        "is_json_path_customized": false,
         "max_network_retries": 3,
         "retry_delay_ms": 2000,
         "convert_to_h265": true,
+        "burst_on_manual_start": true,
         "num_chunks": 0,
         "auto_cleanup_on_close": true,
+        "resume_interrupted_downloads": true,
+        "scheduling": {"abilitato": true, "intervalloMinuti": 15},
+        "notifiche": {"abilitate": false, "sorgente": "entrambi"},
         "pinned_paths": ["/home/user/Video/Anime"]
     }
 }
 ```
+
+La risposta è il contenuto del file `config.json`: possono comparire anche
+`show_stop_warning` / `show_close_warning` se la UI li ha scritti.
 
 `pinned_paths` è l'elenco dei path pinnati (stelle) nel file picker: i più
 recenti in cima, massimo 20. Un pin su un disco non più montato non viene
@@ -510,6 +528,9 @@ Risposta:
 ```json
 {"success": true}
 ```
+
+Le chiavi di primo livello sono sostituite in blocco: per aggiornare
+`scheduling` o `notifiche` inviare l'oggetto completo, non solo un campo.
 
 ---
 

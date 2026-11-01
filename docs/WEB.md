@@ -22,9 +22,10 @@ server.stop();
 Thread principale:
   └── WebServer::start()
        └── setupRoutes()
+       └── Scheduler::start()   (tick 30s + worker sulla coda)
        └── m_svr.listen("0.0.0.0", port)
 
-Thread separato (per download):
+Thread separato (per download manuale):
   └── POST /api/download/start
        └── runDownloads(seriesList, burst)
             └── ExecutionEngine::run()  (con callback SSE)
@@ -81,22 +82,38 @@ if (it != files.end()) {
 | Componente | Route | Descrizione |
 |------------|-------|-------------|
 | `App.svelte` | — | Shell con sidebar, routing lato client |
-| `StatusPage.svelte` | `/` | Dashboard download live + stato serie |
+| `StatusPage.svelte` | `/` | Home: download live, fasi, ultime aggiunte/scaricate |
 | `DashboardPage.svelte` | `/gestione` | CRUD serie con griglia card / tabella densa, poster |
+| `DiscoverPage.svelte` | `/scopri` | Ricerca/filtri AnimeWorld, griglia, tooltip, Aggiungi |
 | `ConfigPage.svelte` | `/config` | Configurazione app |
 | `LogsPage.svelte` | `/logs` | Log viewer |
+
+### Componenti condivisi
+
+| Componente | Ruolo |
+|------------|-------|
+| `AddSeriesForm.svelte` | Form aggiunta/modifica serie (usato da Gestione e Scopri) |
+| `DetailModal.svelte` | Dettaglio serie, modifica ed eliminazione; variante read-only |
+| `SeriesCollection.svelte` | Griglia con FLIP e densità (griglia/grande) |
+| `SeriesCard.svelte` | Card poster + titolo + badge |
+| `SeriesList.svelte` | Lista righe per la vista tabella |
+| `SeriesRow.svelte` | Riga densa (thumb, nome, episodi, azioni) |
+| `SeriesTable.svelte` | Tabella gestionale con header ordinabile |
+| `RecentSeriesRow.svelte` | Riga delle sezioni “Ultime” in Home |
+| `ProgressList.svelte` / `TaskItem.svelte` | Avanzamento download per episodio |
+| `DownloadEventLog.svelte` | Cronologia eventi del run manuale |
+| `OverallHeader.svelte` | Stato globale del run |
+| `DirectoryBrowser.svelte` | File picker: ricerca, dischi, preferiti, creazione, rimozione |
+| `ConfirmModal.svelte` | Modale conferma |
+| `Dropdown.svelte` | Dropdown riutilizzabile |
 
 ### Librerie
 
 | File | Ruolo |
 |------|-------|
-| `api.js` | Client API REST + SSE `EventSource` |
+| `api.js` | Client API REST + SSE `EventSource`, URL poster e `srcset` |
 | `theme.svelte.js` | Tema dark/light/system con localStorage |
-| `Dropdown.svelte` | Componente dropdown riutilizzabile |
-| `ConfirmModal.svelte` | Modale conferma |
-| `DirectoryBrowser.svelte` | File picker: ricerca, dischi, preferiti, creazione, rimozione |
-| `SeriesCard.svelte` | Card essenziale (poster + titolo + badge), azioni in hover overlay |
-| `SeriesTable.svelte` | Vista tabella densa per la gestione (thumb + nome + azioni icona) |
+| `motion.js` / `motion.css` | Token e primitive di animazione (vedi `docs/UI_MOTION.md`) |
 
 ### Viste Gestione Serie
 
@@ -116,6 +133,16 @@ crollerebbe a 1 colonna); su tablet la grande differenzia (3 colonne).
 Sempre sotto ~560px il bottone Vista grande è nascosto (coinciderebbe
 con la griglia: precedente Gmail/Jellyfin) e la tabella nasconde la data
 ultimo download — riga a una sola riga con servizio, Ep e badge.
+
+### Pagina Scopri
+
+`/scopri` interroga il catalogo AnimeWorld una pagina del sito (~40 card)
+alla volta: ricerca per keyword oppure filtri (generi, stagione, anno, tipo,
+stato, studio, lingua, doppiati, ordinamento). Le card usano gli stessi
+componenti di Gestione; il dettaglio è un tooltip lazy (trama, voto, stato,
+generi). Il badge “In gestione” e il divieto di doppia aggiunta si basano
+sull'`identity` opaca restituita dal server, confrontata come stringa.
+“Aggiungi” apre il form precompilato con titolo e URL.
 
 ### Modali Gestione Serie
 
@@ -153,6 +180,8 @@ export const api = {
     logs: (lines) => ...,
     status: () => ...,
     browse: { list, mounts, places, mkdir, touch, remove },
+    cache: { thumbs, clearThumbs },
+    discover: { page, tooltip },
     sse: () => new EventSource('/api/download/events'),
 };
 ```

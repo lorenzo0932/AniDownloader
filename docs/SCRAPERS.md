@@ -6,7 +6,7 @@ Namespace `Core::` — classi `BaseScraper`, `AnimeWScraper`, `AnimeUScraper`, `
 
 ```
 BaseScraper (classe astratta)
-  ├── AnimeWScraper  → animeworld.so
+  ├── AnimeWScraper  → animeworld.ac
   └── AnimeUScraper  → animeunity.to
 ```
 
