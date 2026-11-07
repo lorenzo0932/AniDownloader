@@ -236,7 +236,7 @@ tramite `data-theme` attribute su `<html>`.
 
 ### API polling
 
-La `StatusPage` esegue polling ogni 5 secondi di `GET /api/download/status`
+La shell `App.svelte` esegue polling ogni 5 secondi di `GET /api/download/status`
 per gestire il `beforeunload` warning se ci sono download attivi.
 Il progresso live viene da SSE, non dal polling.
 
