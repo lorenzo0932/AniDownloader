@@ -57,6 +57,19 @@ describe('StoragePanel', () => {
     expect(screen.getByText('3 residui (.aria2/.part)')).toBeTruthy();
     expect(screen.getByText('One Piece')).toBeTruthy();
     expect(screen.getByText('Naruto')).toBeTruthy();
+    expect(screen.getByText('Le azioni sono immediate; non serve Salva.')).toBeTruthy();
+  });
+
+  it('barra disco: percentuale usata e aria-valuenow coerenti', async () => {
+    render(StoragePanel);
+    await screen.findByText('Cache miniature');
+
+    // 500 GB liberi su 1000 GB totali → 50% usato.
+    const barra = screen.getByRole('progressbar', { name: 'Utilizzo disco' });
+    expect(barra.getAttribute('aria-valuenow')).toBe('50');
+    expect(barra.getAttribute('aria-valuemin')).toBe('0');
+    expect(barra.getAttribute('aria-valuemax')).toBe('100');
+    expect(screen.getByText('liberi su 1000.0 GB (50% usato)')).toBeTruthy();
   });
 
   it('svuota la cache solo dopo conferma', async () => {
@@ -75,5 +88,13 @@ describe('StoragePanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Rimuovi parziali' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Conferma' }));
     await waitFor(() => expect(cleanupMock).toHaveBeenCalledWith('parziali'));
+  });
+
+  it('flush: senza dati disco la barra resta a 0%', async () => {
+    infoMock.mockResolvedValue({ freeBytes: 0, totalBytes: 0, cache: {}, partial: {}, series: [] });
+    render(StoragePanel);
+    await screen.findByText('Cache miniature');
+    const barra = screen.getByRole('progressbar', { name: 'Utilizzo disco' });
+    expect(barra.getAttribute('aria-valuenow')).toBe('0');
   });
 });

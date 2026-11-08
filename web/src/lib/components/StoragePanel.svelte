@@ -9,6 +9,16 @@
   let esito = $state('');
   let conferma = $state(null);
 
+  // Percentuale usata del disco di output (0 quando il totale è ignoto).
+  let usatoPct = $derived(percentualeUsata(dati));
+
+  function percentualeUsata(d) {
+    const totale = Number(d?.totalBytes) || 0;
+    const libero = Number(d?.freeBytes) || 0;
+    if (totale <= 0) return 0;
+    return Math.min(100, Math.max(0, Math.round(((totale - libero) / totale) * 100)));
+  }
+
   function fmt(bytes) {
     const n = Number(bytes) || 0;
     if (n < 1024) return `${n} B`;
@@ -68,13 +78,19 @@
   {#if esito}
     <p class="spazio-ok">{esito}</p>
   {/if}
+  <p class="spazio-nota">Le azioni sono immediate; non serve Salva.</p>
 
   {#if dati}
     <div class="spazio-cards">
       <div class="spazio-card">
         <span class="label">Disco (output)</span>
         <strong>{fmt(dati.freeBytes)}</strong>
-        <span class="hint">liberi su {fmt(dati.totalBytes)}</span>
+        <span class="hint">liberi su {fmt(dati.totalBytes)} ({usatoPct}% usato)</span>
+        <div class="barra-utilizzo" role="progressbar" aria-label="Utilizzo disco"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow={usatoPct}
+             aria-valuetext={`${usatoPct}% usato`}>
+          <div class="barra-fill" style={`width: ${usatoPct}%`}></div>
+        </div>
       </div>
       <div class="spazio-card">
         <span class="label">Cache miniature</span>
@@ -120,10 +136,7 @@
               danger={false} onConfirm={esegui} onCancel={() => (conferma = null)} />
 
 <style>
-  .spazio {
-    margin-top: 1.5rem; padding: 1rem; border: 1px solid var(--border-color);
-    border-radius: 10px; background: var(--bg-secondary);
-  }
+  .spazio { display: block; }
   .spazio-head { display: flex; align-items: center; justify-content: space-between; }
   .spazio-head h2 { font-size: 1.05rem; }
   .btn-refresh {
@@ -134,6 +147,7 @@
   .btn-refresh:disabled { color: var(--text-muted); cursor: default; }
   .spazio-error { color: var(--danger); margin-top: 0.6rem; }
   .spazio-ok { color: var(--success); margin-top: 0.6rem; }
+  .spazio-nota { color: var(--text-muted); font-size: 12px; margin: 0.5rem 0 0; }
   .spazio-cards {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 0.75rem; margin-top: 0.9rem;
@@ -148,6 +162,14 @@
   .spazio-card .label { color: var(--text-muted); font-size: 12px; }
   .spazio-card strong { font-size: 1.1rem; }
   .hint { color: var(--text-secondary); font-size: 12px; }
+  .barra-utilizzo {
+    height: 6px; margin-top: 0.35rem; border-radius: 999px;
+    background: var(--bg-tertiary); overflow: hidden;
+  }
+  .barra-fill {
+    height: 100%; border-radius: 999px; background: var(--accent);
+    transition: width var(--motion-fast) var(--motion-ease-out);
+  }
   .btn-azione {
     margin-top: 0.4rem; align-self: flex-start;
     background: none; border: 1px solid var(--border-color); border-radius: 6px;
@@ -156,7 +178,10 @@
   }
   .btn-azione:hover { background: var(--bg-hover); }
   .spazio-sub { margin: 1.1rem 0 0.4rem; font-size: 0.95rem; }
-  .spazio-lista { list-style: none; margin: 0; padding: 0; }
+  .spazio-lista {
+    list-style: none; margin: 0; padding: 0;
+    max-height: 320px; overflow-y: auto;
+  }
   .spazio-lista li {
     display: flex; align-items: baseline; gap: 0.6rem;
     padding: 0.35rem 0; border-bottom: 1px solid var(--border-color);
