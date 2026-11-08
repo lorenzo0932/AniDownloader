@@ -91,7 +91,7 @@
             <span class="ko">! {run.non_riusciti}</span>
           {/if}
           {#if (run.saltati ?? 0) > 0}
-            <span class="skip">– {run.saltati}</span>
+            <span class="skip">{run.saltati} {run.saltati === 1 ? 'saltato' : 'saltati'}</span>
           {/if}
         </span>
       {/if}
