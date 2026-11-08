@@ -72,6 +72,9 @@
     saved = false;
     try {
       await api.config.set(config);
+      // Notifica la shell: il toggle notifiche deve avere effetto subito,
+      // senza ricaricare la pagina.
+      window.dispatchEvent(new CustomEvent('anidl:config-saved', { detail: config }));
       saved = true;
       setTimeout(() => saved = false, 3000);
     } catch (e) {

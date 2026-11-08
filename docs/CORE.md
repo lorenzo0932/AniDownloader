@@ -276,7 +276,20 @@ recovery. Ogni istanza apre la propria connessione (WAL + busy-timeout).
 
 Un giro completo check → download → commit stato. Usato sia dalla CLI sia
 dall'handler `check` dello scheduler: un solo punto di verità. Con repository
-condiviso evita due istanze con mutex separati sullo stesso file.
+condiviso evita due istanze con mutex separati sullo stesso file. Dopo il
+commit dello stato emette `onEpisodeReady(serie, episodio)` per ogni report
+riuscito con episodio > 0: è l'unico punto in cui nasce una notifica (la CLI
+passa un callback vuoto: è interattiva).
+
+### NotificationStore
+
+`include/core/NotificationStore.hpp` — `src/core/NotificationStore.cpp`
+
+Notifiche "pronto da guardare" nella tabella SQLite `notifications` (schema
+v3). Operazioni: `add`, `list(limit)` (più recenti prima), `unreadCount`,
+`markRead(id)`, `markAllRead`. Ogni chiamata apre la propria connessione,
+come `QueueStore`. Lo Scheduler persiste la riga e poi inoltra al WebServer
+per il broadcast SSE.
 
 ---
 

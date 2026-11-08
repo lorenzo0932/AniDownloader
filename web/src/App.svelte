@@ -7,6 +7,7 @@
   import DiscoverPage from './lib/components/DiscoverPage.svelte';
   import ConfigPage from './lib/components/ConfigPage.svelte';
   import LogsPage from './lib/components/LogsPage.svelte';
+  import NotificationBell from './lib/components/NotificationBell.svelte';
 
   const routeMap = {
     '/': 'home', '/gestione': 'gestione', '/scopri': 'scopri', '/config': 'config', '/logs': 'logs',
@@ -16,6 +17,8 @@
   let showCloseWarning = $state(true);
   let dlRunning = $state(false);
   let sidebarCollapsed = $state(false);
+  let notifEnabled = $state(false);
+  let notifSorgente = $state('entrambi');
 
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
@@ -35,6 +38,8 @@
       try {
         const cfg = await api.config.get();
         showCloseWarning = cfg.config?.show_close_warning !== false;
+        notifEnabled = cfg.config?.notifiche?.abilitate === true;
+        notifSorgente = cfg.config?.notifiche?.sorgente || 'entrambi';
       } catch {}
     })();
 
@@ -56,6 +61,15 @@
     };
     window.addEventListener('beforeunload', onBeforeUnload);
 
+    // Il salvataggio in Impostazioni cambia il toggle notifiche: la shell
+    // aggiorna la campanella senza ricaricare.
+    const onConfigSaved = (e) => {
+      const cfg = e.detail || {};
+      notifEnabled = cfg.notifiche?.abilitate === true;
+      notifSorgente = cfg.notifiche?.sorgente || 'entrambi';
+    };
+    window.addEventListener('anidl:config-saved', onConfigSaved);
+
     window.addEventListener('popstate', () => {
       route = routeMap[window.location.pathname] || 'home';
     });
@@ -63,6 +77,7 @@
     return () => {
       clearInterval(statusInterval);
       window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('anidl:config-saved', onConfigSaved);
     };
   });
 </script>
@@ -103,6 +118,7 @@
           {#if !sidebarCollapsed}<span>Logs</span>{/if}
         </button>
       </div>
+      <NotificationBell enabled={notifEnabled} sorgente={notifSorgente} />
     </nav>
     <main class="content">
       {#key route}

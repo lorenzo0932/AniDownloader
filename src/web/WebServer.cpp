@@ -5,6 +5,7 @@
 #include "core/LogUtils.hpp"
 #include "core/Logger.hpp"
 #include "core/MediaProcessor.hpp"
+#include "core/NotificationStore.hpp"
 #include "core/PlanningService.hpp"
 #include "core/QueueStore.hpp"
 #include "core/SeriesIdentity.hpp"
@@ -97,6 +98,7 @@ namespace Web {
           m_configJsonPath(Config::PathHelper::getConfigDir() / "config.json"),
           m_seriesRepository(resolveJsonPath(configManager),
                              Core::SeriesRepository::dbPathFor(resolveJsonPath(configManager))),
+          m_notificationsDbPath(Core::SeriesRepository::dbPathFor(resolveJsonPath(configManager))),
           m_scheduler(configManager, resolveJsonPath(configManager).string()) {
         // Demone: scheduler e route CRUD condividono lo stesso repository
         // (un solo mutex sulle serie). Prima di start(), mai dopo.
@@ -120,6 +122,15 @@ namespace Web {
                                    {"tentativi", task.tentativi}}}};
             broadcastSseEvent(ev.dump());
         });
+        // Episodio pronto dal giro schedulato: evento dedicato al client
+        // (la persistenza è già avvenuta nello Scheduler). Nessun sequence:
+        // StatusPage lo ignora, la campanella in App.svelte lo consuma.
+        m_scheduler.onEpisodioPronto(
+            [this](const std::string& serie, int episodio, std::int64_t id) {
+                nlohmann::json ev = {
+                    {"type", "notification"}, {"id", id}, {"serie", serie}, {"episodio", episodio}};
+                broadcastSseEvent(ev.dump());
+            });
     }
 
     WebServer::~WebServer() { stop(); }
@@ -266,6 +277,7 @@ namespace Web {
         // Stesso ordine di registrazione del routing monolitico, raggruppato per
         // dominio (routes distinte: l'ordine tra gruppi non altera il matching).
         setupInfoRoutes();
+        setupNotificationRoutes();
         setupSeriesRoutes();
         setupBrowseRoutes();
         setupDiscoverRoutes();
@@ -360,6 +372,56 @@ namespace Web {
             nfo.generi = meta.generi;
             Core::writeTvshowNfoOnce(series.path, series.name, nfo);
         }
+    }
+
+    // ---- NOTIFICHE ----
+    void WebServer::setupNotificationRoutes() {
+        // Lista (più recenti prima) + conteggio non lette. Il client tiene il
+        // badge allineato con questo numero; l'SSE aggiunge i nuovi in tempo
+        // reale, la GET serve al primo caricamento e al reconnect.
+        m_svr.Get(
+            "/api/notifications", [this](const httplib::Request& req, httplib::Response& res) {
+                int limit = Core::NotificationStore::kDefaultLimit;
+                if (req.has_param("limit")) {
+                    try {
+                        limit = std::stoi(req.get_param_value("limit"));
+                    } catch (const std::exception&) {
+                        Core::Logger::warn("/api/notifications: parametro 'limit' non valido");
+                    }
+                }
+                Core::NotificationStore store(m_notificationsDbPath);
+                nlohmann::json items = nlohmann::json::array();
+                for (const auto& n : store.list(limit)) {
+                    items.push_back({{"id", n.id},
+                                     {"serie", n.serie},
+                                     {"episodio", n.episodio},
+                                     {"creato_il", n.creatoIl},
+                                     {"letta", n.letta}});
+                }
+                const int unread = store.unreadCount();
+                sendJson(res, successJson({{"items", items}, {"unread", (std::max)(0, unread)}}));
+            });
+
+        // Body vuoto = segna tutte come lette; {"id": N} = solo quella.
+        m_svr.Post(
+            "/api/notifications/read", [this](const httplib::Request& req, httplib::Response& res) {
+                Core::NotificationStore store(m_notificationsDbPath);
+                bool ok = true;
+                try {
+                    auto body = req.body.empty() ? nlohmann::json::object()
+                                                 : nlohmann::json::parse(req.body);
+                    ok = body.contains("id") ? store.markRead(body["id"].get<std::int64_t>())
+                                             : store.markAllRead();
+                } catch (const std::exception&) {
+                    sendJson(res, errorJson("Invalid read data"), 400);
+                    return;
+                }
+                if (!ok) {
+                    sendJson(res, errorJson("Storage error: " + store.lastError(), 500), 500);
+                    return;
+                }
+                sendJson(res, successJson({{"unread", (std::max)(0, store.unreadCount())}}));
+            });
     }
 
     void WebServer::setupSeriesRoutes() {

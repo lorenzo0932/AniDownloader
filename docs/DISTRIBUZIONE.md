@@ -105,13 +105,14 @@ Stato verificato (`CI` = compilazione+smoke in GitHub Actions;
 | Test C++ completi | CI reale | — (solo build) | — (solo build) |
 | Installer interattivo | `install.sh` reale | `install.ps1` ? | gap (`install-mac.sh` da scrivere, Fase 1) |
 | Demone all'avvio (web + scheduler) | systemd service reale | Task AtLogOn ? | plist manuale (gap testing reale) |
-| Notifiche desktop | non implementate (feature aperta) | non implementate (feature aperta) | non implementate (feature aperta) |
+| Notifiche desktop | sì (Tauri `notify_episode`, permesso OS) | da verificare su HW | da verificare su HW |
 | Uninstall | `uninstall.sh` reale | `uninstall.ps1` ? | gap |
 
 > Mai dichiarare parità senza check su macchina reale: le celle `?`
 > richiedono testing utente con checklist (Fasi 1–2 del piano).
-> Le notifiche desktop non sono ancora implementate su nessun OS: i toggle
-> in Impostazioni sono persistiti ma non producono invii.
+> Le notifiche desktop sono implementate lato app (badge in-app + comando
+> Tauri per il sistema): restano da verificare permessi e resa su Windows e
+> macOS con hardware reale.
 
 ## GitHub Releases
 

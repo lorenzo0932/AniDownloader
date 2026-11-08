@@ -123,5 +123,16 @@ export const api = {
     tooltip: (id) => request('GET', '/api/discover/tooltip?id=' + encodeURIComponent(id)),
   },
 
+  // Notifiche "pronto da guardare" (tabella `notifications`, schema v3).
+  // read senza id segna tutte come lette.
+  notifications: {
+    list: (limit) => {
+      const qs = Number.isInteger(limit) && limit > 0 ? '?limit=' + limit : '';
+      return request('GET', '/api/notifications' + qs);
+    },
+    read: (id) => request('POST', '/api/notifications/read',
+      id === undefined ? {} : { id }),
+  },
+
   sse: () => new EventSource(BASE + '/api/download/events'),
 };

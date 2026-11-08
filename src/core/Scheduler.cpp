@@ -5,6 +5,7 @@
 #include "core/Database.hpp"
 #include "core/ExecutionEngine.hpp"
 #include "core/Logger.hpp"
+#include "core/NotificationStore.hpp"
 #include "core/QueueStore.hpp"
 #include "core/SeriesRepository.hpp"
 
@@ -55,11 +56,23 @@ namespace Core {
         m_pool.onKind("check", [this](const QueueTask& task) {
             (void)task;
             std::atomic<bool> maiAbortito{false}; // 2-bis: il giro non si interrompe
+            auto notifica = [this](const std::string& serie, int episodio) {
+                NotificationStore store(m_dbPath);
+                std::int64_t id = 0;
+                if (!store.add(serie, episodio, &id)) {
+                    Logger::error("Scheduler: notifica non salvata: " + store.lastError());
+                    return;
+                }
+                if (m_onEpisodioPronto)
+                    m_onEpisodioPronto(serie, episodio, id);
+            };
             CheckOutcome esito;
             if (m_repo != nullptr)
-                esito = CheckRunner::runOnce(m_config, *m_repo, false, maiAbortito);
+                esito =
+                    CheckRunner::runOnce(m_config, *m_repo, false, maiAbortito, {}, {}, notifica);
             else
-                esito = CheckRunner::runOnce(m_config, m_jsonPath, false, maiAbortito);
+                esito = CheckRunner::runOnce(m_config, m_jsonPath, false, maiAbortito, {}, {},
+                                             notifica);
             if (!esito.eseguito) {
                 // CLI manuale in corso: si rimanda (backoff del pool).
                 if (esito.salto == CheckOutcome::Salto::Occupato)
@@ -107,6 +120,8 @@ namespace Core {
     Scheduler::onEvento(std::function<void(const std::string& tipo, const QueueTask& task)> cb) {
         m_onEvento = std::move(cb);
     }
+
+    void Scheduler::onEpisodioPronto(NotificaCb cb) { m_onEpisodioPronto = std::move(cb); }
 
     bool Scheduler::running() const noexcept { return m_attivo.load(); }
 

@@ -37,6 +37,21 @@ fn decode_png_to_rgba(bytes: &[u8]) -> (Vec<u8>, u32, u32) {
     (rgba, w, h)
 }
 
+// Notifica di sistema per gli episodi pronti: il frontend la invoca via
+// window.__TAURI_INTERNALS__.invoke('notify_episode', {title, body}).
+// Tutta la gestione dei permessi è del plugin notification; qui solo il
+// ponte, così in browser (web mode) resta la Web Notification API.
+#[tauri::command]
+fn notify_episode(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|e| e.to_string())
+}
+
 fn main() {
     // Workaround renderer su Linux: il compositing DMA-BUF di WebKitGTK
     // (default nel runtime GNOME) su Mesa produce jank evidente nell'app,
@@ -56,6 +71,7 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![notify_episode])
         .setup(|app| {
             // ─── 1. MOSSA: File fisici in /tmp/ per libappindicator (Wayland SNI via DBus) ───
             let temp_dir = std::env::temp_dir();
