@@ -72,6 +72,14 @@ describe('NotificationBell', () => {
     expect(screen.getByText('2')).toBeTruthy();
   });
 
+  it('abilitata a runtime: si connette senza rimontare', async () => {
+    const { rerender } = render(NotificationBell, { enabled: false, sorgente: 'ui' });
+    expect(globalThis.__sse).toBeUndefined();
+    await rerender({ enabled: true, sorgente: 'ui' });
+    await waitFor(() => expect(globalThis.__sse).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('1')).toBeTruthy());
+  });
+
   it('eventi SSE diversi da notification vengono ignorati', async () => {
     render(NotificationBell, { enabled: true, sorgente: 'ui' });
     await waitFor(() => expect(globalThis.__sse).toBeTruthy());

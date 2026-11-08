@@ -1,5 +1,4 @@
 <script>
-  import { onMount } from 'svelte';
   import { api } from '../api.js';
 
   // Campanella "pronto da guardare": vive nella shell, una sola istanza.
@@ -11,7 +10,6 @@
   let items = $state([]);
   let unread = $state(0);
   let open = $state(false);
-  let sse = null;
 
   const MAX_ITEMS = 50;
 
@@ -70,12 +68,16 @@
     }
   }
 
-  onMount(() => {
+  // Reagisce anche al toggle in Impostazioni: abilitando dalle impostazioni
+  // la campanella compare e apre l'SSE senza ricaricare la pagina; a OFF
+  // chiude la connessione e non lascia badge orfani.
+  $effect(() => {
     if (!enabled) return;
     load();
+    let es = null;
     try {
-      sse = api.sse();
-      sse.onmessage = (event) => {
+      es = api.sse();
+      es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type !== 'notification') return;
@@ -87,10 +89,10 @@
         }
       };
     } catch {
-      sse = null;
+      es = null;
     }
     return () => {
-      if (sse) sse.close();
+      if (es) es.close();
     };
   });
 </script>

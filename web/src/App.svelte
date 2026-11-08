@@ -61,6 +61,15 @@
     };
     window.addEventListener('beforeunload', onBeforeUnload);
 
+    // Il salvataggio in Impostazioni cambia il toggle notifiche: la shell
+    // aggiorna la campanella senza ricaricare.
+    const onConfigSaved = (e) => {
+      const cfg = e.detail || {};
+      notifEnabled = cfg.notifiche?.abilitate === true;
+      notifSorgente = cfg.notifiche?.sorgente || 'entrambi';
+    };
+    window.addEventListener('anidl:config-saved', onConfigSaved);
+
     window.addEventListener('popstate', () => {
       route = routeMap[window.location.pathname] || 'home';
     });
@@ -68,6 +77,7 @@
     return () => {
       clearInterval(statusInterval);
       window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('anidl:config-saved', onConfigSaved);
     };
   });
 </script>
