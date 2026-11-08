@@ -6,10 +6,11 @@
   const PHASE_LABELS = Object.freeze({
     queued: 'In coda',
     queued_download: 'In coda',
-    retry_wait: 'In attesa di retry',
+    retry_wait: 'In attesa',
     downloading: 'In download',
     verifying_download: 'Verifica integrità',
     waiting_conversion: 'In attesa di conversione',
+    downloaded_waiting_conversion: 'In attesa di conversione',
     converting: 'In conversione',
     finalizing: 'Finalizzazione',
   });

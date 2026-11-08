@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
 
 import RunCard from './RunCard.svelte';
 
@@ -97,6 +97,20 @@ describe('RunCard', () => {
     expect(screen.getByText('Completato con errori')).toBeTruthy();
     expect(screen.getByText('2 non riusciti')).toBeTruthy();
     expect(screen.getByText('Problemi registrati: 2')).toBeTruthy();
+  });
+
+  it('fasi reali del backend: downloaded_waiting_conversion e retry_wait', () => {
+    render(RunCard, {
+      run: baseRun({ corrente: { serie: 'Psyren', episodio: 4, fase: 'downloaded_waiting_conversion' } }),
+    });
+    expect(screen.getByText('Psyren · Ep. 4 · In attesa di conversione')).toBeTruthy();
+    cleanup();
+
+    render(RunCard, {
+      run: baseRun({ corrente: { serie: 'Psyren', episodio: 5, fase: 'retry_wait' } }),
+    });
+    expect(screen.getByText('Psyren · Ep. 5 · In attesa')).toBeTruthy();
+    expect(screen.queryByText(/retry_wait/)).toBeNull();
   });
 
   it('origine automatica: badge dedicato', () => {
