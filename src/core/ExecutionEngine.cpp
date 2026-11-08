@@ -201,7 +201,22 @@ namespace Core {
                     ProcessResult res = mp.processTask(task, serie, strategyDl);
                     if (res.success) {
                         store.setFilePath(job->id, res.filePath);
-                        store.transition(job->id, "downloading", "downloaded_waiting_conversion");
+                        if (strategy.convertToH265) {
+                            store.transition(job->id, "downloading",
+                                             "downloaded_waiting_conversion");
+                        } else {
+                            // Conversione OFF: il job è completo dopo il download.
+                            store.transition(job->id, "downloading", "completed");
+                            if (m_onCompleted)
+                                m_onCompleted(job->serie, job->episodio);
+                            if (onTaskFinished)
+                                onTaskFinished({.name = job->serie,
+                                                .success = true,
+                                                .episodeNumber = job->episodio,
+                                                .dlTime = res.downloadTime,
+                                                .convTime = 0.0,
+                                                .error = ""});
+                        }
                     } else {
                         retryOrFail(store, *job, res.errorMessage);
                     }
