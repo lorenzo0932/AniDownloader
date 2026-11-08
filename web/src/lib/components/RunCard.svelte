@@ -1,6 +1,6 @@
 <script>
-  // Card unica di avvio: solo dati del run (manuale o automatico).
-  // Coda e problemi globali vivono in una nota separata sotto la card.
+  // Card dell'ultimo avvio: un solo oggetto, una sola CTA.
+  // Coda e problemi globali vivono nella strip sotto la card.
   let { run = null, onopen = null } = $props();
 
   const PHASE_LABELS = Object.freeze({
@@ -28,20 +28,46 @@
   );
   let statoLabel = $derived(STATE_LABELS[run?.stato] || run?.stato || '');
   let origineLabel = $derived(run?.origine === 'automatico' ? 'automatico' : 'manuale');
-  let avvioLabel = $derived(formatMoment(run?.avviato_il));
-  let conclusioneLabel = $derived(formatMoment(run?.concluso_il));
-  let durata = $derived(inCorso ? '' : formatDuration(run?.avviato_il, run?.concluso_il));
   let faseCorrente = $derived(
     run?.corrente ? (PHASE_LABELS[run.corrente.fase] || run.corrente.fase || 'In corso') : ''
   );
+  let whenLabel = $derived.by(() => {
+    if (!run) return '';
+    const parts = [formatWhen(run.avviato_il)];
+    const totale = Number(run.totale) || 0;
+    if (totale > 0) parts.push(`${totale} ${totale === 1 ? 'episodio' : 'episodi'}`);
+    if (!inCorso) {
+      const durata = formatDuration(run.avviato_il, run.concluso_il);
+      if (durata) parts.push(durata);
+    }
+    return parts.filter(Boolean).join(' · ');
+  });
 
-  function formatMoment(value) {
+  function formatWhen(value) {
     if (!value) return '';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat('it-IT', {
-      dateStyle: 'short', timeStyle: 'short',
+    const now = new Date();
+    const sameDay = (a, b) =>
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const time = new Intl.DateTimeFormat('it-IT', {
+      hour: '2-digit', minute: '2-digit',
     }).format(date);
+    if (sameDay(date, now)) return `Oggi, ${time}`;
+    if (sameDay(date, yesterday)) return `Ieri, ${time}`;
+    if (date.getFullYear() !== now.getFullYear()) {
+      return new Intl.DateTimeFormat('it-IT', {
+        dateStyle: 'short', timeStyle: 'short',
+      }).format(date);
+    }
+    const day = new Intl.DateTimeFormat('it-IT', {
+      day: '2-digit', month: '2-digit',
+    }).format(date);
+    return `${day}, ${time}`;
   }
 
   function formatDuration(start, end) {
@@ -50,12 +76,11 @@
     const to = new Date(end).getTime();
     if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return '';
     const total = Math.round((to - from) / 1000);
-    const hours = Math.floor(total / 3600);
-    const minutes = Math.floor((total % 3600) / 60);
+    if (total < 60) return `${total} s`;
+    const minutes = Math.floor(total / 60);
     const seconds = total % 60;
-    if (hours > 0) return `${hours} h ${minutes} min`;
-    if (minutes > 0) return `${minutes} min ${seconds} s`;
-    return `${seconds} s`;
+    if (minutes < 60) return seconds ? `${minutes} min ${seconds} s` : `${minutes} min`;
+    return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
   }
 
   function handleOpen(event) {
@@ -71,17 +96,13 @@
     </p>
   {:else}
     <div class="run-head">
-      <h2 class="run-title" aria-live="polite">{inCorso ? 'Avvio in corso' : 'Ultimo avvio'}</h2>
+      <h2 class="run-title" aria-live="polite">{inCorso ? 'Avvio corrente' : 'Ultimo avvio'}</h2>
       <span class="origin-badge origin-{origineLabel}">{origineLabel}</span>
       <span class="run-state state-{run.stato}">{statoLabel}</span>
     </div>
 
-    {#if avvioLabel || conclusioneLabel || durata}
-      <div class="run-meta">
-        {#if avvioLabel}<span>Avviato {avvioLabel}</span>{/if}
-        {#if !inCorso && conclusioneLabel}<span>Concluso {conclusioneLabel}</span>{/if}
-        {#if durata}<span>Durata {durata}</span>{/if}
-      </div>
+    {#if whenLabel}
+      <p class="run-when">{whenLabel}</p>
     {/if}
 
     {#if inCorso && (run.totale ?? 0) > 0}
@@ -103,36 +124,39 @@
       </p>
     {/if}
 
-    <div class="run-counts">
-      {#if (run.totale ?? 0) === 0}
-        <span class="count count-total">Nessun episodio da elaborare</span>
-        {#if (run.saltati || 0) > 0}
-          <span class="count count-skipped">
-            {run.saltati} {run.saltati === 1 ? 'saltato' : 'saltati'}
+    {#if (run.totale ?? 0) === 0}
+      <p class="run-outcome">
+        <span class="outcome-muted">Nessun episodio nuovo</span>
+        {#if (run.saltati ?? 0) > 0}
+          <span class="outcome-sep" aria-hidden="true">·</span>
+          <span class="count-skipped">
+            {run.saltati} {run.saltati === 1 ? 'serie già aggiornata' : 'serie già aggiornate'}
           </span>
         {/if}
-      {:else}
-        <span class="count count-done">
+      </p>
+    {:else}
+      <p class="run-outcome">
+        <span class="count-done">
           {run.completati} {run.completati === 1 ? 'completato' : 'completati'}
         </span>
-        {#if inCorso || (run.in_corso || 0) > 0}
-          <span class="count count-active">{run.in_corso} in corso</span>
+        {#if inCorso || (run.in_corso ?? 0) > 0}
+          <span class="outcome-sep" aria-hidden="true">·</span>
+          <span class="count-active">{run.in_corso} in corso</span>
         {/if}
-        {#if (run.non_riusciti || 0) > 0}
-          <span class="count count-error">
+        {#if (run.non_riusciti ?? 0) > 0}
+          <span class="outcome-sep" aria-hidden="true">·</span>
+          <span class="count-error">
             {run.non_riusciti} {run.non_riusciti === 1 ? 'non riuscito' : 'non riusciti'}
           </span>
         {/if}
-        {#if (run.saltati || 0) > 0}
-          <span class="count count-skipped">
-            {run.saltati} {run.saltati === 1 ? 'saltato' : 'saltati'}
+        {#if (run.saltati ?? 0) > 0}
+          <span class="outcome-sep" aria-hidden="true">·</span>
+          <span class="count-skipped">
+            {run.saltati} {run.saltati === 1 ? 'serie già aggiornata' : 'serie già aggiornate'}
           </span>
         {/if}
-        <span class="count count-total">
-          {run.totale} {run.totale === 1 ? 'totale' : 'totali'}
-        </span>
-      {/if}
-    </div>
+      </p>
+    {/if}
 
     <a class="run-cta" href="/attivita" onclick={handleOpen}>
       {inCorso ? 'Apri attività' : 'Vedi dettaglio'}
@@ -142,33 +166,46 @@
 
 <style>
   .run-card {
-    display: flex; flex-direction: column; gap: 0.4rem;
+    display: flex; flex-direction: column; gap: 0.35rem;
     background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;
-    padding: 0.65rem 0.75rem; font-size: 0.85rem; color: var(--text-secondary);
+    padding: 0.7rem 0.9rem; font-size: 0.85rem; color: var(--text-secondary);
   }
 
   .run-empty { margin: 0; color: var(--text-muted); font-size: 0.85rem; }
 
-  .run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; }
-  .run-title { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
+  .run-head {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 0.25rem 0.5rem; min-width: 0;
+  }
+  .run-title { margin: 0; font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
 
   .origin-badge {
-    border: 1px solid var(--border-color); border-radius: 4px;
-    padding: 0.1rem 0.4rem; font-size: 0.72rem; font-weight: 600;
-    letter-spacing: 0.03em; text-transform: uppercase;
+    border: 1px solid var(--border-color); border-radius: 999px;
+    padding: 0.1rem 0.45rem; font-size: 0.72rem; font-weight: 600;
+    color: var(--text-secondary); background: var(--bg-tertiary);
+    white-space: nowrap;
   }
-  .origin-manuale { color: var(--text-secondary); background: var(--bg-tertiary); }
   .origin-automatico { color: var(--text-muted); background: transparent; }
 
-  .run-state { margin-left: auto; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); }
+  .run-state {
+    margin-left: auto; font-size: 0.72rem; font-weight: 600;
+    padding: 0.1rem 0.45rem; border-radius: 999px;
+    background: var(--bg-tertiary); color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .run-state.state-in_corso { background: var(--accent-bg); color: var(--accent-light); }
   .run-state.state-completato { color: var(--success); }
-  .run-state.state-completato_con_errori, .run-state.state-interrotto { color: var(--danger); }
+  .run-state.state-completato_con_errori,
+  .run-state.state-interrotto { background: var(--danger-bg); color: var(--danger); }
 
-  .run-meta { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; font-size: 0.78rem; color: var(--text-muted); }
+  .run-when {
+    margin: 0; color: var(--text-secondary); font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+  }
 
   .run-progress {
     height: 6px; border-radius: 3px; background: var(--bg-tertiary);
-    overflow: hidden; margin: 0.1rem 0;
+    overflow: hidden; margin: 0.15rem 0;
   }
   .run-progress-fill {
     display: block; height: 100%; background: var(--accent);
@@ -177,17 +214,20 @@
 
   .run-current { margin: 0; font-size: 0.85rem; font-weight: 500; color: var(--text-primary); }
 
-  .run-counts { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; }
-  .count { font-size: 0.8rem; font-weight: 600; }
-  .count-done { color: var(--success); }
-  .count-active { color: var(--text-secondary); }
-  .count-error { color: var(--danger); }
-  .count-skipped { color: var(--warning); }
-  .count-total { color: var(--text-muted); }
+  .run-outcome {
+    margin: 0; display: flex; flex-wrap: wrap; align-items: center;
+    gap: 0.3rem 0.45rem; font-size: 0.82rem; color: var(--text-secondary);
+  }
+  .outcome-muted { color: var(--text-secondary); }
+  .outcome-sep { color: var(--text-muted); }
+  .count-done { color: var(--success); font-weight: 600; }
+  .count-active { color: var(--text-secondary); font-weight: 600; }
+  .count-error { color: var(--danger); font-weight: 600; }
+  .count-skipped { color: var(--warning); font-weight: 600; }
 
   .run-cta {
     align-self: flex-start; color: var(--accent-light); font-weight: 600;
-    text-decoration: none; font-size: 0.85rem;
+    text-decoration: none; font-size: 0.82rem; margin-top: 0.1rem;
   }
   .run-cta:hover { text-decoration: underline; }
 
