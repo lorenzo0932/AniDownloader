@@ -18,6 +18,9 @@ namespace Core {
         double downloadTime = 0.0;
         double conversionTime = 0.0;
         std::string errorMessage;
+        // File finale sul disco (valorizzato sui successi): è il contratto che
+        // permette di separare download e conversione in due fasi.
+        std::string filePath;
     };
 
     using ProgressCallback = std::function<void(const std::string&, const std::string&)>;
@@ -29,6 +32,12 @@ namespace Core {
 
         ProcessResult processTask(const DownloadTask& task, const Series& series,
                                   const Config::ExecutionStrategy& strategy);
+
+        // Fase conversioni separata (pipeline condivisa, fase 2): converte un
+        // file già presente e sano. Non scarica e non tocca il file sorgente
+        // se la conversione fallisce (convertAndVerify usa un temp + publish).
+        bool convertFile(const std::string& inputPath, const std::string& seriesName,
+                         const Config::ExecutionStrategy& strategy, double& outTime);
 
         static void notifyStop();
 

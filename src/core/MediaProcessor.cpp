@@ -79,6 +79,7 @@ namespace Core {
                     if (codec == "hevc" || codec == "h265") {
                         m_progressCallback(series.name, "✅ Già completato (H265)");
                         res.success = true;
+                        res.filePath = fullFile;
                         return res;
                     } else {
                         m_progressCallback(series.name, "Avvio conversione su file esistente...");
@@ -87,6 +88,7 @@ namespace Core {
                 } else {
                     m_progressCallback(series.name, "✅ Già completato");
                     res.success = true;
+                    res.filePath = fullFile;
                     return res;
                 }
             }
@@ -209,6 +211,7 @@ namespace Core {
                         std::chrono::duration<double>(std::chrono::steady_clock::now() - startDl)
                             .count();
                     res.success = true;
+                    res.filePath = fullFile;
                     Logger::info(series.name + ": episodio già presente, salto il publish");
                     return res;
                 }
@@ -272,8 +275,14 @@ namespace Core {
         }
 
         res.success = true;
+        res.filePath = fullFile;
         m_progressCallback(series.name, "✅ Completato");
         return res;
+    }
+
+    bool MediaProcessor::convertFile(const std::string& inputPath, const std::string& seriesName,
+                                     const Config::ExecutionStrategy& strategy, double& outTime) {
+        return convertAndVerify(inputPath, seriesName, strategy, outTime);
     }
 
     bool MediaProcessor::convertAndVerify(const std::string& inputPath,

@@ -235,6 +235,20 @@ int main() {
         CHECK(codec == "h264");
     }
 
+    // --- 4-bis. Due fasi (pipeline condivisa): il download dichiara il file
+    //            finale in filePath; la conversione è un passo separato. ---
+    if (res2.success) {
+        CHECK(!res2.filePath.empty());
+        CHECK(fs::exists(res2.filePath));
+        std::atomic<bool> stop{false};
+        Config::ExecutionStrategy strategy{2, 1, 4, true, false};
+        Core::MediaProcessor mp([](const std::string&, const std::string&) {}, stop);
+        double convTime = 0.0;
+        CHECK(mp.convertFile(res2.filePath, "TestSerie", strategy, convTime));
+        std::string codec = Core::MediaProbe::getVideoCodec(res2.filePath, stop);
+        CHECK(codec == "hevc" || codec == "h265");
+    }
+
     // --- 5. Fail-fast: conversione locale con sorgente mancante (regressione fix) ---
     auto res3 = runTask(workDir, "", "Manca_Ep_03.mp4", true, 3);
     CHECK(!res3.success);
