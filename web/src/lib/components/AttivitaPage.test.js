@@ -118,6 +118,46 @@ describe('AttivitaPage', () => {
       .toBe('false');
   });
 
+  it('deep link ?tab=problemi: apre Avvii/Problemi', async () => {
+    window.history.replaceState({}, '', '/attivita?tab=problemi');
+    render(AttivitaPage);
+    expect(await screen.findByText('Avvio manuale')).toBeTruthy();
+    expect(runsListMock).toHaveBeenCalledWith({
+      window: 'tutti', origine: 'tutte', stato: 'problemi', limit: 20, offset: 0,
+    });
+    expect(screen.getByRole('button', { name: 'Avvii' }).getAttribute('aria-pressed'))
+      .toBe('true');
+    expect(screen.getByRole('tab', { name: /^Problemi/ }).getAttribute('aria-selected'))
+      .toBe('true');
+  });
+
+  it('deep link ?vista=episodi: apre Episodi/Recenti', async () => {
+    window.history.replaceState({}, '', '/attivita?vista=episodi');
+    render(AttivitaPage);
+    expect(await screen.findByText('Serie X · Ep. 1')).toBeTruthy();
+    expect(pipelineListMock).toHaveBeenCalledWith({
+      window: 'recenti', limit: 50, offset: 0,
+    });
+    expect(screen.getByRole('button', { name: 'Episodi' }).getAttribute('aria-pressed'))
+      .toBe('true');
+    expect(screen.getByRole('tab', { name: 'Recenti' }).getAttribute('aria-selected'))
+      .toBe('true');
+  });
+
+  it('deep link con parametri invalidi: resta su Avvii/Recenti', async () => {
+    window.history.replaceState({}, '', '/attivita?tab=boh&vista=altro');
+    render(AttivitaPage);
+    expect(await screen.findByText('Avvio manuale')).toBeTruthy();
+    expect(runsListMock).toHaveBeenCalledWith({
+      window: 'recenti', origine: 'tutte', stato: 'tutti', limit: 20, offset: 0,
+    });
+    expect(pipelineListMock).not.toHaveBeenCalled();
+    expect(screen.getByRole('tab', { name: 'Recenti' }).getAttribute('aria-selected'))
+      .toBe('true');
+    expect(screen.getByRole('button', { name: 'Avvii' }).getAttribute('aria-pressed'))
+      .toBe('true');
+  });
+
   it('tab Problemi: window tutti, stato problemi e badge conteggio', async () => {
     render(AttivitaPage);
     await screen.findByText('Avvio manuale');
@@ -175,8 +215,8 @@ describe('AttivitaPage', () => {
     expect(screen.getByRole('tab', { name: 'Problemi' })).toBeTruthy();
   });
 
-  it('deep link ?run=<id>: apre Avvii/Recenti ed espande il run', async () => {
-    window.history.replaceState({}, '', '/attivita?run=run-9');
+  it('deep link ?run=<id>: priorità su tab/vista, apre Avvii/Recenti ed espande il run', async () => {
+    window.history.replaceState({}, '', '/attivita?run=run-9&tab=storico&vista=episodi');
     runsGetMock.mockResolvedValue({
       run: run({ id: 'run-9' }),
       jobs: [job({ id: 909, run_id: 'run-9', serie: 'Serie Deep', episodio: 7 })],
@@ -184,6 +224,10 @@ describe('AttivitaPage', () => {
     render(AttivitaPage);
     expect(await screen.findByText('Serie Deep · Ep. 7')).toBeTruthy();
     expect(runsGetMock).toHaveBeenCalledWith('run-9');
+    expect(runsListMock).toHaveBeenCalledWith({
+      window: 'recenti', origine: 'tutte', stato: 'tutti', limit: 20, offset: 0,
+    });
+    expect(pipelineListMock).not.toHaveBeenCalled();
     expect(screen.getByRole('tab', { name: 'Recenti' }).getAttribute('aria-selected'))
       .toBe('true');
     const riga = document.querySelector('[data-run-id="run-9"] .run-main');
