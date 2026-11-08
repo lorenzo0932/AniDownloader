@@ -146,14 +146,36 @@ export const api = {
   },
 
   // Pipeline condivisa (fase 2): coda per-episodio, vista e retry manuale.
+  // `fase=problemi` è l'alias di failed+interrupted; `window` filtra
+  // recenti|storico|tutti; `run_id` limita al singolo avvio.
   pipeline: {
     list: (opts = {}) => {
       const params = [];
       if (opts.fase) params.push('fase=' + encodeURIComponent(opts.fase));
+      if (opts.run_id) params.push('run_id=' + encodeURIComponent(opts.run_id));
+      if (opts.window) params.push('window=' + encodeURIComponent(opts.window));
       if (Number.isInteger(opts.limit)) params.push('limit=' + opts.limit);
+      if (Number.isInteger(opts.offset)) params.push('offset=' + opts.offset);
       return request('GET', '/api/pipeline' + (params.length ? '?' + params.join('&') : ''));
     },
     retry: (id) => request('POST', '/api/pipeline/retry', { id }),
+  },
+
+  // Modello Run (schema v6): Home legge `overview`, Attività `list`/`get`.
+  runs: {
+    overview: () => request('GET', '/api/overview'),
+    list: (opts = {}) => {
+      const params = [];
+      if (opts.window) params.push('window=' + encodeURIComponent(opts.window));
+      if (opts.origine) params.push('origine=' + encodeURIComponent(opts.origine));
+      if (opts.stato) params.push('stato=' + encodeURIComponent(opts.stato));
+      if (Number.isInteger(opts.limit)) params.push('limit=' + opts.limit);
+      if (Number.isInteger(opts.offset)) params.push('offset=' + opts.offset);
+      return request('GET', '/api/runs' + (params.length ? '?' + params.join('&') : ''));
+    },
+    get: (id) => request('GET', '/api/runs/' + encodeURIComponent(id)),
+    retryFailed: (id) =>
+      request('POST', `/api/runs/${encodeURIComponent(id)}/retry-failed`),
   },
 
   // Spazio occupato e pulizia guidata (cache miniature, residui .aria2).

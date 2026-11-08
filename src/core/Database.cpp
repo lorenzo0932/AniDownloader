@@ -114,6 +114,29 @@ ALTER TABLE pipeline_jobs ADD COLUMN payload TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE pipeline_jobs ADD COLUMN serie_path TEXT NOT NULL DEFAULT '';
 ALTER TABLE pipeline_jobs ADD COLUMN file_path TEXT NOT NULL DEFAULT '';
 )";
+
+        // v6: il Run (un avvio della pipeline, manuale o automatico) diventa
+        // l'unità persistente. I job esistenti vengono assegnati al run
+        // sintetico `legacy` (id riservato, etichettato "Avvio precedente"
+        // dalla UI) per non perdere lo storico.
+        constexpr const char* kSchemaV6 = R"(
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id          TEXT PRIMARY KEY,
+    origine     TEXT NOT NULL DEFAULT 'background'
+                CHECK (origine IN ('background', 'interactive')),
+    avviato_il  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    concluso_il TEXT,
+    stato       TEXT NOT NULL DEFAULT 'in_corso'
+                CHECK (stato IN ('in_corso', 'completato',
+                                 'completato_con_errori', 'interrotto')),
+    saltati     INTEGER NOT NULL DEFAULT 0
+);
+ALTER TABLE pipeline_jobs ADD COLUMN run_id TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_run
+    ON pipeline_jobs(run_id, fase);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_start
+    ON pipeline_runs(avviato_il DESC);
+)";
     } // namespace
 
     struct Statement::Impl {
@@ -386,8 +409,36 @@ ALTER TABLE pipeline_jobs ADD COLUMN file_path TEXT NOT NULL DEFAULT '';
             return true;
         };
         if (!applica(1, kSchemaV1) || !applica(2, kSchemaV2) || !applica(3, kSchemaV3) ||
-            !applica(4, kSchemaV4) || !applica(5, kSchemaV5))
+            !applica(4, kSchemaV4) || !applica(5, kSchemaV5) || !applica(6, kSchemaV6))
             return false;
+        // Backfill idempotente: i job senza run (pre-v6) confluiscono nel run
+        // sintetico `legacy`. Riaperture successive non trovano righe da
+        // assegnare e non toccano nulla.
+        {
+            bool residui = false;
+            {
+                auto conta = prepare("SELECT COUNT(*) FROM pipeline_jobs WHERE run_id = '';");
+                if (!conta.valid() || !conta.step() || conta.hasError()) {
+                    if (error)
+                        *error = conta.lastError();
+                    return false;
+                }
+                residui = conta.columnInt(0) > 0;
+            }
+            if (residui) {
+                const std::string backfill = R"(
+INSERT OR IGNORE INTO pipeline_runs(id, origine, avviato_il, concluso_il, stato, saltati)
+SELECT 'legacy', 'background', MIN(creato_il), MAX(aggiornato_il),
+       CASE WHEN SUM(CASE WHEN fase IN ('failed', 'interrupted') THEN 1 ELSE 0 END) > 0
+            THEN 'completato_con_errori' ELSE 'completato' END,
+       0
+FROM pipeline_jobs WHERE run_id = '';
+UPDATE pipeline_jobs SET run_id = 'legacy' WHERE run_id = '';
+)";
+                if (!execute(backfill, error))
+                    return false;
+            }
+        }
         m_impl->schemaVersion = attuale;
         if (!tx.commit()) {
             if (error)

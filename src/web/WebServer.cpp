@@ -92,6 +92,51 @@ namespace Web {
             return p.empty() ? Config::PathHelper::getSeriesJsonPath() : std::filesystem::path(p);
         }
 
+        // --- Modello Run: mapping DB -> JSON pubblico ---
+        // L'origine interna (background|interactive) diventa il nome pubblico
+        // usato da Home/Attività (automatico|manuale).
+        nlohmann::json runToJson(const Core::PipelineRun& r) {
+            return {{"id", r.id},
+                    {"origine", r.origine == "interactive" ? "manuale" : "automatico"},
+                    {"avviato_il", r.avviatoIl},
+                    {"concluso_il",
+                     r.conclusoIl.empty() ? nlohmann::json(nullptr) : nlohmann::json(r.conclusoIl)},
+                    {"stato", r.stato},
+                    {"totale", r.totale},
+                    {"completati", r.completati},
+                    {"non_riusciti", r.nonRiusciti},
+                    {"saltati", r.saltati},
+                    {"in_corso", r.inCorso},
+                    {"percent", r.percent}};
+        }
+
+        nlohmann::json jobToJson(const Core::PipelineJob& j) {
+            return {{"id", j.id},
+                    {"run_id", j.runId},
+                    {"job_key", j.jobKey},
+                    {"serie", j.serie},
+                    {"episodio", j.episodio},
+                    {"origine", j.origine},
+                    {"fase", j.fase},
+                    {"tentativi", j.tentativi},
+                    {"prossima_esecuzione", j.prossimaEsecuzione},
+                    {"priorita", j.priorita},
+                    {"errore", j.errore},
+                    {"creato_il", j.creatoIl},
+                    {"aggiornato_il", j.aggiornatoIl}};
+        }
+
+        int interoDa(const httplib::Request& req, const char* nome, int fallback) {
+            if (!req.has_param(nome))
+                return fallback;
+            try {
+                return std::stoi(req.get_param_value(nome));
+            } catch (const std::exception&) {
+                Core::Logger::warn(std::string("Parametro '") + nome + "' non valido, uso default");
+                return fallback;
+            }
+        }
+
     } // namespace
 
     WebServer::WebServer(Config::AppConfigManager& configManager, int port)
@@ -446,10 +491,10 @@ namespace Web {
         });
     }
 
-    // ---- PIPELINE (fase 2: coda per-episodio) ----
+    // ---- PIPELINE (fase 2: coda per-episodio) e RUN (schema v6) ----
     void WebServer::setupPipelineRoutes() {
         // Sola lettura: la coda per-episodio è il contratto persistente della
-        // pipeline. L'esecuzione dei job sarà collegata nella fase successiva.
+        // pipeline. `run_id` collega ogni job all'avvio che lo ha prodotto.
         m_svr.Get("/api/pipeline", [this](const httplib::Request& req, httplib::Response& res) {
             int limit = 100;
             if (req.has_param("limit")) {
@@ -459,30 +504,16 @@ namespace Web {
                     Core::Logger::warn("/api/pipeline: parametro 'limit' non valido");
                 }
             }
-            const std::string fase =
-                req.has_param("fase") ? req.get_param_value("fase") : std::string();
+            Core::JobQuery query;
+            query.fase = req.has_param("fase") ? req.get_param_value("fase") : std::string();
+            query.runId = req.has_param("run_id") ? req.get_param_value("run_id") : std::string();
+            query.window = req.has_param("window") ? req.get_param_value("window") : "tutti";
+            query.limit = limit;
+            query.offset = (std::max)(0, interoDa(req, "offset", 0));
             Core::PipelineJobStore store(m_dbPath);
-            // Nome -> cartella serie: serve alla UI per la locandina.
-            std::map<std::string, std::string> percorsi;
-            for (const auto& s : m_seriesRepository.snapshotSeriesData())
-                percorsi[s.name] = s.path;
             nlohmann::json items = nlohmann::json::array();
-            for (const auto& j : store.list(fase, limit)) {
-                const auto it = percorsi.find(j.serie);
-                const std::string percorso = it == percorsi.end() ? "" : it->second;
-                items.push_back({{"id", j.id},
-                                 {"job_key", j.jobKey},
-                                 {"serie", j.serie},
-                                 {"episodio", j.episodio},
-                                 {"origine", j.origine},
-                                 {"fase", j.fase},
-                                 {"tentativi", j.tentativi},
-                                 {"prossima_esecuzione", j.prossimaEsecuzione},
-                                 {"priorita", j.priorita},
-                                 {"errore", j.errore},
-                                 {"creato_il", j.creatoIl},
-                                 {"aggiornato_il", j.aggiornatoIl}});
-            }
+            for (const auto& j : store.list(query))
+                items.push_back(jobToJson(j));
             const auto counts = store.counts();
             auto conta = [&counts](const char* chiave) {
                 const auto it = counts.find(chiave);
@@ -521,6 +552,131 @@ namespace Web {
                     sendJson(res, errorJson("Invalid retry data"), 400);
                 }
             });
+
+        // Home: un solo run (l'ultimo) con conteggi coerenti. `coda` e
+        // `problemi` guardano la coda globale (i job non terminali sono solo
+        // del run corrente; i problemi aperti restano visibili tra i run).
+        m_svr.Get("/api/overview", [this](const httplib::Request&, httplib::Response& res) {
+            Core::PipelineJobStore store(m_dbPath);
+            const auto ultimi = store.listRuns("tutti", "tutte", "tutti", 1, 0);
+            nlohmann::json run = nullptr;
+            nlohmann::json corrente = nullptr;
+            if (!ultimi.empty()) {
+                run = runToJson(ultimi.front());
+                const auto jobs = store.runJobs(ultimi.front().id);
+                const Core::PipelineJob* attivo = nullptr;
+                for (const auto& j : jobs) {
+                    if (j.fase == "downloading" || j.fase == "converting") {
+                        attivo = &j;
+                        break;
+                    }
+                }
+                if (!attivo) {
+                    for (const auto& j : jobs) {
+                        if (j.fase == "queued_download" || j.fase == "retry_wait") {
+                            attivo = &j;
+                            break;
+                        }
+                    }
+                }
+                if (attivo)
+                    corrente = {{"serie", attivo->serie},
+                                {"episodio", attivo->episodio},
+                                {"fase", attivo->fase}};
+                run["corrente"] = corrente;
+            }
+            const auto counts = store.counts();
+            auto conta = [&counts](const char* chiave) {
+                const auto it = counts.find(chiave);
+                return it == counts.end() ? 0 : it->second;
+            };
+            // `queued` include downloaded_waiting_conversion: in coda, non
+            // ancora in conversione. Somma dei campi = totale.
+            const int queued = conta("queued_download") + conta("downloaded_waiting_conversion");
+            const int downloading = conta("downloading");
+            const int converting = conta("converting");
+            const int retry = conta("retry_wait");
+            sendJson(res, successJson({{"run", run},
+                                       {"coda",
+                                        {{"queued", queued},
+                                         {"downloading", downloading},
+                                         {"converting", converting},
+                                         {"retry", retry},
+                                         {"totale", queued + downloading + converting + retry}}},
+                                       {"problemi",
+                                        {{"non_riusciti", conta("failed")},
+                                         {"interrotti", conta("interrupted")}}}}));
+        });
+
+        // Attività, vista "Avvii": finestra/origine/stato + paginazione.
+        m_svr.Get("/api/runs", [this](const httplib::Request& req, httplib::Response& res) {
+            const std::string window =
+                req.has_param("window") ? req.get_param_value("window") : "recenti";
+            const std::string origine =
+                req.has_param("origine") ? req.get_param_value("origine") : "tutte";
+            const std::string stato =
+                req.has_param("stato") ? req.get_param_value("stato") : "tutti";
+            int limit = interoDa(req, "limit", 20);
+            if (limit <= 0)
+                limit = 20;
+            const int offset = (std::max)(0, interoDa(req, "offset", 0));
+            Core::PipelineJobStore store(m_dbPath);
+            Core::RunCounts counts;
+            int total = 0;
+            const auto runs =
+                store.listRuns(window, origine, stato, limit, offset, &total, &counts);
+            nlohmann::json items = nlohmann::json::array();
+            for (const auto& r : runs)
+                items.push_back(runToJson(r));
+            sendJson(res, successJson({{"items", items},
+                                       {"total", total},
+                                       {"counts",
+                                        {{"in_corso", counts.inCorso},
+                                         {"recenti", counts.recenti},
+                                         {"problemi", counts.problemi}}}}));
+        });
+
+        // Dettaglio run: job in ordine di id, con la cartella serie per la
+        // locandina (stesso criterio di /api/pipeline).
+        m_svr.Get(R"(/api/runs/([^/]+))", [this](const httplib::Request& req,
+                                                 httplib::Response& res) {
+            const std::string id = req.matches.size() > 1 ? req.matches[1].str() : std::string();
+            Core::PipelineJobStore store(m_dbPath);
+            const auto run = store.runSummary(id);
+            if (!run) {
+                sendJson(res, errorJson("Run not found", 404), 404);
+                return;
+            }
+            std::map<std::string, std::string> percorsi;
+            for (const auto& s : m_seriesRepository.snapshotSeriesData())
+                percorsi[s.name] = s.path;
+            nlohmann::json jobs = nlohmann::json::array();
+            for (const auto& j : store.runJobs(id)) {
+                auto item = jobToJson(j);
+                const auto it = percorsi.find(j.serie);
+                item["path"] = it == percorsi.end() ? "" : it->second;
+                jobs.push_back(std::move(item));
+            }
+            sendJson(res, successJson({{"run", runToJson(*run)}, {"jobs", jobs}}));
+        });
+
+        // "Riprova i falliti" del run: retryNow su tutti i job failed, senza
+        // azzerare i tentativi (coerente con il retry del singolo job).
+        m_svr.Post(R"(/api/runs/([^/]+)/retry-failed)", [this](const httplib::Request& req,
+                                                               httplib::Response& res) {
+            const std::string id = req.matches.size() > 1 ? req.matches[1].str() : std::string();
+            Core::PipelineJobStore store(m_dbPath);
+            if (!store.runSummary(id)) {
+                sendJson(res, errorJson("Run not found", 404), 404);
+                return;
+            }
+            const int riprovati = store.retryFailedRun(id);
+            if (riprovati < 0) {
+                sendJson(res, errorJson("Storage error: " + store.lastError(), 500), 500);
+                return;
+            }
+            sendJson(res, successJson({{"retried", riprovati}}));
+        });
     }
 
     // ---- SPAZIO ----
