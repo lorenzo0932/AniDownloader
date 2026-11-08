@@ -177,7 +177,10 @@
     color: var(--text-muted); font-size: 12px;
   }
   .run-sep { color: var(--text-muted); }
-  .run-counts { display: inline-flex; gap: 0.4rem; white-space: nowrap; }
+  .run-counts { display: inline-flex; gap: 0.25rem; white-space: nowrap; }
+  .run-counts > span + span::before {
+    content: '·'; color: var(--text-muted); margin-right: 0.25rem;
+  }
   .run-counts .ok { color: var(--success); }
   .run-counts .corso { color: var(--accent-light); }
   .run-counts .ko { color: var(--danger); }
