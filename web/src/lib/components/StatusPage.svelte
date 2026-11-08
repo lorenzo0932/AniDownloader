@@ -5,7 +5,7 @@
   import ConfirmModal from './ConfirmModal.svelte';
   import DetailModal from './DetailModal.svelte';
   import OverallHeader from './OverallHeader.svelte';
-  import ProgressList from './ProgressList.svelte';
+  import RunCard from './RunCard.svelte';
   import RecentSeriesRow from './RecentSeriesRow.svelte';
   import DownloadEventLog from './DownloadEventLog.svelte';
   import { emptyDownloadState, applyDownloadEvent } from '../downloadState.js';
@@ -13,35 +13,37 @@
   let seriesList = $state([]);
   let run = $state(emptyDownloadState());
   let starting = $state(false);
-  let hydration = $state(0);
   let downloadRunning = $derived(run.running);
   let overallStatus = $derived(run.status);
   let sseConnected = $state(false);
   let sse = $state.raw(null);
   let error = $state('');
-  let hasRun = $derived(run.runId > 0);
   let phase = $derived(run.phase);
-  let stats = $derived({ total: run.tasks.length,
-    done: run.tasks.filter(t => t.phase === 'completed').length,
-    skipped: run.tasks.filter(t => t.phase === 'skipped').length,
-    errors: run.tasks.filter(t => t.phase === 'error').length,
-    interrupted: run.tasks.filter(t => t.phase === 'interrupted').length,
-    dlTime: run.tasks.reduce((n, t) => n + (t.dlTime || 0), 0),
-    convTime: run.tasks.reduce((n, t) => n + (t.convTime || 0), 0),
-  });
-  let summary = $derived(phase === 'done' ? stats : null);
   let recentAdded = $state([]);
   let recentlyDownloaded = $state([]);
-  let pipelineCounts = $state(null);
+  let overview = $state(null);
+  let overviewError = $state('');
+  let overviewTimer = null;
+  let disposed = false;
 
-  async function loadPipelineSummary() {
+  async function loadOverview() {
     try {
-      const data = await api.pipeline.list({ limit: 1 });
-      pipelineCounts = data.counts || {};
+      const data = await api.runs.overview();
+      if (disposed) return;
+      overview = data;
+      overviewError = '';
     } catch {
-      // Riepilogo non essenziale: la Home resta usabile senza pipeline.
-      pipelineCounts = pipelineCounts || null;
+      // Errore transitorio: tengo l'ultima panoramica e segnalo in modo discreto.
+      if (!disposed) overviewError = 'Panoramica non disponibile.';
     }
+  }
+
+  function scheduleOverview() {
+    if (overviewTimer) clearTimeout(overviewTimer);
+    overviewTimer = setTimeout(() => {
+      overviewTimer = null;
+      loadOverview();
+    }, 600);
   }
 
   function apriAttivita(e) {
@@ -63,12 +65,8 @@
     } catch {}
   }
 
-  let taskValues = $derived(run.tasks);
-  let waitingSeries = $derived(run.running ? seriesList.filter(s =>
-    !taskValues.some(t => t.seriesName === s.name)) : []);
   let syncing = false;
   let buffered = [];
-  let disposed = false;
   let resyncRequested = false;
 
   function refreshStatus() {
@@ -87,7 +85,6 @@
       ]);
       if (disposed) return;
       run = { ...emptyDownloadState(), ...dl };
-      hydration++;
       seriesList = seriesData.series || [];
       error = '';
     } catch (e) {
@@ -187,7 +184,7 @@
           loadRecentAdded();
           loadRecentlyDownloaded();
         }
-        if (data.type === 'done' || data.type === 'queue') loadPipelineSummary();
+        if (['progress', 'finished', 'done', 'queue'].includes(data.type)) scheduleOverview();
       } catch { /* ignore parse errors */ }
     };
     sse.onerror = () => { sseConnected = false; };
@@ -196,16 +193,19 @@
   onMount(() => {
     loadConfig();
     loadStatus();
+    loadOverview();
     connectSse();
     loadRecentAdded();
     loadRecentlyDownloaded();
-    loadPipelineSummary();
-    const pipelineInterval = setInterval(loadPipelineSummary, 10000);
-    return () => clearInterval(pipelineInterval);
+    const overviewInterval = setInterval(() => {
+      if (!document.hidden) loadOverview();
+    }, 3000);
+    return () => clearInterval(overviewInterval);
   });
 
   onDestroy(() => {
     disposed = true;
+    if (overviewTimer) clearTimeout(overviewTimer);
     if (sse) sse.close();
   });
 </script>
@@ -216,58 +216,24 @@
     {overallStatus}
     {sseConnected}
     {phase}
-    {summary}
     {starting}
     onstart={startDownload}
     onstop={stopClicked}
   />
 
+  <RunCard
+    run={overview?.run ?? null}
+    coda={overview?.coda ?? null}
+    problemi={overview?.problemi ?? null}
+    onopen={apriAttivita}
+  />
+
+  {#if overviewError}
+    <p class="overview-note" role="status">{overviewError}</p>
+  {/if}
+
   {#if error}
     <div class="error" role="alert">{error}</div>
-  {/if}
-
-  {#if pipelineCounts}
-    <div class="pipeline-summary" aria-label="Riepilogo attività">
-      <span>In coda: <strong>{(pipelineCounts.queued_download ?? 0) + (pipelineCounts.retry_wait ?? 0)}</strong></span>
-      <span class="sep" aria-hidden="true">·</span>
-      <span>download: <strong>{pipelineCounts.downloading ?? 0}</strong></span>
-      <span class="sep" aria-hidden="true">·</span>
-      <span>conversione: <strong>{(pipelineCounts.converting ?? 0) + (pipelineCounts.downloaded_waiting_conversion ?? 0)}</strong></span>
-      <a href="/attivita" class="pipeline-link" onclick={apriAttivita}>Vedi attività</a>
-    </div>
-  {/if}
-
-  {#if summary}
-    <div class="summary-box">
-      {#if !run.stopped && !summary.errors}
-        <svg class="summary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-      {/if}
-      <div class="summary-body">
-        <span class="summary-title">{run.stopped ? 'Elaborazione interrotta' : summary.errors ? 'Elaborazione terminata con errori' : 'Elaborazione completata'}</span>
-        <div class="summary-stats">
-          <span class="stat stat-done">{summary.done} completate</span>
-          <span class="stat stat-skipped">{summary.skipped} saltate</span>
-          <span class="stat stat-error">{summary.errors} errori</span>
-          {#if summary.interrupted}<span class="stat stat-error">{summary.interrupted} interrotti</span>{/if}
-          <span class="stat stat-total">{summary.total} totali</span>
-        </div>
-        {#if stats.dlTime > 0 || stats.convTime > 0}
-          <div class="summary-times">
-            Download: {stats.dlTime.toFixed(1)}s &middot; Conversione: {stats.convTime.toFixed(1)}s
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  {#if hasRun}
-    <ProgressList
-      tasks={taskValues}
-      {waitingSeries}
-      {seriesList}
-      running={downloadRunning}
-      {hydration}
-    />
   {/if}
 
     <div class="dashboard-tables">
@@ -377,34 +343,7 @@
     padding: 0.75rem; border-radius: 8px; font-size: 0.85rem;
   }
 
-  .summary-box {
-    display: flex; align-items: flex-start; gap: 0.6rem;
-    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;
-    padding: 0.65rem 0.75rem;
-  }
-
-  .pipeline-summary {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.5rem;
-    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;
-    padding: 0.55rem 0.75rem; font-size: 0.85rem; color: var(--text-secondary);
-  }
-  .pipeline-summary strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
-  .pipeline-summary .sep { color: var(--text-muted); }
-  .pipeline-link {
-    margin-left: auto; color: var(--accent-light); font-weight: 600;
-    text-decoration: none; white-space: nowrap;
-  }
-  .pipeline-link:hover { text-decoration: underline; }
-  .summary-icon { width: 18px; height: 18px; color: var(--success); flex-shrink: 0; margin-top: 2px; }
-  .summary-body { flex: 1; min-width: 0; }
-  .summary-title { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 0.3rem; }
-  .summary-stats { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-bottom: 0.2rem; }
-  .stat { font-size: 0.8rem; font-weight: 600; }
-  .stat-done { color: var(--success); }
-  .stat-skipped { color: var(--warning); }
-  .stat-error { color: var(--danger); }
-  .stat-total { color: var(--text-muted); }
-  .summary-times { font-size: 0.78rem; color: var(--text-muted-more); }
+  .overview-note { margin: 0; color: var(--text-muted); font-size: 0.78rem; }
 
   .dashboard-tables {
     display: grid;

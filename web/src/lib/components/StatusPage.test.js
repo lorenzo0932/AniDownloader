@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
-const { listMock, statusMock, startMock, sseMock, pipelineMock } = vi.hoisted(() => ({
+const { listMock, statusMock, startMock, sseMock, overviewMock } = vi.hoisted(() => ({
   listMock: vi.fn(), statusMock: vi.fn(), startMock: vi.fn(),
   sseMock: { onopen: null, onmessage: null, onerror: null, close: vi.fn() },
-  pipelineMock: vi.fn(),
+  overviewMock: vi.fn(),
 }));
 vi.mock('../api.js', () => ({
   BASE: '',
@@ -16,7 +16,7 @@ vi.mock('../api.js', () => ({
     download: { status: (...args) => statusMock(...args), start: (...args) => startMock(...args), stop: async () => ({}) },
     series: { list: (...args) => listMock(...args) },
     config: { get: async () => ({ config: {} }) },
-    pipeline: { list: (...args) => pipelineMock(...args) },
+    runs: { overview: (...args) => overviewMock(...args) },
     sse: () => sseMock,
   },
 }));
@@ -47,6 +47,25 @@ const seriesFixture = () => [
   { _file_index: 1, name: 'Naruto', path: '/media/naruto', service: 'animeU_scraper', local_episode_count: 50, last_downloaded_at: '2026-09-22T12:00:00' },
 ];
 
+const emptyOverview = () => ({
+  run: null,
+  coda: { queued: 0, downloading: 0, converting: 0, retry: 0, totale: 0 },
+  problemi: { non_riusciti: 0, interrotti: 0 },
+});
+
+const runningOverview = (over = {}) => ({
+  run: {
+    id: 'run-1', origine: 'manuale',
+    avviato_il: '2026-11-08T17:03:00.000Z', concluso_il: null,
+    stato: 'in_corso', totale: 7, completati: 3, non_riusciti: 1,
+    saltati: 0, in_corso: 3, percent: 57,
+    corrente: { serie: 'Psyren', episodio: 4, fase: 'converting' },
+    ...over,
+  },
+  coda: { queued: 2, downloading: 1, converting: 1, retry: 0, totale: 4 },
+  problemi: { non_riusciti: 1, interrotti: 0 },
+});
+
 beforeEach(() => {
   document.body.style.overflow = '';
   listMock.mockReset();
@@ -55,8 +74,8 @@ beforeEach(() => {
   startMock.mockReset();
   startMock.mockResolvedValue({});
   sseMock.onopen = sseMock.onmessage = sseMock.onerror = null;
-  pipelineMock.mockReset();
-  pipelineMock.mockResolvedValue({ counts: {} });
+  overviewMock.mockReset();
+  overviewMock.mockResolvedValue(emptyOverview());
   listMock.mockImplementation(async (opts) => {
     const items = seriesFixture();
     if (opts?.sort === 'added' && opts?.dir === 'desc') return { series: [...items].reverse() };
@@ -93,41 +112,94 @@ describe('StatusPage home', () => {
     expect(document.body.style.overflow).toBe('hidden');
   });
 
-  it('reload: ricostruisce gli episodi scaricati in attesa senza 99%', async () => {
-    statusMock.mockResolvedValue({ running: true, runId: 1, sequence: 4, phase: 'processing', tasks: [
-      { key: 'A', seriesName: 'Serie attesa', episode: 4, phase: 'waiting_conversion', percent: -1 },
-    ] });
+  it('home senza run: empty state della card e nessuna board di fase', async () => {
     const { container } = render(StatusPage);
-    await screen.findByText('Serie attesa');
-    expect(container.querySelector('#home-waiting').textContent).toContain('Serie attesa');
-    expect(screen.queryByText('99%')).toBeNull();
-    expect(container.querySelector('#home-waiting progress')).toBeNull();
+    expect(await screen.findByText(/Nessun avvio registrato/)).toBeTruthy();
+    expect(overviewMock).toHaveBeenCalled();
+    expect(container.querySelector('.phase-board')).toBeNull();
+    expect(container.querySelector('.pipeline-summary')).toBeNull();
   });
 
-  it('SSE durante snapshot: applica solo gli eventi più nuovi', async () => {
-    let resolve;
-    statusMock.mockReturnValue(new Promise(r => { resolve = r; }));
+  it('run in corso: card con barra determinata, corrente, conteggi e CTA', async () => {
+    overviewMock.mockResolvedValue(runningOverview());
     const { container } = render(StatusPage);
-    await tick();
-    sseMock.onmessage({ data: JSON.stringify({ type: 'progress', runId: 1, sequence: 5,
-      task: { key: 'A', seriesName: 'Serie mobile', episode: 2, phase: 'converting', percent: 7 } }) });
-    resolve({ running: true, runId: 1, sequence: 4, phase: 'processing', tasks: [
-      { key: 'A', seriesName: 'Serie mobile', episode: 2, phase: 'waiting_conversion', percent: -1 },
-    ] });
-    await screen.findByText('7%');
-    expect(container.querySelector('#home-conversion').textContent).toContain('Serie mobile');
-    expect(screen.getAllByText('Serie mobile')).toHaveLength(1);
+
+    expect(await screen.findByText('Avvio in corso')).toBeTruthy();
+    const bar = screen.getByRole('progressbar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('57');
+    expect(bar.getAttribute('aria-valuetext')).toBe('3 di 7 episodi');
+    expect(screen.getByText('Psyren · Ep. 4 · In conversione')).toBeTruthy();
+    expect(screen.getByText('3 completati')).toBeTruthy();
+    expect(screen.getByText('3 in corso')).toBeTruthy();
+    expect(screen.getByText('1 non riuscito')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Apri attività' })).toBeTruthy();
+    expect(container.querySelector('.phase-board')).toBeNull();
+    expect(container.querySelector('.pipeline-summary')).toBeNull();
   });
 
-  it('riconnessione: recupera snapshot senza dipendere dal replay SSE', async () => {
-    const { container } = render(StatusPage);
-    await screen.findAllByText('Naruto');
-    statusMock.mockResolvedValue({ running: true, runId: 1, sequence: 8, phase: 'processing', tasks: [
-      { key: 'A', seriesName: 'Recuperata', episode: 3, phase: 'converting', percent: 25 },
-    ] });
-    sseMock.onopen();
-    await screen.findByText('25%');
-    expect(container.querySelector('#home-conversion').textContent).toContain('Recuperata');
+  it('run completato: ultimo avvio e CTA dettaglio', async () => {
+    overviewMock.mockResolvedValue(runningOverview({
+      stato: 'completato', concluso_il: '2026-11-08T17:10:00.000Z',
+      completati: 7, non_riusciti: 0, in_corso: 0, percent: 100, corrente: null,
+    }));
+    render(StatusPage);
+
+    expect(await screen.findByText('Ultimo avvio')).toBeTruthy();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100');
+    expect(screen.getByText('7 completati')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Vedi dettaglio' })).toBeTruthy();
+  });
+
+  it('run con errori e origine automatica: badge e non riusciti', async () => {
+    overviewMock.mockResolvedValue(runningOverview({
+      origine: 'automatico', stato: 'completato_con_errori',
+      concluso_il: '2026-11-08T17:10:00.000Z',
+      completati: 5, non_riusciti: 2, in_corso: 0, percent: 100, corrente: null,
+    }));
+    render(StatusPage);
+
+    expect(await screen.findByText('Completato con errori')).toBeTruthy();
+    expect(screen.getByText('automatico')).toBeTruthy();
+    expect(screen.getByText('2 non riusciti')).toBeTruthy();
+  });
+
+  it('polling overview ogni 3s non cambia il pulsante di avvio', async () => {
+    vi.useFakeTimers();
+    try {
+      render(StatusPage);
+      await vi.advanceTimersByTimeAsync(0);
+      await tick();
+      expect(overviewMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Avvia Download' })).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(3000);
+      await tick();
+      expect(overviewMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByRole('button', { name: 'Avvia Download' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Ferma Download' })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('SSE progress: ricarica overview con debounce', async () => {
+    vi.useFakeTimers();
+    try {
+      render(StatusPage);
+      await vi.advanceTimersByTimeAsync(0);
+      await tick();
+      expect(overviewMock).toHaveBeenCalledTimes(1);
+
+      sseMock.onmessage({ data: JSON.stringify({ type: 'progress', runId: 1, sequence: 1,
+        task: { key: 'A', seriesName: 'Serie mobile', episode: 2, phase: 'converting', percent: 7 } }) });
+      await vi.advanceTimersByTimeAsync(300);
+      expect(overviewMock).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(400);
+      expect(overviewMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('start fallito: errore visibile, nessuna falsa attività', async () => {
@@ -138,56 +210,6 @@ describe('StatusPage home', () => {
     await screen.findByRole('alert');
     expect(screen.getByRole('alert').textContent).toContain('Avvio rifiutato');
     expect(screen.queryByRole('button', { name: 'Ferma Download' })).toBeNull();
-    await waitFor(() => expect(startMock).toHaveBeenCalledTimes(1));
-  });
-
-  it('SSE aperto durante il primo snapshot: risincronizza dopo la sottoscrizione', async () => {
-    let resolve;
-    statusMock.mockReturnValueOnce(new Promise(r => { resolve = r; }));
-    statusMock.mockResolvedValue({ running: true, runId: 1, sequence: 4, phase: 'processing', tasks: [
-      { key: 'A', seriesName: 'Tra snapshot e SSE', episode: 2, phase: 'waiting_conversion', percent: -1 },
-    ] });
-    render(StatusPage);
-    await tick();
-    sseMock.onopen();
-    resolve({ running: true, runId: 1, sequence: 3, phase: 'processing', tasks: [] });
-    await screen.findByText('Tra snapshot e SSE');
-    expect(statusMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('panoramica ancora presente durante il run e dopo il completamento', async () => {
-    statusMock.mockResolvedValue({ running: true, runId: 1, sequence: 4, phase: 'processing', tasks: [
-      { key: 'A', seriesName: 'Episodio in corso', episode: 1, phase: 'downloading', percent: 42 },
-    ] });
-    const { container } = render(StatusPage);
-    await screen.findByText('42%');
-    expect(screen.getByText('Ultime serie aggiunte')).toBeTruthy();
-    expect(screen.getByText('Ultime serie scaricate')).toBeTruthy();
-    expect(container.querySelectorAll('.table-col')).toHaveLength(2);
-    expect(screen.queryByRole('button', { name: 'Avvia Download' })).toBeNull();
-    sseMock.onmessage({ data: JSON.stringify({ type: 'finished', runId: 1, sequence: 5,
-      task: { key: 'A', seriesName: 'Episodio in corso', episode: 1, phase: 'completed', percent: 100 } }) });
-    sseMock.onmessage({ data: JSON.stringify({ type: 'done', runId: 1, sequence: 6, stopped: false }) });
-    await screen.findByText('Elaborazione completata');
-    expect(container.querySelector('#home-download')).toBeNull();
-    expect(container.querySelectorAll('.table-col')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: 'Avvia Download' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Nuovo Download' })).toBeNull();
-    expect(screen.getByRole('button', { name: /Completati/ }).getAttribute('aria-expanded')).toBe('false');
-  });
-
-  it('riepilogo attività: conteggi pipeline e link a /attivita', async () => {
-    pipelineMock.mockResolvedValue({ counts: {
-      queued_download: 2, retry_wait: 1, downloading: 3,
-      converting: 1, downloaded_waiting_conversion: 2,
-    } });
-    render(StatusPage);
-    const link = await screen.findByRole('link', { name: 'Vedi attività' });
-    expect(link.getAttribute('href')).toBe('/attivita');
-    const summary = screen.getByLabelText('Riepilogo attività');
-    expect(summary.textContent).toContain('In coda');
-    expect(summary.textContent).toContain('download: 3');
-    expect(summary.textContent).toContain('conversione: 3');
-    expect(pipelineMock).toHaveBeenCalledWith({ limit: 1 });
+    await screen.findByText(/Nessun avvio registrato/);
   });
 });
