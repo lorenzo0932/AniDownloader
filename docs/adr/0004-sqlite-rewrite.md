@@ -74,3 +74,8 @@ separati, budget conversione = 2, stato serie al completamento) è attivo,
 ma la forma non coincide con quella prevista. Riconciliazione formale
 (pool nel coordinator con contesto iniettato) tracciata in
 `plan/parity-os.md` e `plan/pipeline-code.md`; nessun cambio di schema o API.
+
+Aggiornamento 2026-11-08: la riconciliazione è stata eseguita. I due pool
+vivono ora in `PipelineCoordinator::start(PipelineRunContext)`; `ExecutionEngine`
+pianifica, accoda e attende, senza pool propri. L'addendum sopra resta come
+traccia della deviazione temporanea.

@@ -1,5 +1,6 @@
 #include "core/ExecutionEngine.hpp"
 #include "core/Logger.hpp"
+#include "core/PipelineCoordinator.hpp"
 #include "core/PipelineJobStore.hpp"
 #include "core/PlanningService.hpp"
 #include "core/SeriesIdentity.hpp"
@@ -41,9 +42,6 @@ namespace Core {
         onStatus("Analisi e download in parallelo...");
 
         auto strategy = m_config.getExecutionStrategy(seriesList.size(), burstMode);
-        auto strategyDl = strategy;
-        strategyDl.convertToH265 = false;
-
         auto attivi = [&store]() {
             const auto c = store.counts();
             auto g = [&c](const char* k) {
@@ -53,69 +51,31 @@ namespace Core {
             return g("queued_download") + g("downloading") + g("downloaded_waiting_conversion") +
                    g("converting");
         };
-        auto retryOrFail = [](PipelineJobStore& st, const PipelineJob& job,
-                              const std::string& errore) {
-            static const std::int64_t backoff[] = {300, 900, 3600};
-            if (job.tentativi >= PipelineJobStore::kMaxTentativi) {
-                st.fail(job.id, errore);
-                return;
-            }
-            const auto i = static_cast<std::size_t>(
-                (std::min)(job.tentativi, static_cast<int>(std::size(backoff)) - 1));
-            st.retry(job.id, backoff[i], errore);
+
+        // I pool sono del PipelineCoordinator: il run inietta solo il contesto
+        // (progress, activity, stop, strategy, completamento).
+        PipelineRunContext ctx;
+        ctx.strategy = strategy;
+        ctx.stop = &stopSignal;
+        ctx.onProgress = onProgress;
+        ctx.onActivity = onActivity;
+        ctx.onCompleted = m_onCompleted;
+        ctx.onFinished = [onTaskFinished](const std::string& name, int ep, double dlTime,
+                                          double convTime) {
+            if (onTaskFinished)
+                onTaskFinished({.name = name,
+                                .success = true,
+                                .episodeNumber = ep,
+                                .dlTime = dlTime,
+                                .convTime = convTime,
+                                .error = ""});
         };
+        const int dlWorkers = (std::min)(static_cast<int>(seriesList.size()),
+                                         (std::max)(strategy.maxConcurrentTasks, 2));
+        PipelineCoordinator coordinatore(m_store->dbPath(), dlWorkers, 2);
+        coordinatore.start(ctx);
 
-        std::atomic<bool> chiudi{false};
-        std::vector<std::future<void>> pools;
-
-        // Pool conversione (budget globale = 2 episodi).
-        for (int i = 0; i < 2; ++i) {
-            pools.push_back(std::async(std::launch::async, [&]() {
-                while (true) {
-                    auto job = store.claim("downloaded_waiting_conversion", "converting");
-                    if (!job.has_value()) {
-                        if (chiudi.load() && attivi() == 0)
-                            return;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        continue;
-                    }
-                    Series serie;
-                    serie.name = job->serie;
-                    serie.path = job->seriePath;
-                    auto progressCb = [onProgress, ep = job->episodio](const std::string& n,
-                                                                       const std::string& m) {
-                        if (onProgress)
-                            onProgress(n, ep, m);
-                    };
-                    MediaProcessor mp(
-                        progressCb, stopSignal,
-                        [onActivity, n = job->serie, ep = job->episodio](const TaskProgress& p) {
-                            if (onActivity)
-                                onActivity(n, ep, p);
-                        });
-                    double convTime = 0.0;
-                    const bool ok = !job->filePath.empty() &&
-                                    mp.convertFile(job->filePath, job->serie, strategy, convTime);
-                    if (ok) {
-                        store.transition(job->id, "converting", "completed");
-                        if (m_onCompleted)
-                            m_onCompleted(job->serie, job->episodio);
-                        if (onTaskFinished)
-                            onTaskFinished({.name = job->serie,
-                                            .success = true,
-                                            .episodeNumber = job->episodio,
-                                            .dlTime = 0.0,
-                                            .convTime = convTime,
-                                            .error = ""});
-                    } else {
-                        retryOrFail(store, *job, "conversione fallita");
-                    }
-                }
-            }));
-        }
-
-        // Pianificazione: appena una serie è pronta, i suoi job entrano in
-        // coda e i pool partono (variante B).
+        // Pianificazione: appena una serie è pronta, i job entrano in coda.
         auto pending = std::make_shared<std::atomic<int>>(0);
         std::vector<std::thread> analysis;
         analysis.reserve(seriesList.size());
@@ -159,71 +119,6 @@ namespace Core {
             });
         }
 
-        // Pool download: scarica e pubblica; la conversione è del secondo pool.
-        std::vector<std::future<void>> dl;
-        int dlWorkers = (std::min)(static_cast<int>(seriesList.size()),
-                                   (std::max)(strategy.maxConcurrentTasks, 2));
-        for (int i = 0; i < dlWorkers; ++i) {
-            dl.push_back(std::async(std::launch::async, [&]() {
-                while (true) {
-                    auto job = store.claim("queued_download", "downloading");
-                    if (!job.has_value()) {
-                        if (chiudi.load() && attivi() == 0)
-                            return;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        continue;
-                    }
-                    DownloadTask task;
-                    task.shouldProcess = true;
-                    task.episodeNumber = job->episodio;
-                    try {
-                        const auto payload = nlohmann::json::parse(job->payload);
-                        task.videoUrl = payload.value("videoUrl", "");
-                        task.fileName = payload.value("fileName", "");
-                    } catch (const std::exception&) {
-                        retryOrFail(store, *job, "payload job illeggibile");
-                        continue;
-                    }
-                    Series serie;
-                    serie.name = job->serie;
-                    serie.path = job->seriePath;
-                    auto progressCb = [onProgress, ep = job->episodio](const std::string& n,
-                                                                       const std::string& m) {
-                        if (onProgress)
-                            onProgress(n, ep, m);
-                    };
-                    MediaProcessor mp(
-                        progressCb, stopSignal,
-                        [onActivity, n = job->serie, ep = job->episodio](const TaskProgress& p) {
-                            if (onActivity)
-                                onActivity(n, ep, p);
-                        });
-                    ProcessResult res = mp.processTask(task, serie, strategyDl);
-                    if (res.success) {
-                        store.setFilePath(job->id, res.filePath);
-                        if (strategy.convertToH265) {
-                            store.transition(job->id, "downloading",
-                                             "downloaded_waiting_conversion");
-                        } else {
-                            // Conversione OFF: il job è completo dopo il download.
-                            store.transition(job->id, "downloading", "completed");
-                            if (m_onCompleted)
-                                m_onCompleted(job->serie, job->episodio);
-                            if (onTaskFinished)
-                                onTaskFinished({.name = job->serie,
-                                                .success = true,
-                                                .episodeNumber = job->episodio,
-                                                .dlTime = res.downloadTime,
-                                                .convTime = 0.0,
-                                                .error = ""});
-                        }
-                    } else {
-                        retryOrFail(store, *job, res.errorMessage);
-                    }
-                }
-            }));
-        }
-
         while (*pending > 0 && !stopSignal)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -240,15 +135,7 @@ namespace Core {
             while (attivi() > 0 && !stopSignal)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        chiudi.store(true);
-        for (auto& f : dl) {
-            while (f.wait_for(std::chrono::milliseconds(200)) != std::future_status::ready) {
-                if (stopSignal)
-                    break;
-            }
-        }
-        for (auto& f : pools)
-            f.wait();
+        coordinatore.stop();
         onStatus(stopSignal ? "Processo interrotto." : "Elaborazione completata.");
     }
 

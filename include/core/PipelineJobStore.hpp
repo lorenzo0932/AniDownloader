@@ -72,6 +72,7 @@ namespace Core {
                                                     int limit = 100) const;
         [[nodiscard]] std::map<std::string, int> counts() const;
         [[nodiscard]] std::string lastError() const;
+        [[nodiscard]] const std::filesystem::path& dbPath() const noexcept { return m_dbPath; }
 
         static constexpr int kMaxTentativi = 3;
 

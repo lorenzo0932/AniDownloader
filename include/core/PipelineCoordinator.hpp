@@ -1,6 +1,8 @@
 #pragma once
 
+#include "config/AppConfigManager.hpp"
 #include "core/PipelineJobStore.hpp"
+#include "core/TaskProgress.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -18,6 +20,17 @@
 // limite per origine.
 namespace Core {
 
+    // Contesto di un run: i pool del coordinator lavorano con i callback del
+    // run chiamante (progress, activity, stop, strategy, completamento).
+    struct PipelineRunContext {
+        Config::ExecutionStrategy strategy;
+        std::atomic<bool>* stop{nullptr};
+        std::function<void(const std::string&, int, const std::string&)> onProgress;
+        std::function<void(const std::string&, int, const TaskProgress&)> onActivity;
+        std::function<void(const std::string&, int, double, double)> onFinished;
+        std::function<void(const std::string&, int)> onCompleted;
+    };
+
     class PipelineCoordinator {
       public:
         // true = handler riuscito (il coordinatore avanza la fase); false =
@@ -34,6 +47,7 @@ namespace Core {
         void setConversionHandler(Handler handler);
 
         void start();
+        void start(const PipelineRunContext& ctx);
         void stop();
 
         [[nodiscard]] bool attivo() const noexcept;
@@ -51,6 +65,8 @@ namespace Core {
       private:
         void cicloDownload();
         void cicloConversione();
+        void cicloDownloadCtx();
+        void cicloConversioneCtx();
         void esegui(PipelineJobStore& store, const PipelineJob& job, const Handler& handler,
                     const std::string& faseCorrente);
 
@@ -61,6 +77,8 @@ namespace Core {
         Handler m_conversionHandler;
         std::vector<std::thread> m_threads;
         std::atomic<bool> m_attivo{false};
+        PipelineRunContext m_ctx;
+        bool m_usaCtx{false};
     };
 
 } // namespace Core

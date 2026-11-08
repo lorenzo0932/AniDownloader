@@ -302,11 +302,12 @@ conversione), la conversione ha budget globale pari ai suoi worker (default
 
 Integrazione (fase 2): `ExecutionEngine::setPipeline()` abilita il percorso a
 due pool. La pianificazione accoda un job per `JobKey` (identity+episodio) con
-payload `videoUrl`/`fileName` e `serie_path`; il pool download usa
-`processTask` con conversione disattivata e salva `file_path`, il pool
-conversione (2) usa `convertFile`. Al completamento aggiorna lo stato serie
-(callback del chiamante). `PipelineCoordinator` resta il coordinatore
-generico testato, usato dai test e disponibile per il demone.
+payload `videoUrl`/`fileName` e `serie_path`. I pool vivono nel
+`PipelineCoordinator` e ricevono un `PipelineRunContext` (progress, activity,
+stop, strategy, callback di completamento): il download usa `processTask` con
+conversione disattivata e salva `file_path`, la conversione (2 worker) usa
+`convertFile`. `ExecutionEngine` resta il pianificatore e attende che la coda
+si svuoti, poi ferma il coordinatore.
 
 ### PipelineGate
 `include/core/PipelineGate.hpp` — `src/core/PipelineGate.cpp`
