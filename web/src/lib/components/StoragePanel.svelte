@@ -11,6 +11,9 @@
 
   // Percentuale usata del disco di output (0 quando il totale è ignoto).
   let usatoPct = $derived(percentualeUsata(dati));
+  // Con totalBytes 0 (output dir non montata) il disco non è misurabile:
+  // niente valori finti né barra.
+  let discoDisponibile = $derived((Number(dati?.totalBytes) || 0) > 0);
 
   function percentualeUsata(d) {
     const totale = Number(d?.totalBytes) || 0;
@@ -84,13 +87,18 @@
     <div class="spazio-cards">
       <div class="spazio-card">
         <span class="label">Disco (output)</span>
-        <strong>{fmt(dati.freeBytes)}</strong>
-        <span class="hint">liberi su {fmt(dati.totalBytes)} ({usatoPct}% usato)</span>
-        <div class="barra-utilizzo" role="progressbar" aria-label="Utilizzo disco"
-             aria-valuemin="0" aria-valuemax="100" aria-valuenow={usatoPct}
-             aria-valuetext={`${usatoPct}% usato`}>
-          <div class="barra-fill" style={`width: ${usatoPct}%`}></div>
-        </div>
+        {#if discoDisponibile}
+          <strong>{fmt(dati.freeBytes)}</strong>
+          <span class="hint">liberi su {fmt(dati.totalBytes)} ({usatoPct}% usato)</span>
+          <div class="barra-utilizzo" role="progressbar" aria-label="Utilizzo disco"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow={usatoPct}
+               aria-valuetext={`${usatoPct}% usato`}>
+            <div class="barra-fill" style={`width: ${usatoPct}%`}></div>
+          </div>
+        {:else}
+          <strong>Non disponibile</strong>
+          <span class="hint">disco di output non rilevato</span>
+        {/if}
       </div>
       <div class="spazio-card">
         <span class="label">Cache miniature</span>

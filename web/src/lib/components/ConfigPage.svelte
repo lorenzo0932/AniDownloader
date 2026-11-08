@@ -128,16 +128,16 @@
 </script>
 
 <div in:pageEnter|global>
-<h2>Impostazioni AniDownloader</h2>
-
-{#if error}
-  <div class="error">{error}</div>
-{/if}
-
-{#if busy}
-  <div class="center"><div class="spinner-sm"></div></div>
-{:else if config.notifiche && config.scheduling}
   <div class="settings-shell">
+    <h2>Impostazioni AniDownloader</h2>
+
+    {#if error}
+      <div class="error">{error}</div>
+    {/if}
+
+    {#if busy}
+      <div class="center"><div class="spinner-sm"></div></div>
+    {:else if config.notifiche && config.scheduling}
     <div class="tabs" role="tablist" aria-label="Sezioni impostazioni">
       {#each TABS as t, i (t.id)}
         <button type="button" role="tab"
@@ -319,8 +319,8 @@
         {/if}
       </div>
     </div>
+    {/if}
   </div>
-{/if}
 </div>
 
 <style>
