@@ -8,7 +8,9 @@
 #include "core/FileUtils.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/NotificationStore.hpp"
+#include "core/PipelineCoordinator.hpp"
 #include "core/PipelineGate.hpp"
+#include "core/PipelineJobStore.hpp"
 #include "core/ProcessUtils.hpp"
 #include "core/QueueStore.hpp"
 #include "core/Scheduler.hpp"
@@ -30,6 +32,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -1637,6 +1640,134 @@ static void testNotificationStore() {
     fs::remove_all(dir, ec);
 }
 
+// Pipeline fase 2: coda per-episodio, deduplica/promozione e transizioni.
+static void testPipelineJobStore() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_pipeline_jobs";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    Core::PipelineJobStore store(dir / "p.db");
+    const std::string chiave = "animeW_scraper:/play/x.HASH#1";
+
+    const auto primo = store.enqueue(chiave, "Serie X", 1, "background");
+    CHECK(primo.creato && primo.id > 0);
+    CHECK(!primo.promosso);
+
+    // Stessa JobKey: nessuna seconda riga.
+    const auto duplicato = store.enqueue(chiave, "Serie X", 1, "background");
+    CHECK(!duplicato.creato && duplicato.id == primo.id);
+
+    // Richiesta interattiva: promozione, stessa riga.
+    const auto promosso = store.enqueue(chiave, "Serie X", 1, "interactive");
+    CHECK(!promosso.creato && promosso.promosso && promosso.id == primo.id);
+    {
+        const auto righe = store.list();
+        CHECK(righe.size() == 1);
+        CHECK(righe[0].origine == "interactive");
+        CHECK(righe[0].priorita >= 100);
+        CHECK(righe[0].fase == "queued_download");
+    }
+
+    // Claim atomico: prende il job e lo porta a downloading.
+    const auto preso = store.claim("queued_download", "downloading");
+    CHECK(preso.has_value());
+    CHECK(preso->id == primo.id && preso->fase == "downloading");
+    CHECK(!store.claim("queued_download", "downloading").has_value());
+
+    // Transizione condizionata: la seconda volta non ha effetto.
+    CHECK(store.transition(primo.id, "downloading", "downloaded_waiting_conversion"));
+    CHECK(!store.transition(primo.id, "downloading", "downloaded_waiting_conversion"));
+
+    // Retry con backoff, poi promozione alla scadenza.
+    CHECK(store.retry(primo.id, 3600, "errore di rete"));
+    {
+        const auto righe = store.list("retry_wait");
+        CHECK(righe.size() == 1);
+        CHECK(righe[0].tentativi == 1);
+        CHECK(righe[0].errore == "errore di rete");
+    }
+    CHECK(!store.claim("downloaded_waiting_conversion", "converting").has_value());
+    CHECK(store.promuoviRetry(0) == 0); // non ancora scaduto
+    CHECK(store.promuoviRetry(static_cast<std::int64_t>(std::time(nullptr)) + 3700) == 1);
+
+    // Terminale, poi la stessa JobKey può ripartire.
+    CHECK(store.fail(primo.id, "ko"));
+    CHECK(store.counts()["failed"] == 1);
+    const auto ripartito = store.enqueue(chiave, "Serie X", 1, "background");
+    CHECK(ripartito.creato && ripartito.id != primo.id);
+
+    fs::remove_all(dir, ec);
+}
+
+// Pipeline fase 2: pool separati, budget globale di conversione, retry.
+static void testPipelineCoordinator() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_pipeline_coord";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    const fs::path dbPath = dir / "p.db";
+    {
+        Core::PipelineCoordinator coord(dbPath, 1, 2);
+        std::atomic<int> conversioniInCorso{0};
+        std::atomic<int> massimo{0};
+        coord.setDownloadHandler([](const Core::PipelineJob&) { return true; });
+        coord.setConversionHandler([&](const Core::PipelineJob&) {
+            const int ora = ++conversioniInCorso;
+            int atteso = massimo.load();
+            while (ora > atteso && !massimo.compare_exchange_weak(atteso, ora)) {
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            --conversioniInCorso;
+            return true;
+        });
+        Core::PipelineJobStore store(dbPath);
+        for (int i = 1; i <= 5; ++i)
+            store.enqueue("serie:/a#" + std::to_string(i), "Serie", i, "background");
+        coord.start();
+        bool completati = false;
+        for (int i = 0; i < 500; ++i) {
+            if (coord.counts()["completed"] == 5) {
+                completati = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        coord.stop();
+        CHECK(completati);
+        CHECK(massimo.load() <= 2);
+        CHECK(massimo.load() >= 1);
+    }
+
+    // Handler in errore: retry con backoff, non completato.
+    {
+        Core::PipelineCoordinator coord(dbPath, 1, 1);
+        coord.setDownloadHandler([](const Core::PipelineJob&) { return false; });
+        Core::PipelineJobStore store(dbPath);
+        const auto id = store.enqueue("serie:/ko#9", "Serie", 9, "interactive");
+        coord.start();
+        bool inRetry = false;
+        for (int i = 0; i < 300; ++i) {
+            const auto righe = store.list("retry_wait");
+            if (!righe.empty() && righe[0].id == id.id) {
+                inRetry = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        coord.stop();
+        CHECK(inRetry);
+        CHECK(store.counts()["retry_wait"] >= 1);
+    }
+
+    fs::remove_all(dir, ec);
+}
+
 // Pipeline condivisa (fase 1): un solo esecutore, priorità interattiva.
 static void testPipelineGate() {
     Core::PipelineGate gate;
@@ -2192,6 +2323,8 @@ int main(int argc, char** argv) {
     testQueueStore();
     testNotificationStore();
     testPipelineGate();
+    testPipelineJobStore();
+    testPipelineCoordinator();
     testScheduler();
     testWorkerPool();
 

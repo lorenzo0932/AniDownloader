@@ -179,6 +179,25 @@ Pulizia guidata, due sole azioni sicure: mai file video.
 {"success": true, "removedFiles": 12, "freedBytes": 2097152}
 ```
 
+### `GET /api/pipeline` (dal 3.0)
+
+Coda per-episodio della pipeline condivisa: conteggi per fase e job.
+Parametri: `fase` (opzionale), `limit` (default 100, tetto 500).
+
+```json
+{
+    "success": true,
+    "counts": {"queued_download": 1, "downloading": 0,
+               "downloaded_waiting_conversion": 0, "converting": 0,
+               "completed": 0, "retry_wait": 1, "failed": 0, "interrupted": 0},
+    "items": [
+        {"id": 1, "job_key": "animeW_scraper:/play/x#1", "serie": "Serie X",
+         "episodio": 1, "origine": "interactive", "fase": "queued_download",
+         "tentativi": 0, "prossima_esecuzione": 0, "priorita": 100, "errore": ""}
+    ]
+}
+```
+
 ---
 
 ### `GET /api/series`

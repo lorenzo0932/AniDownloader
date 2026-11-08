@@ -151,7 +151,9 @@ set(HEADERS
     include/core/DbImporter.hpp
     include/core/CheckRunner.hpp
     include/core/NotificationStore.hpp
+    include/core/PipelineCoordinator.hpp
     include/core/PipelineGate.hpp
+    include/core/PipelineJobStore.hpp
     include/core/QueueStore.hpp
     include/core/Scheduler.hpp
     include/core/WorkerPool.hpp
@@ -193,7 +195,9 @@ set(SOURCES
     src/core/DbImporter.cpp
     src/core/ExecutionEngine.cpp
     src/core/NotificationStore.cpp
+    src/core/PipelineCoordinator.cpp
     src/core/PipelineGate.cpp
+    src/core/PipelineJobStore.cpp
     src/core/QueueStore.cpp
     src/core/Scheduler.cpp
     src/core/WorkerPool.cpp
@@ -248,7 +252,9 @@ add_executable(test_core
     src/core/DbImporter.cpp
     src/core/ExecutionEngine.cpp
     src/core/NotificationStore.cpp
+    src/core/PipelineCoordinator.cpp
     src/core/PipelineGate.cpp
+    src/core/PipelineJobStore.cpp
     src/core/QueueStore.cpp
     src/core/Scheduler.cpp
     src/core/WorkerPool.cpp

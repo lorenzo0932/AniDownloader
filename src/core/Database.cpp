@@ -74,6 +74,37 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_unread
     ON notifications(letta, id DESC);
 )";
+
+        // v4: coda per-episodio della pipeline condivisa (fase 2). Una riga
+        // per JobKey (identity+episodio) non terminale: l'indice unico
+        // parziale è il vincolo di deduplica, non una convenzione del codice.
+        // Prossima esecuzione in epoch unix; priorità più alta = prima.
+        constexpr const char* kSchemaV4 = R"(
+CREATE TABLE IF NOT EXISTS pipeline_jobs (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_key             TEXT NOT NULL,
+    serie               TEXT NOT NULL DEFAULT '',
+    episodio            INTEGER NOT NULL DEFAULT 0,
+    origine             TEXT NOT NULL DEFAULT 'background'
+                        CHECK (origine IN ('background', 'interactive')),
+    fase                TEXT NOT NULL DEFAULT 'queued_download'
+                        CHECK (fase IN ('queued_download', 'downloading',
+                                        'downloaded_waiting_conversion',
+                                        'converting', 'completed',
+                                        'retry_wait', 'failed', 'interrupted')),
+    tentativi           INTEGER NOT NULL DEFAULT 0,
+    prossima_esecuzione INTEGER NOT NULL DEFAULT 0,
+    priorita            INTEGER NOT NULL DEFAULT 0,
+    errore              TEXT NOT NULL DEFAULT '',
+    creato_il           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    aggiornato_il       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pipeline_jobs_key
+    ON pipeline_jobs(job_key)
+    WHERE fase NOT IN ('completed', 'failed');
+CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_claim
+    ON pipeline_jobs(fase, prossima_esecuzione, priorita DESC, id);
+)";
     } // namespace
 
     struct Statement::Impl {
@@ -274,6 +305,12 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unread
 
     int Database::schemaVersion() const noexcept { return m_impl ? m_impl->schemaVersion : 0; }
 
+    int Database::changes() const {
+        if (!m_impl || !m_impl->db)
+            return 0;
+        return sqlite3_changes(m_impl->db);
+    }
+
     bool Database::execute(const std::string& sql, std::string* error) {
         if (!isOpen()) {
             if (error)
@@ -339,7 +376,8 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unread
             attuale = v;
             return true;
         };
-        if (!applica(1, kSchemaV1) || !applica(2, kSchemaV2) || !applica(3, kSchemaV3))
+        if (!applica(1, kSchemaV1) || !applica(2, kSchemaV2) || !applica(3, kSchemaV3) ||
+            !applica(4, kSchemaV4))
             return false;
         m_impl->schemaVersion = attuale;
         if (!tx.commit()) {

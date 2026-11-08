@@ -6,6 +6,7 @@
 #include "core/Logger.hpp"
 #include "core/MediaProcessor.hpp"
 #include "core/NotificationStore.hpp"
+#include "core/PipelineJobStore.hpp"
 #include "core/PlanningService.hpp"
 #include "core/QueueStore.hpp"
 #include "core/SeriesIdentity.hpp"
@@ -281,6 +282,7 @@ namespace Web {
         setupNotificationRoutes();
         setupQueueRoutes();
         setupStorageRoutes();
+        setupPipelineRoutes();
         setupSeriesRoutes();
         setupBrowseRoutes();
         setupDiscoverRoutes();
@@ -441,6 +443,54 @@ namespace Web {
             } catch (const std::exception&) {
                 sendJson(res, errorJson("Invalid retry data"), 400);
             }
+        });
+    }
+
+    // ---- PIPELINE (fase 2: coda per-episodio) ----
+    void WebServer::setupPipelineRoutes() {
+        // Sola lettura: la coda per-episodio è il contratto persistente della
+        // pipeline. L'esecuzione dei job sarà collegata nella fase successiva.
+        m_svr.Get("/api/pipeline", [this](const httplib::Request& req, httplib::Response& res) {
+            int limit = 100;
+            if (req.has_param("limit")) {
+                try {
+                    limit = std::stoi(req.get_param_value("limit"));
+                } catch (const std::exception&) {
+                    Core::Logger::warn("/api/pipeline: parametro 'limit' non valido");
+                }
+            }
+            const std::string fase =
+                req.has_param("fase") ? req.get_param_value("fase") : std::string();
+            Core::PipelineJobStore store(m_dbPath);
+            nlohmann::json items = nlohmann::json::array();
+            for (const auto& j : store.list(fase, limit)) {
+                items.push_back({{"id", j.id},
+                                 {"job_key", j.jobKey},
+                                 {"serie", j.serie},
+                                 {"episodio", j.episodio},
+                                 {"origine", j.origine},
+                                 {"fase", j.fase},
+                                 {"tentativi", j.tentativi},
+                                 {"prossima_esecuzione", j.prossimaEsecuzione},
+                                 {"priorita", j.priorita},
+                                 {"errore", j.errore}});
+            }
+            const auto counts = store.counts();
+            auto conta = [&counts](const char* chiave) {
+                const auto it = counts.find(chiave);
+                return it == counts.end() ? 0 : it->second;
+            };
+            sendJson(res, successJson({{"items", items},
+                                       {"counts",
+                                        {{"queued_download", conta("queued_download")},
+                                         {"downloading", conta("downloading")},
+                                         {"downloaded_waiting_conversion",
+                                          conta("downloaded_waiting_conversion")},
+                                         {"converting", conta("converting")},
+                                         {"completed", conta("completed")},
+                                         {"retry_wait", conta("retry_wait")},
+                                         {"failed", conta("failed")},
+                                         {"interrupted", conta("interrupted")}}}}));
         });
     }
 
