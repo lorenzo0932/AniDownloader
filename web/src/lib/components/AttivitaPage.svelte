@@ -234,15 +234,31 @@
     return 'Nessuna attività recente.';
   });
 
+  function deepLinkIniziale() {
+    const predefinito = { vista: 'avvii', tab: 'recenti', run: '' };
+    if (typeof window === 'undefined') return predefinito;
+
+    const params = new URLSearchParams(window.location.search);
+    const run = params.get('run') || '';
+    // Il run ha priorità su tab/vista: la Home lo usa per aprire un avvio.
+    if (run) return { vista: 'avvii', tab: 'recenti', run };
+
+    const richiestoTab = params.get('tab');
+    const tabValido = ['recenti', 'problemi', 'storico'].includes(richiestoTab)
+      ? richiestoTab
+      : 'recenti';
+    // Vista Episodi opzionale; valori sconosciuti restano su Avvii.
+    const vistaValida = params.get('vista') === 'episodi' ? 'episodi' : 'avvii';
+    return { vista: vistaValida, tab: tabValido, run: '' };
+  }
+
   onMount(() => {
     const avvia = async () => {
-      const richiesto = new URLSearchParams(window.location.search).get('run');
-      if (richiesto) {
-        vista = 'avvii';
-        tab = 'recenti';
-      }
+      const iniziale = deepLinkIniziale();
+      vista = iniziale.vista;
+      tab = iniziale.tab;
       await load();
-      if (richiesto) await apriDeepLink(richiesto);
+      if (iniziale.run) await apriDeepLink(iniziale.run);
     };
     avvia();
     const timer = setInterval(poll, INTERVALLO_POLL);
