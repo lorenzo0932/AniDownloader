@@ -141,7 +141,10 @@
   .spazio-card {
     display: flex; flex-direction: column; gap: 0.25rem;
     padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 8px;
+    animation: motion-rise var(--motion-enter) var(--motion-ease-out) backwards;
   }
+  .spazio-card:nth-child(2) { animation-delay: calc(var(--motion-stagger) * 1); }
+  .spazio-card:nth-child(3) { animation-delay: calc(var(--motion-stagger) * 2); }
   .spazio-card .label { color: var(--text-muted); font-size: 12px; }
   .spazio-card strong { font-size: 1.1rem; }
   .hint { color: var(--text-secondary); font-size: 12px; }

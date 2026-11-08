@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { pageEnter } from '../motion.js';
   import { api } from '../api.js';
 
   // Fasi che compongono "In corso": tutto ciò che non è ancora completato.
@@ -125,7 +126,7 @@
   });
 </script>
 
-<div class="attivita">
+<div class="attivita" in:pageEnter|global>
   <header class="head">
     <h1>Attività</h1>
     <button class="btn-refresh" onclick={load} disabled={loading} aria-label="Aggiorna attività">
@@ -161,8 +162,9 @@
       </p>
     {:else}
       <ul class="job-list">
-        {#each visibili as j (j.id)}
-          <li class="job" class:job-failed={j.fase === 'failed'}>
+        {#each visibili as j, i (j.id)}
+          <li class="job" class:job-failed={j.fase === 'failed'}
+              style="--i:{Math.min(i, 8)}">
             <button class="job-main" onclick={() => toggle(j.id)}
                     aria-expanded={aperti[j.id] ? 'true' : 'false'}
                     aria-label={`Dettagli di ${titolo(j)}`}>
@@ -245,6 +247,8 @@
 
   .job-list { list-style: none; display: flex; flex-direction: column; gap: 0.35rem; }
   .job {
+    animation: motion-rise var(--motion-enter) var(--motion-ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * var(--motion-stagger));
     background: var(--bg-secondary); border: 1px solid var(--border-color);
     border-radius: 10px; overflow: hidden;
   }

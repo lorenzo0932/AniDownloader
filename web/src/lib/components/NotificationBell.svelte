@@ -1,5 +1,6 @@
 <script>
   import { api } from '../api.js';
+  import { contentEnter, panelExit } from '../motion.js';
 
   // Campanella "pronto da guardare": vive nella shell, una sola istanza.
   // - GET all'avvio per badge corretto anche dopo un riavvio del demone;
@@ -100,7 +101,8 @@
 {#if enabled}
   <div class="notif">
     {#if open}
-      <div class="notif-panel" role="dialog" aria-label="Notifiche">
+      <div class="notif-panel" role="dialog" aria-label="Notifiche"
+           in:contentEnter out:panelExit>
         <div class="notif-head">
           <strong>Notifiche</strong>
           <button class="notif-link" onclick={segnaTutte} disabled={unread === 0}>
