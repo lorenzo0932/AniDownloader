@@ -53,7 +53,7 @@ const emptyOverview = () => ({
   problemi: { non_riusciti: 0, interrotti: 0 },
 });
 
-const runningOverview = (over = {}) => ({
+const runningOverview = (over = {}, extra = {}) => ({
   run: {
     id: 'run-1', origine: 'manuale',
     avviato_il: '2026-11-08T17:03:00.000Z', concluso_il: null,
@@ -64,6 +64,7 @@ const runningOverview = (over = {}) => ({
   },
   coda: { queued: 2, downloading: 1, converting: 1, retry: 0, totale: 4 },
   problemi: { non_riusciti: 1, interrotti: 0 },
+  ...extra,
 });
 
 beforeEach(() => {
@@ -118,6 +119,8 @@ describe('StatusPage home', () => {
     expect(overviewMock).toHaveBeenCalled();
     expect(container.querySelector('.phase-board')).toBeNull();
     expect(container.querySelector('.pipeline-summary')).toBeNull();
+    expect(screen.queryByText(/In coda adesso:/)).toBeNull();
+    expect(screen.queryByText(/Problemi aperti:/)).toBeNull();
   });
 
   it('run in corso: card con barra determinata, corrente, conteggi e CTA', async () => {
@@ -133,8 +136,48 @@ describe('StatusPage home', () => {
     expect(screen.getByText('3 in corso')).toBeTruthy();
     expect(screen.getByText('1 non riuscito')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Apri attività' })).toBeTruthy();
+    expect(screen.getByText(/In coda adesso: 2 in attesa · 1 in download · 1 in conversione/)).toBeTruthy();
+    expect(screen.getByText(/Problemi aperti: 1/)).toBeTruthy();
     expect(container.querySelector('.phase-board')).toBeNull();
     expect(container.querySelector('.pipeline-summary')).toBeNull();
+  });
+
+  it('note globali sotto la card: coda e problemi separati dal run', async () => {
+    overviewMock.mockResolvedValue(runningOverview({}, {
+      coda: { queued: 2, downloading: 3, converting: 1, retry: 4, totale: 10 },
+      problemi: { non_riusciti: 2, interrotti: 1 },
+    }));
+    render(StatusPage);
+
+    expect(await screen.findByText(/In coda adesso: 2 in attesa · 3 in download · 1 in conversione · 4 in retry/)).toBeTruthy();
+    expect(screen.getByText(/Problemi aperti: 3/)).toBeTruthy();
+
+    const attivita = screen.getByRole('link', { name: 'Vedi attività' });
+    expect(attivita.getAttribute('href')).toBe('/attivita');
+    const problemi = screen.getByRole('link', { name: 'Vedi problemi' });
+    expect(problemi.getAttribute('href')).toBe('/attivita?tab=problemi');
+
+    const nav = vi.fn();
+    window.addEventListener('anidl:navigate', nav);
+    try {
+      await fireEvent.click(attivita);
+      expect(nav).toHaveBeenCalledTimes(1);
+      expect(nav.mock.calls[0][0].detail).toBe('attivita');
+    } finally {
+      window.removeEventListener('anidl:navigate', nav);
+    }
+  });
+
+  it('note globali nascoste quando coda e problemi sono a zero', async () => {
+    overviewMock.mockResolvedValue(runningOverview({}, {
+      coda: { queued: 0, downloading: 0, converting: 0, retry: 0, totale: 0 },
+      problemi: { non_riusciti: 0, interrotti: 0 },
+    }));
+    render(StatusPage);
+
+    expect(await screen.findByText('Avvio in corso')).toBeTruthy();
+    expect(screen.queryByText(/In coda adesso:/)).toBeNull();
+    expect(screen.queryByText(/Problemi aperti:/)).toBeNull();
   });
 
   it('run completato: ultimo avvio e CTA dettaglio', async () => {

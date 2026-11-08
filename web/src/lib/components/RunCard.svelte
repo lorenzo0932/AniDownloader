@@ -1,7 +1,7 @@
 <script>
-  // Card unica di avvio: aggrega l'ultimo run (manuale o automatico) e la
-  // coda complessiva. Il dettaglio per episodio vive in Attività.
-  let { run = null, coda = null, problemi = null, onopen = null } = $props();
+  // Card unica di avvio: solo dati del run (manuale o automatico).
+  // Coda e problemi globali vivono in una nota separata sotto la card.
+  let { run = null, onopen = null } = $props();
 
   const PHASE_LABELS = Object.freeze({
     queued: 'In coda',
@@ -33,18 +33,6 @@
   let durata = $derived(inCorso ? '' : formatDuration(run?.avviato_il, run?.concluso_il));
   let faseCorrente = $derived(
     run?.corrente ? (PHASE_LABELS[run.corrente.fase] || run.corrente.fase || 'In corso') : ''
-  );
-  let codaItems = $derived.by(() => {
-    if (!inCorso || !coda) return [];
-    const items = [];
-    if (coda.queued > 0) items.push(`${coda.queued} in attesa`);
-    if (coda.downloading > 0) items.push(`${coda.downloading} in download`);
-    if (coda.converting > 0) items.push(`${coda.converting} in conversione`);
-    if (coda.retry > 0) items.push(`${coda.retry} in retry`);
-    return items;
-  });
-  let problemiTotali = $derived(
-    (problemi?.non_riusciti || 0) + (problemi?.interrotti || 0)
   );
 
   function formatMoment(value) {
@@ -131,14 +119,6 @@
       </span>
     </div>
 
-    {#if inCorso && codaItems.length > 0}
-      <p class="run-queue">Coda: {codaItems.join(' · ')}</p>
-    {/if}
-
-    {#if !inCorso && problemiTotali > 0}
-      <p class="run-problems">Problemi registrati: {problemiTotali}</p>
-    {/if}
-
     <a class="run-cta" href="/attivita" onclick={handleOpen}>
       {inCorso ? 'Apri attività' : 'Vedi dettaglio'}
     </a>
@@ -186,9 +166,6 @@
   .count-error { color: var(--danger); }
   .count-skipped { color: var(--warning); }
   .count-total { color: var(--text-muted); }
-
-  .run-queue, .run-problems { margin: 0; font-size: 0.78rem; color: var(--text-muted); }
-  .run-problems { color: var(--warning); }
 
   .run-cta {
     align-self: flex-start; color: var(--accent-light); font-weight: 600;
