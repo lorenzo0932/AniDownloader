@@ -46,6 +46,26 @@ namespace Core {
     // se $HOME manca). Nessuna espansione oltre "~".
     std::string expandUserPath(const std::string& path);
 
+    // Spazio occupato da una cartella serie e dai residui di download
+    // interrotti (.aria2/.part). La scansione non segue i symlink e ignora
+    // gli errori di permesso: è una stima per la UI, non un inventario.
+    struct SpaceUsage {
+        std::int64_t files{0};
+        std::int64_t bytes{0};
+        std::int64_t partialFiles{0};
+        std::int64_t partialBytes{0};
+    };
+    SpaceUsage scanSpace(const std::string& seriesPath);
+    // Rimuove SOLO i residui .aria2/.part sotto seriesPath. Mai file video.
+    SpaceUsage removePartialFiles(const std::string& seriesPath);
+
+    struct DiskSpace {
+        std::uint64_t freeBytes{0};
+        std::uint64_t totalBytes{0};
+    };
+    // Spazio del filesystem che contiene path (0/0 se non disponibile).
+    DiskSpace diskSpace(const std::string& path);
+
     struct MountEntry {
         std::string name; // etichetta leggibile ("Disco locale (C:)", "Data")
         std::string path; // punto di mount

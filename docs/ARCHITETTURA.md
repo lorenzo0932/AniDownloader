@@ -121,7 +121,6 @@ frontend esterne.
 
 ## Cross-platform
 
-- `Config::PathHelper` astrae i path (XDG su Linux, APPDATA su Windows)
-- `ScraperUtils::Q()` quoting shell differente per POSIX/Windows
+- `Config::PathHelper` astrae i path (XDG su Linux, APPDATA su Windows)- `ScraperUtils::Q()` quoting shell differente per POSIX/Windows
 - `ScraperUtils::DEVNULL()` redirezione output nulla cross-platform
 - Autostart: systemd (Linux), Task Scheduler (Windows), LaunchAgent (macOS)

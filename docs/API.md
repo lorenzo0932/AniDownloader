@@ -141,6 +141,42 @@ leggibile.
 
 ---
 
+### `GET /api/storage` (dal 3.0)
+
+Fotografia on-demand dello spazio: disco di output, cache miniature, residui
+`.aria2`/`.part` e occupazione per serie (ordinate per byte decrescenti).
+La scansione legge le cartelle delle serie del repository: nessun path
+arbitrario dal client.
+
+```json
+{
+    "success": true,
+    "freeBytes": 536870912000,
+    "totalBytes": 1073741824000,
+    "cache": {"files": 12, "bytes": 2097152},
+    "partial": {"files": 3, "bytes": 1024},
+    "series": [
+        {"name": "One Piece", "path": "/media/One Piece", "files": 40,
+         "bytes": 8589934592, "partialFiles": 0, "partialBytes": 0}
+    ]
+}
+```
+
+### `POST /api/storage/cleanup` (dal 3.0)
+
+Pulizia guidata, due sole azioni sicure: mai file video.
+
+```json
+{"azione": "cache"}      // svuota la cache miniature
+{"azione": "parziali"}   // rimuove i residui .aria2/.part delle serie
+```
+
+```json
+{"success": true, "removedFiles": 12, "freedBytes": 2097152}
+```
+
+---
+
 ### `GET /api/series`
 
 Lista delle serie.

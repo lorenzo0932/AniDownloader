@@ -145,5 +145,11 @@ export const api = {
     retry: (id) => request('POST', '/api/queue/retry', { id }),
   },
 
+  // Spazio occupato e pulizia guidata (cache miniature, residui .aria2).
+  storage: {
+    info: () => request('GET', '/api/storage'),
+    cleanup: (azione) => request('POST', '/api/storage/cleanup', { azione }),
+  },
+
   sse: () => new EventSource(BASE + '/api/download/events'),
 };

@@ -801,6 +801,50 @@ static void testFileOps() {
     std::filesystem::remove_all(dir);
 }
 
+// Spazio: scansione cartella serie, residui .aria2/.part, pulizia sicura.
+static void testStorageSpace() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_storage";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir / "serie" / "sub", ec);
+    CHECK(!ec);
+
+    auto scrivi = [](const fs::path& p, std::size_t bytes) {
+        std::ofstream f(p, std::ios::binary);
+        f << std::string(bytes, 'x');
+    };
+    scrivi(dir / "serie" / "ep1.mkv", 1000);
+    scrivi(dir / "serie" / "ep2.part", 100);
+    scrivi(dir / "serie" / "sub" / "ep3.mkv", 500);
+    scrivi(dir / "serie" / "sub" / "x.aria2", 50);
+
+    const auto uso = Core::scanSpace((dir / "serie").string());
+    CHECK(uso.files == 4);
+    CHECK(uso.bytes == 1650);
+    CHECK(uso.partialFiles == 2);
+    CHECK(uso.partialBytes == 150);
+
+    const auto disco = Core::diskSpace((dir / "serie").string());
+    CHECK(disco.freeBytes > 0);
+    CHECK(disco.totalBytes > 0);
+
+    const auto rimosso = Core::removePartialFiles((dir / "serie").string());
+    CHECK(rimosso.partialFiles == 2);
+    CHECK(rimosso.partialBytes == 150);
+    const auto dopo = Core::scanSpace((dir / "serie").string());
+    CHECK(dopo.files == 2);
+    CHECK(dopo.bytes == 1500);
+    CHECK(dopo.partialFiles == 0 && dopo.partialBytes == 0);
+    CHECK(fs::exists(dir / "serie" / "ep1.mkv"));
+
+    // Path inesistente: nessun errore, tutto a zero.
+    const auto vuoto = Core::scanSpace((dir / "non-esiste").string());
+    CHECK(vuoto.files == 0 && vuoto.bytes == 0);
+
+    fs::remove_all(dir, ec);
+}
+
 static void testThumbCache() {
     // --- selectThumbWidth: arrotonda al tier superiore, mai upscale oltre il max ---
     CHECK(Core::selectThumbWidth(-5) == 480);
@@ -2085,6 +2129,7 @@ int main(int argc, char** argv) {
     testIsWindowsDriveRoot();
     testListMounts();
     testFileOps();
+    testStorageSpace();
     testNfoPosterOnce();
     testThumbCache();
     testSortAdded();

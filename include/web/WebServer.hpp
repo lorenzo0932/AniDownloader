@@ -64,6 +64,7 @@ namespace Web {
         void setupInfoRoutes();
         void setupNotificationRoutes();
         void setupQueueRoutes();
+        void setupStorageRoutes();
         void setupSeriesRoutes();
         void setupBrowseRoutes();
         void setupDiscoverRoutes();
