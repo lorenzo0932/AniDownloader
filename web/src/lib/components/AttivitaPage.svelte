@@ -27,8 +27,12 @@
     ['errori', 'Errori'],
   ];
 
+  // Le ultime 24 ore separano "Recenti" (attivo + appena concluso) dallo
+  // Storico (concluso da più di 24h).
+  const FINESTRA_RECENTI_MS = 24 * 60 * 60 * 1000;
+
   let items = $state([]);
-  let tab = $state('corso'); // corso | storico
+  let tab = $state('recenti'); // recenti | storico
   let filtro = $state('tutti');
   let aperti = $state({});
   let loading = $state(false);
@@ -63,6 +67,12 @@
     return FASI_CORSO.has(j.fase);
   }
 
+  function recente(j) {
+    if (inCorso(j)) return true;
+    const t = Date.parse(j.aggiornato_il || j.creato_il || '');
+    return Number.isFinite(t) && Date.now() - t < FINESTRA_RECENTI_MS;
+  }
+
   function passaFiltro(j) {
     if (filtro === 'corso') return inCorso(j) && j.fase !== 'failed';
     if (filtro === 'errori') return j.fase === 'failed';
@@ -71,7 +81,7 @@
 
   let visibili = $derived(
     items
-      .filter(j => (tab === 'storico' ? j.fase === 'completed' : inCorso(j)))
+      .filter(j => (tab === 'storico' ? !recente(j) : recente(j)))
       .filter(passaFiltro)
   );
 
@@ -132,16 +142,16 @@
   </header>
 
   <div class="tabs" role="tablist" aria-label="Attività">
-    <button role="tab" id="tab-corso" aria-selected={tab === 'corso'}
+    <button role="tab" id="tab-recenti" aria-selected={tab === 'recenti'}
             aria-controls="panel-attivita" class:active={tab === 'corso'}
-            onclick={() => scegliTab('corso')}>In corso</button>
+            onclick={() => scegliTab('recenti')}>Recenti</button>
     <button role="tab" id="tab-storico" aria-selected={tab === 'storico'}
             aria-controls="panel-attivita" class:active={tab === 'storico'}
             onclick={() => scegliTab('storico')}>Storico</button>
   </div>
 
-  {#if tab === 'corso'}
-    <div class="filtri" role="group" aria-label="Filtra attività in corso">
+  {#if tab === 'recenti'}
+    <div class="filtri" role="group" aria-label="Filtra attività recenti">
       {#each FILTRI as [valore, label] (valore)}
         <button class="chip" aria-pressed={filtro === valore}
                 class:attivo={filtro === valore}
@@ -154,10 +164,16 @@
     <p class="err" role="alert">{error}</p>
   {/if}
 
-  <div id="panel-attivita" role="tabpanel" aria-labelledby={tab === 'corso' ? 'tab-corso' : 'tab-storico'}>
+  <p class="finestra">
+    {tab === 'recenti'
+      ? 'Attività in corso e concluse nelle ultime 24 ore.'
+      : 'Concluse da più di 24 ore.'}
+  </p>
+
+  <div id="panel-attivita" role="tabpanel" aria-labelledby={tab === 'recenti' ? 'tab-recenti' : 'tab-storico'}>
     {#if visibili.length === 0}
       <p class="empty">
-        {tab === 'storico' ? 'Nessun episodio completato.' : 'Nessuna attività in corso.'}
+        {tab === 'storico' ? 'Nessun episodio nello storico.' : 'Nessuna attività recente.'}
       </p>
     {:else}
       <ul class="job-list">
@@ -170,7 +186,7 @@
               {#if j.path}
                 <img class="job-poster" src={posterUrl(j.path, 96)}
                      srcset={posterSrcSet(j.path)} sizes="36px" alt=""
-                     loading="lazy" decoding="async" width="36" height="50" />
+                     decoding="async" width="36" height="50" />
               {:else}
                 <span class="job-poster job-poster-empty" aria-hidden="true"></span>
               {/if}
@@ -235,6 +251,7 @@
     outline: 2px solid var(--accent); outline-offset: 2px;
   }
 
+  .finestra { color: var(--text-muted); font-size: 12px; margin: -0.25rem 0 0.75rem; }
   .filtri { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
   .chip {
     padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 12px; cursor: pointer;

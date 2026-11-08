@@ -51,6 +51,8 @@ const lista = () => ({
     job({ id: 1, serie: 'Serie X', fase: 'downloading' }),
     job({ id: 2, serie: 'Serie Y', episodio: 2, fase: 'failed', tentativi: 2, errore: 'rete' }),
     job({ id: 3, serie: 'Serie Z', episodio: 3, fase: 'completed' }),
+    job({ id: 4, serie: 'Serie W', episodio: 4, fase: 'completed',
+          aggiornato_il: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() }),
   ],
 });
 
@@ -61,26 +63,28 @@ beforeEach(() => {
 });
 
 describe('AttivitaPage', () => {
-  it('tab In corso: righe leggibili con serie, episodio e stato', async () => {
+  it('tab Recenti: attivi e conclusi nelle ultime 24h, non lo storico vecchio', async () => {
     render(AttivitaPage);
     expect(await screen.findByText('Serie X · Ep. 1')).toBeTruthy();
     expect(screen.getByText('Serie Y · Ep. 2')).toBeTruthy();
     expect(screen.getByText('In download')).toBeTruthy();
     expect(screen.getByText('Errore')).toBeTruthy();
-    // I completati non stanno nella tab In corso.
-    expect(screen.queryByText('Serie Z · Ep. 3')).toBeNull();
+    // Il completato recente resta nei Recenti; quello di 3 giorni fa no.
+    expect(screen.getByText('Serie Z · Ep. 3')).toBeTruthy();
+    expect(screen.queryByText('Serie W · Ep. 4')).toBeNull();
   });
 
-  it('tab Storico: solo completati', async () => {
+  it('tab Storico: solo conclusi da più di 24h', async () => {
     render(AttivitaPage);
     await screen.findByText('Serie X · Ep. 1');
     await fireEvent.click(screen.getByRole('tab', { name: 'Storico' }));
-    expect(await screen.findByText('Serie Z · Ep. 3')).toBeTruthy();
+    expect(await screen.findByText('Serie W · Ep. 4')).toBeTruthy();
     expect(screen.getByText('Completato')).toBeTruthy();
     expect(screen.queryByText('Serie X · Ep. 1')).toBeNull();
+    expect(screen.queryByText('Serie Z · Ep. 3')).toBeNull();
   });
 
-  it('filtri solo in In corso: nello Storico non ci sono, tornando si riparte da Tutti', async () => {
+  it('filtri solo nei Recenti: nello Storico non ci sono, tornando si riparte da Tutti', async () => {
     render(AttivitaPage);
     await screen.findByText('Serie X · Ep. 1');
     expect(screen.getByRole('button', { name: 'Tutti' })).toBeTruthy();
@@ -88,7 +92,7 @@ describe('AttivitaPage', () => {
     await fireEvent.click(screen.getByRole('tab', { name: 'Storico' }));
     expect(screen.queryByRole('button', { name: 'Tutti' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Errori' })).toBeNull();
-    await fireEvent.click(screen.getByRole('tab', { name: 'In corso' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Recenti' }));
     const tutti = screen.getByRole('button', { name: 'Tutti' });
     expect(tutti.getAttribute('aria-pressed')).toBe('true');
   });
@@ -136,8 +140,8 @@ describe('AttivitaPage', () => {
   it('nessun job: messaggio dedicato per tab', async () => {
     listMock.mockResolvedValue({ counts: {}, items: [] });
     render(AttivitaPage);
-    expect(await screen.findByText('Nessuna attività in corso.')).toBeTruthy();
+    expect(await screen.findByText('Nessuna attività recente.')).toBeTruthy();
     await fireEvent.click(screen.getByRole('tab', { name: 'Storico' }));
-    expect(await screen.findByText('Nessun episodio completato.')).toBeTruthy();
+    expect(await screen.findByText('Nessun episodio nello storico.')).toBeTruthy();
   });
 });
