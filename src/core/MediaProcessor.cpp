@@ -43,6 +43,11 @@ namespace Core {
                                               const Config::ExecutionStrategy& strategy) {
         ProcessResult res;
         res.episodeNumber = task.episodeNumber;
+        if (task.fileName.empty()) {
+            res.errorMessage = "Nome file mancante";
+            Logger::error(series.name + ": task senza fileName, salto");
+            return res;
+        }
         std::string expandedPath = ScraperUtils::expandTilde(series.path);
         std::string fullFile = (fs::path(expandedPath) / task.fileName).string();
         std::string aria2File = fullFile + ".aria2";
