@@ -59,3 +59,18 @@ Correzione di soli riferimenti: i piani conclusi sono stati spostati in
 `plan/archivio/` (cartella locale, gitignored). Nessun cambio alle decisioni.
 Stato di attuazione: B0–B6 completati e mergiati; notifiche (§6) ancora
 aperte.
+
+## Addendum 2026-11-08 — pipeline fase 2: deviazione consapevole
+
+La coda per-episodio (`pipeline_jobs`, schema v5) è implementata, ma i due
+pool download/conversione vivono dentro `ExecutionEngine` (`setPipeline` /
+`runPipeline`) e non dentro `PipelineCoordinator`. Motivo: i callback di
+progresso, l'activity per la UI e lo stop appartengono al singolo run; il
+coordinator generico non ha questo contesto e resta la base testata per un
+uso a livello di demone (job fuori da un run).
+
+Conseguenza: il comportamento richiesto (JobKey, dedup, promozione, pool
+separati, budget conversione = 2, stato serie al completamento) è attivo,
+ma la forma non coincide con quella prevista. Riconciliazione formale
+(pool nel coordinator con contesto iniettato) tracciata in
+`plan/parity-os.md` e `plan/pipeline-code.md`; nessun cambio di schema o API.
