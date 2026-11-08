@@ -7,6 +7,7 @@
   import DiscoverPage from './lib/components/DiscoverPage.svelte';
   import ConfigPage from './lib/components/ConfigPage.svelte';
   import LogsPage from './lib/components/LogsPage.svelte';
+  import NotificationBell from './lib/components/NotificationBell.svelte';
 
   const routeMap = {
     '/': 'home', '/gestione': 'gestione', '/scopri': 'scopri', '/config': 'config', '/logs': 'logs',
@@ -16,6 +17,8 @@
   let showCloseWarning = $state(true);
   let dlRunning = $state(false);
   let sidebarCollapsed = $state(false);
+  let notifEnabled = $state(false);
+  let notifSorgente = $state('entrambi');
 
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
@@ -35,6 +38,8 @@
       try {
         const cfg = await api.config.get();
         showCloseWarning = cfg.config?.show_close_warning !== false;
+        notifEnabled = cfg.config?.notifiche?.abilitate === true;
+        notifSorgente = cfg.config?.notifiche?.sorgente || 'entrambi';
       } catch {}
     })();
 
@@ -103,6 +108,7 @@
           {#if !sidebarCollapsed}<span>Logs</span>{/if}
         </button>
       </div>
+      <NotificationBell enabled={notifEnabled} sorgente={notifSorgente} />
     </nav>
     <main class="content">
       {#key route}

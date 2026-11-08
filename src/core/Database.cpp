@@ -59,6 +59,21 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_claim
     ON tasks(stato, prossima_esecuzione, priorita DESC, id);
 )";
+
+        // v3: notifiche "pronto da guardare". Storico persistente dei soli
+        // episodi scaricati dal giro schedulato; il badge si calcola sulle
+        // righe con letta = 0. L'indice serve sia al badge sia alla lista.
+        constexpr const char* kSchemaV3 = R"(
+CREATE TABLE IF NOT EXISTS notifications (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    serie      TEXT NOT NULL,
+    episodio   INTEGER NOT NULL DEFAULT 0,
+    creato_il  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    letta      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread
+    ON notifications(letta, id DESC);
+)";
     } // namespace
 
     struct Statement::Impl {
@@ -324,7 +339,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_claim
             attuale = v;
             return true;
         };
-        if (!applica(1, kSchemaV1) || !applica(2, kSchemaV2))
+        if (!applica(1, kSchemaV1) || !applica(2, kSchemaV2) || !applica(3, kSchemaV3))
             return false;
         m_impl->schemaVersion = attuale;
         if (!tx.commit()) {

@@ -66,6 +66,40 @@ Mette in pausa o riprende scheduler e worker (i task restano in coda).
 
 ---
 
+### `GET /api/notifications` (dal 3.0)
+
+Notifiche "pronto da guardare": un record per ogni episodio scaricato dal
+giro schedulato. Persistono nel DB (tabella `notifications`), quindi il badge
+è corretto anche dopo un riavvio del demone.
+
+**Parametri query:**
+- `limit` (opzionale) — numero massimo di righe (default 50, tetto 500)
+
+```json
+{
+    "success": true,
+    "unread": 2,
+    "items": [
+        {"id": 2, "serie": "Naruto", "episodio": 5,
+         "creato_il": "2026-11-08T11:18:14.161Z", "letta": false},
+        {"id": 1, "serie": "One Piece", "episodio": 1116,
+         "creato_il": "2026-11-08T11:18:14.161Z", "letta": false}
+    ]
+}
+```
+
+Le righe sono ordinate per id decrescente (più recenti prima).
+
+### `POST /api/notifications/read` (dal 3.0)
+
+Segna come lette. Con `{"id": N}` solo quella; con body vuoto `{}` tutte.
+
+```json
+{"success": true, "unread": 0}
+```
+
+---
+
 ### `GET /api/series`
 
 Lista delle serie.
@@ -650,6 +684,17 @@ data: {"type":"queue","evento":"completato","task":{...}}
 data: {"type":"queue","evento":"riprova","task":{...}}
 data: {"type":"queue","evento":"fallito","task":{...}}
 ```
+
+Evento notifica (dal 3.0): un episodio è stato scaricato dal giro schedulato.
+Non porta `sequence`: la campanella in `App.svelte` lo consuma, la Home lo
+ignora (non fa parte dello stato del run manuale).
+
+```
+data: {"type":"notification","id":3,"serie":"One Piece","episodio":1116}
+```
+
+Il client non deve dedurre nulla dal testo: usa `serie`/`episodio` e ricarica
+`GET /api/notifications` se ha perso eventi.
 
 Il client si connette con `EventSource` nativo del browser.
 

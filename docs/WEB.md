@@ -94,6 +94,7 @@ if (it != files.end()) {
 |------------|-------|
 | `AddSeriesForm.svelte` | Form aggiunta/modifica serie (usato da Gestione e Scopri) |
 | `DetailModal.svelte` | Dettaglio serie, modifica ed eliminazione; variante read-only |
+| `NotificationBell.svelte` | Campanella in sidebar: badge non lette, pannello, SSE `notification`, notifica OS se la config lo prevede |
 | `SeriesCollection.svelte` | Griglia con FLIP e densità (griglia/grande) |
 | `SeriesCard.svelte` | Card poster + titolo + badge |
 | `SeriesList.svelte` | Lista righe per la vista tabella |

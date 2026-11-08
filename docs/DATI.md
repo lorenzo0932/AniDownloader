@@ -81,7 +81,22 @@ Indice `idx_tasks_claim` su `(stato, prossima_esecuzione, priorita DESC, id)`.
 ### `kv` e `migrations`
 
 `kv` conserva stato interno (es. ultimo giro scheduler); `migrations`
-registra le versioni di schema applicate.
+registra le versioni di schema applicate (oggi fino alla v3).
+
+### `notifications` (schema v3)
+
+Notifiche "pronto da guardare": una riga per ogni episodio scaricato dal giro
+schedulato. Il badge è `COUNT(*) WHERE letta = 0`.
+
+| Colonna | Tipo | Note |
+|---|---|---|
+| `id` | INTEGER PK | Auto-increment |
+| `serie` | TEXT | Nome serie |
+| `episodio` | INTEGER | Episodio scaricato |
+| `creato_il` | TEXT | Timestamp ISO8601 (default SQLite) |
+| `letta` | INTEGER | 0/1, default 0 |
+
+Indice `idx_notifications_unread` su `(letta, id DESC)`.
 
 ## Dati derivati
 

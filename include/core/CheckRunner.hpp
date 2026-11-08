@@ -31,19 +31,21 @@ namespace Core {
         // CLI interattiva; il demone passa false). stop = abort cooperativo
         // (Ctrl+C in CLI; lo Scheduler non lo imposta mai: il giro in corso
         // non si interrompe, 2-bis). Mai eccezioni oltre il confine.
-        static CheckOutcome
-        runOnce(Config::AppConfigManager& config, const std::string& jsonPath, bool burst,
-                std::atomic<bool>& stop,
-                std::function<void(const std::string&, int, const std::string&)> onProgress = {},
-                std::function<void(const std::string&)> onOverall = {});
+        static CheckOutcome runOnce(
+            Config::AppConfigManager& config, const std::string& jsonPath, bool burst,
+            std::atomic<bool>& stop,
+            const std::function<void(const std::string&, int, const std::string&)>& onProgress = {},
+            const std::function<void(const std::string&)>& onOverall = {},
+            const std::function<void(const std::string&, int)>& onEpisodeReady = {});
         // Variante con repository condiviso (demone web+scheduler): evita due
         // istanze con mutex separati sullo stesso JSON. La CLI usa l'overload
         // con jsonPath (istanza propria + exec.lock interprocesso).
-        static CheckOutcome
-        runOnce(Config::AppConfigManager& config, SeriesRepository& repo, bool burst,
-                std::atomic<bool>& stop,
-                std::function<void(const std::string&, int, const std::string&)> onProgress = {},
-                std::function<void(const std::string&)> onOverall = {});
+        static CheckOutcome runOnce(
+            Config::AppConfigManager& config, SeriesRepository& repo, bool burst,
+            std::atomic<bool>& stop,
+            const std::function<void(const std::string&, int, const std::string&)>& onProgress = {},
+            const std::function<void(const std::string&)>& onOverall = {},
+            const std::function<void(const std::string&, int)>& onEpisodeReady = {});
 
       private:
         CheckRunner() = delete;

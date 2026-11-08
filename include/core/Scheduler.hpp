@@ -48,6 +48,13 @@ namespace Core {
         void pausa(bool inPausa);
         void onEvento(std::function<void(const std::string& tipo, const QueueTask& task)> cb);
 
+        // Episodio scaricato dal giro periodico: lo Scheduler lo persiste in
+        // notifications e poi lo inoltra (id = riga creata, 0 se il salvataggio
+        // è fallito). Il WebServer usa questo aggancio per l'SSE.
+        using NotificaCb =
+            std::function<void(const std::string& serie, int episodio, std::int64_t id)>;
+        void onEpisodioPronto(NotificaCb cb);
+
         // Condivide il repository del demone (web + scheduler stessa istanza:
         // un solo mutex sulle serie). Chiamare prima di start(); mai dopo.
         // Senza wiring il giro crea un'istanza propria (CLI/test).
@@ -67,6 +74,7 @@ namespace Core {
         SeriesRepository* m_repo{nullptr};
         WorkerPool m_pool;
         std::function<void(const std::string& tipo, const QueueTask& task)> m_onEvento;
+        NotificaCb m_onEpisodioPronto;
         std::thread m_thread;
         std::atomic<bool> m_attivo{false};
         std::atomic<bool> m_pausa{false};

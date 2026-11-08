@@ -47,10 +47,14 @@ dell'intervallo vale dal giro successivo: quello in corso non si interrompe.
 
 ### Notifiche (impalcatura)
 
-`notifiche.abilitate` e `notifiche.sorgente` sono persistite e mostrate in
-Impostazioni, ma **l'invio non è ancora implementato** (nessun trigger
-backend, nessun badge UI). Il plugin Tauri `notification` è presente solo
-come base per la feature futura.
+`notifiche.abilitate` è il master ON/OFF. `sorgente` decide la consegna:
+`ui` = campanella e pannello in-app, `backend` = notifica di sistema,
+`entrambi` = entrambe. Le notifiche sono generate solo dal giro schedulato,
+dopo il commit dello stato serie; persistono nel DB, quindi il badge resta
+corretto dopo un riavvio. Lato desktop la notifica di sistema passa dal
+comando Tauri `notify_episode`; in browser si usa la Web Notification API
+(serve il permesso, altrimenti resta solo il badge). Con `abilitate: false`
+non si mostra nulla, ma i record restano nel DB.
 
 ---
 

@@ -7,6 +7,7 @@
 #include "core/ExecutionEngine.hpp"
 #include "core/FileUtils.hpp"
 #include "core/InstanceLock.hpp"
+#include "core/NotificationStore.hpp"
 #include "core/ProcessUtils.hpp"
 #include "core/QueueStore.hpp"
 #include "core/Scheduler.hpp"
@@ -1040,21 +1041,25 @@ static void testDatabase() {
         CHECK(reopen.migrate(&error));
     }
 
-    // Migrazione v1 -> v2: simulo un DB fermo alla v1 (niente tasks) e
-    // verifico che la riapertura crei la tabella senza toccare i dati.
+    // Migrazione v1 -> v3: simulo un DB fermo alla v1 (niente tasks né
+    // notifications) e verifico che la riapertura crei le tabelle senza
+    // toccare i dati.
     {
         CHECK(db.execute("INSERT INTO series(name) VALUES ('Vecchia');"));
         CHECK(db.execute("DROP TABLE tasks;"));
-        CHECK(db.execute("DELETE FROM migrations WHERE version = 2;"));
+        CHECK(db.execute("DROP TABLE notifications;"));
+        CHECK(db.execute("DELETE FROM migrations WHERE version >= 2;"));
     }
     {
         Core::Database migrato(dir / "test.db");
         CHECK(migrato.isOpen());
-        CHECK(migrato.schemaVersion() == 2);
+        CHECK(migrato.schemaVersion() == Core::Database::kSchemaVersion);
         auto sel = migrato.prepare("SELECT name FROM series WHERE name = 'Vecchia';");
         CHECK(sel.step() && sel.columnText(0) == "Vecchia");
         auto tasks = migrato.prepare("SELECT COUNT(*) FROM tasks;");
         CHECK(tasks.step() && tasks.columnInt(0) == 0);
+        auto notifiche = migrato.prepare("SELECT COUNT(*) FROM notifications;");
+        CHECK(notifiche.step() && notifiche.columnInt(0) == 0);
     }
 
     // SQL errato: false + messaggio utile.
@@ -1503,6 +1508,64 @@ static void testQueueStore() {
         auto risorto = q.claim();
         CHECK(risorto.has_value() && risorto->id == idOrfano);
         CHECK(q.complete(idOrfano));
+    }
+
+    fs::remove_all(dir, ec);
+}
+
+// Notifiche: add/list/unread/markRead, persistenza tra istanze, limit.
+static void testNotificationStore() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_notifiche";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    const fs::path dbPath = dir / "n.db";
+    {
+        Core::NotificationStore store(dbPath);
+        CHECK(store.unreadCount() == 0);
+        CHECK(store.list().empty());
+
+        std::int64_t id1 = 0;
+        std::int64_t id2 = 0;
+        CHECK(store.add("Serie A", 3, &id1));
+        CHECK(store.add("Serie B", 7, &id2));
+        CHECK(id1 > 0 && id2 > id1);
+        CHECK(store.unreadCount() == 2);
+
+        // Più recenti prima; la colonna creato_il è valorizzata dal default.
+        const auto items = store.list();
+        CHECK(items.size() == 2);
+        CHECK(items[0].serie == "Serie B" && items[0].episodio == 7 && !items[0].letta);
+        CHECK(items[1].serie == "Serie A" && items[1].episodio == 3);
+        CHECK(!items[0].creatoIl.empty());
+
+        CHECK(store.markRead(id1));
+        CHECK(store.unreadCount() == 1);
+        CHECK(store.markAllRead());
+        CHECK(store.unreadCount() == 0);
+    }
+
+    // Persistenza: una nuova istanza sullo stesso file vede lo stato.
+    {
+        Core::NotificationStore riaperto(dbPath);
+        CHECK(riaperto.unreadCount() == 0);
+        CHECK(riaperto.list().size() == 2);
+        CHECK(riaperto.add("Serie C", 1));
+        CHECK(riaperto.unreadCount() == 1);
+    }
+
+    // Limit: default su valore non positivo, cap sul massimo.
+    {
+        Core::NotificationStore store(dbPath);
+        for (int i = 2; i <= 8; ++i)
+            CHECK(store.add("Serie D", i));
+        CHECK(store.list(3).size() == 3);
+        CHECK(store.list(-5).size() == store.list(Core::NotificationStore::kDefaultLimit).size());
+        CHECK(store.list(100000).size() <=
+              static_cast<std::size_t>(Core::NotificationStore::kMaxLimit));
     }
 
     fs::remove_all(dir, ec);
@@ -2012,6 +2075,7 @@ int main(int argc, char** argv) {
     testDownloadState();
     testConcurrentWrites();
     testQueueStore();
+    testNotificationStore();
     testScheduler();
     testWorkerPool();
 

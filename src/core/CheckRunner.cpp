@@ -12,23 +12,26 @@
 #include <chrono>
 #include <ctime>
 #include <map>
+#include <utility>
 
 namespace Core {
 
     CheckOutcome CheckRunner::runOnce(
         Config::AppConfigManager& config, const std::string& jsonPath, bool burst,
         std::atomic<bool>& stop,
-        std::function<void(const std::string&, int, const std::string&)> onProgress,
-        std::function<void(const std::string&)> onOverall) {
+        const std::function<void(const std::string&, int, const std::string&)>& onProgress,
+        const std::function<void(const std::string&)>& onOverall,
+        const std::function<void(const std::string&, int)>& onEpisodeReady) {
         SeriesRepository repo(jsonPath, SeriesRepository::dbPathFor(jsonPath));
-        return runOnce(config, repo, burst, stop, std::move(onProgress), std::move(onOverall));
+        return runOnce(config, repo, burst, stop, onProgress, onOverall, onEpisodeReady);
     }
 
     CheckOutcome CheckRunner::runOnce(
         Config::AppConfigManager& config, SeriesRepository& repo, bool burst,
         std::atomic<bool>& stop,
-        std::function<void(const std::string&, int, const std::string&)> onProgress,
-        std::function<void(const std::string&)> onOverall) {
+        const std::function<void(const std::string&, int, const std::string&)>& onProgress,
+        const std::function<void(const std::string&)>& onOverall,
+        const std::function<void(const std::string&, int)>& onEpisodeReady) {
         CheckOutcome esito;
         auto serie = repo.snapshotSeriesData();
         if (serie.empty()) {
@@ -73,6 +76,16 @@ namespace Core {
             std::array<char, 24> ts{};
             std::strftime(ts.data(), ts.size(), "%Y-%m-%dT%H:%M:%SZ", &tm);
             repo.applyDownloadedEpisodes(maxEpisodes, ts.data());
+        }
+
+        // Notifiche "pronto da guardare": dopo il commit dello stato, così un
+        // episodio notificato è già contato come scaricato. La persistenza e la
+        // consegna sono del chiamante (Scheduler/WebServer); qui solo l'evento.
+        if (onEpisodeReady) {
+            for (const auto& r : esito.reports) {
+                if (r.success && r.episodeNumber > 0)
+                    onEpisodeReady(r.name, r.episodeNumber);
+            }
         }
 
         std::size_t ok = 0;
