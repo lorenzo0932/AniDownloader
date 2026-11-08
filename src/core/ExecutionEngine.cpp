@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <exception>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -16,6 +17,40 @@
 #include <thread>
 
 namespace Core {
+
+    namespace {
+        // Chiude sempre il run, anche su uscita anticipata o eccezione: lo
+        // stato è deciso dai job del run (falliti/interrotti) e dallo stop.
+        class RunGuard {
+          public:
+            RunGuard(PipelineJobStore& store, std::string id, const std::atomic<bool>& stop)
+                : m_store(store), m_id(std::move(id)), m_stop(stop) {}
+
+            RunGuard(const RunGuard&) = delete;
+            RunGuard& operator=(const RunGuard&) = delete;
+
+            ~RunGuard() {
+                if (m_id.empty())
+                    return;
+                std::string stato;
+                if (m_stop.load() || std::uncaught_exceptions() > 0) {
+                    stato = "interrotto";
+                } else {
+                    const auto riepilogo = m_store.runSummary(m_id);
+                    const bool problemi =
+                        riepilogo && (riepilogo->nonRiusciti > 0 || riepilogo->interrotti > 0);
+                    stato = problemi ? "completato_con_errori" : "completato";
+                }
+                if (!m_store.finishRun(m_id, stato))
+                    Core::Logger::warn("Chiusura run " + m_id + " fallita: " + m_store.lastError());
+            }
+
+          private:
+            PipelineJobStore& m_store;
+            std::string m_id;
+            const std::atomic<bool>& m_stop;
+        };
+    } // namespace
 
     ExecutionEngine::ExecutionEngine(Config::AppConfigManager& config) : m_config(config) {}
 
@@ -44,6 +79,20 @@ namespace Core {
             Core::Logger::warn("Reset job orfani della pipeline fallito: " + store.lastError());
         else if (orfani > 0)
             Core::Logger::info(std::format("Ripristinati {} job orfani della pipeline", orfani));
+
+        // Un solo esecutore (PipelineGate + InstanceLock): i run rimasti
+        // aperti sono di un processo precedente terminato male.
+        const int runOrfani = store.closeOrphanRuns();
+        if (runOrfani < 0)
+            Core::Logger::warn("Chiusura run orfani fallita: " + store.lastError());
+        else if (runOrfani > 0)
+            Core::Logger::info(std::format("Chiusi {} run orfani", runOrfani));
+
+        const std::string runId = store.beginRun(m_origin);
+        if (runId.empty())
+            Core::Logger::warn("Apertura run fallita: " + store.lastError());
+        RunGuard runGuard(store, runId, stopSignal);
+
         onStatus("Analisi e download in parallelo...");
 
         auto strategy = m_config.getExecutionStrategy(seriesList.size(), burstMode);
@@ -88,7 +137,7 @@ namespace Core {
             if (stopSignal)
                 break;
             (*pending)++;
-            analysis.emplace_back([&, s]() {
+            analysis.emplace_back([&, s, runId]() {
                 Series sc = s;
                 sc.path = ScraperUtils::expandTilde(s.path);
                 auto tasks = PlanningService::planSingleSeries(sc, [&](const std::string& stage) {
@@ -108,7 +157,8 @@ namespace Core {
                         const auto key = seriesIdentity(s.service, s.seriesPageUrl) + "#" +
                                          std::to_string(t.episodeNumber);
                         store.enqueue(key, s.name, t.episodeNumber, m_origin,
-                                      m_origin == "interactive" ? 100 : 0, payload.dump(), sc.path);
+                                      m_origin == "interactive" ? 100 : 0, payload.dump(), sc.path,
+                                      runId);
                         hasWork = true;
                     } else if (!t.errorMessage.empty()) {
                         anyError = true;
@@ -118,8 +168,11 @@ namespace Core {
                             onActivity(s.name, 0, {TaskPhase::Error, -1, t.errorMessage});
                     }
                 }
-                if (!hasWork && !anyError && onTaskSkipped)
+                if (!hasWork && !anyError && onTaskSkipped) {
+                    if (!runId.empty())
+                        store.incrementSkipped(runId);
                     onTaskSkipped(s.name, "Già aggiornata");
+                }
                 (*pending)--;
             });
         }

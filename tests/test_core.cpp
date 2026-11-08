@@ -1782,6 +1782,238 @@ static void testPipelineJobStoreOrfani() {
     fs::remove_all(dir, ec);
 }
 
+// Modello Run: apertura/chiusura, conteggi derivati, filtri e retry per run.
+static void testPipelineRuns() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_pipeline_runs";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+    const fs::path dbPath = dir / "p.db";
+
+    Core::PipelineJobStore store(dbPath);
+    const auto runId = store.beginRun("interactive");
+    CHECK(!runId.empty());
+    CHECK(runId.rfind("run-", 0) == 0);
+    CHECK(store.runSummary(runId).has_value());
+
+    const auto a =
+        store.enqueue("serie:/a#1", "Serie A", 1, "interactive", 100, "{}", "/media/A", runId);
+    const auto b =
+        store.enqueue("serie:/b#2", "Serie A", 2, "interactive", 100, "{}", "/media/A", runId);
+    const auto c =
+        store.enqueue("serie:/c#3", "Serie B", 3, "interactive", 100, "{}", "/media/B", runId);
+    CHECK(a.creato && b.creato && c.creato);
+    {
+        const auto jobs = store.runJobs(runId);
+        CHECK(jobs.size() == 3);
+        CHECK(jobs[0].id == a.id && jobs[2].id == c.id); // ORDER BY id ASC
+        CHECK(jobs[0].runId == runId);
+    }
+
+    // Un completato, un fallito, uno ancora in coda; due serie già aggiornate.
+    const auto preso = store.claim("queued_download", "downloading");
+    CHECK(preso.has_value());
+    CHECK(store.transition(preso->id, "downloading", "completed"));
+    CHECK(store.fail(b.id, "errore di rete"));
+    CHECK(store.incrementSkipped(runId));
+    CHECK(store.incrementSkipped(runId));
+
+    auto riepilogo = store.runSummary(runId);
+    CHECK(riepilogo.has_value());
+    CHECK(riepilogo->totale == 3);
+    CHECK(riepilogo->completati == 1);
+    CHECK(riepilogo->nonRiusciti == 1);
+    CHECK(riepilogo->inCorso == 1);
+    CHECK(riepilogo->saltati == 2);
+    CHECK(riepilogo->percent == 67); // (1 + 1) / 3 * 100, arrotondato
+    CHECK(riepilogo->origine == "interactive");
+    CHECK(riepilogo->stato == "in_corso");
+    CHECK(riepilogo->conclusoIl.empty());
+
+    // Filtri su finestra/origine/stato e conteggi (solo origine).
+    int total = 0;
+    Core::RunCounts counts;
+    CHECK(store.listRuns("recenti", "tutte", "tutti", 20, 0, &total, &counts).size() == 1);
+    CHECK(total == 1);
+    CHECK(counts.inCorso == 1 && counts.recenti == 1 && counts.problemi == 0);
+    CHECK(store.listRuns("storico", "tutte", "tutti", 20, 0).empty());
+    CHECK(store.listRuns("recenti", "automatico", "tutti", 20, 0).empty());
+    CHECK(store.listRuns("recenti", "manuale", "tutti", 20, 0).size() == 1);
+
+    CHECK(store.finishRun(runId, "completato_con_errori"));
+    CHECK(!store.finishRun(runId, "completato")); // già chiuso
+    riepilogo = store.runSummary(runId);
+    CHECK(riepilogo->stato == "completato_con_errori");
+    CHECK(!riepilogo->conclusoIl.empty());
+    CHECK(store.listRuns("recenti", "tutte", "problemi", 20, 0).size() == 1);
+    CHECK(store.listRuns("recenti", "tutte", "completato", 20, 0).empty());
+    counts = Core::RunCounts{};
+    static_cast<void>(store.listRuns("tutti", "tutte", "tutti", 20, 0, &total, &counts));
+    CHECK(total == 1 && counts.problemi == 1);
+
+    // Riprova i falliti: torna in coda senza azzerare i tentativi.
+    CHECK(store.runSummary(runId)->nonRiusciti == 1);
+    CHECK(store.retryFailedRun(runId) == 1);
+    CHECK(store.runSummary(runId)->nonRiusciti == 0);
+    CHECK(store.retryFailedRun(runId) == 0);
+    {
+        const auto jobs = store.runJobs(runId);
+        CHECK(jobs.size() == 3);
+        CHECK(jobs[1].fase == "queued_download"); // b riprovato
+    }
+
+    // Run automatico lasciato aperto: chiuso come interrotto una sola volta.
+    const auto run2 = store.beginRun("background");
+    CHECK(run2 != runId);
+    const auto d =
+        store.enqueue("serie:/d#4", "Serie C", 4, "background", 0, "{}", "/media/C", run2);
+    CHECK(d.creato);
+    CHECK(store.fail(d.id, "ko"));
+    CHECK(store.listRuns("recenti", "automatico", "in_corso", 20, 0).size() == 1);
+    CHECK(store.closeOrphanRuns() == 1);
+    CHECK(store.runSummary(run2)->stato == "interrotto");
+    CHECK(!store.runSummary(run2)->conclusoIl.empty());
+    CHECK(!store.finishRun(run2, "interrotto")); // già chiuso
+    CHECK(store.closeOrphanRuns() == 0);
+
+    // job con problemi (alias /api/pipeline?fase=problemi)
+    {
+        Core::JobQuery query;
+        query.fase = "problemi";
+        CHECK(store.list(query).size() == 1); // solo d, b è stato riprovato
+    }
+
+    // Finestra: forzo i concluso_il nel passato e verifico recenti/storico.
+    {
+        Core::Database db(dbPath);
+        CHECK(db.execute("UPDATE pipeline_runs "
+                         "SET concluso_il = '2020-01-01T00:00:00.000Z'"));
+    }
+    CHECK(store.listRuns("storico", "tutte", "tutti", 20, 0).size() == 2);
+    CHECK(store.listRuns("recenti", "tutte", "tutti", 20, 0).empty());
+    counts = Core::RunCounts{};
+    static_cast<void>(store.listRuns("tutti", "tutte", "tutti", 20, 0, &total, &counts));
+    CHECK(total == 2 && counts.inCorso == 0 && counts.recenti == 0);
+
+    // Paginazione: run e job.
+    const auto pagina1 = store.listRuns("tutti", "tutte", "tutti", 1, 0, &total);
+    CHECK(pagina1.size() == 1 && total == 2);
+    const auto pagina2 = store.listRuns("tutti", "tutte", "tutti", 1, 1);
+    CHECK(pagina2.size() == 1 && pagina2[0].id != pagina1[0].id);
+    Core::JobQuery query;
+    query.limit = 2;
+    CHECK(store.list(query).size() == 2);
+    query.offset = 2;
+    CHECK(store.list(query).size() == 2);
+    query.offset = 4;
+    CHECK(store.list(query).empty());
+    query = Core::JobQuery{};
+    query.runId = runId;
+    CHECK(store.list(query).size() == 3);
+
+    CHECK(!store.runSummary("run-inesistente").has_value());
+
+    // Un job non terminale ripreso da un nuovo run passa al run corrente:
+    // il lavoro è di questo avvio (es. coda rimasta dopo uno stop).
+    {
+        Core::PipelineJobStore store2(dir / "ripresa.db");
+        const auto r1 = store2.beginRun("background");
+        const auto job =
+            store2.enqueue("serie:/r#1", "S", 1, "background", 0, "{}", "/media/S", r1);
+        CHECK(job.creato);
+        const auto r2 = store2.beginRun("interactive");
+        const auto ripreso =
+            store2.enqueue("serie:/r#1", "S", 1, "interactive", 100, "{}", "/media/S", r2);
+        CHECK(!ripreso.creato && ripreso.id == job.id);
+        CHECK(store2.runSummary(r1)->totale == 0);
+        CHECK(store2.runSummary(r2)->totale == 1);
+        CHECK(store2.runJobs(r2)[0].runId == r2);
+        CHECK(store2.runJobs(r2)[0].origine == "interactive");
+        CHECK(store2.runJobs(r2)[0].priorita >= 100);
+    }
+
+    fs::remove_all(dir, ec);
+}
+
+// Migrazione v5 -> v6: i job preesistenti finiscono nel run `legacy` senza
+// perdita di dati; un DB vuoto non crea run sintetici.
+static void testPipelineRunsMigration() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_pipeline_runs_mig";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+    const fs::path dbPath = dir / "m.db";
+
+    {
+        Core::Database db(dbPath);
+        CHECK(db.isOpen());
+        CHECK(db.schemaVersion() == Core::Database::kSchemaVersion);
+        // Torna allo schema v5: niente tabella run, niente colonna run_id.
+        CHECK(db.execute("DROP INDEX IF EXISTS idx_pipeline_jobs_run;"));
+        CHECK(db.execute("DROP TABLE pipeline_runs;"));
+        CHECK(db.execute("ALTER TABLE pipeline_jobs DROP COLUMN run_id;"));
+        CHECK(db.execute("DELETE FROM migrations WHERE version >= 6;"));
+        CHECK(db.execute("INSERT INTO pipeline_jobs(job_key, serie, episodio, origine, fase, "
+                         "payload, creato_il, aggiornato_il) VALUES "
+                         "('k1','S',1,'background','completed','{\"videoUrl\":\"v\"}',"
+                         "'2026-01-01T00:00:00.000Z','2026-01-02T00:00:00.000Z');"));
+        CHECK(db.execute("INSERT INTO pipeline_jobs(job_key, serie, episodio, origine, fase, "
+                         "creato_il, aggiornato_il) VALUES "
+                         "('k2','S',2,'background','failed',"
+                         "'2026-01-01T01:00:00.000Z','2026-01-03T00:00:00.000Z');"));
+        CHECK(db.execute("INSERT INTO pipeline_jobs(job_key, serie, episodio, origine, fase, "
+                         "creato_il, aggiornato_il) VALUES "
+                         "('k3','S',3,'background','completed',"
+                         "'2026-01-01T02:00:00.000Z','2026-01-02T12:00:00.000Z');"));
+    }
+    {
+        Core::Database db(dbPath);
+        CHECK(db.isOpen());
+        CHECK(db.schemaVersion() == Core::Database::kSchemaVersion);
+        {
+            auto sel = db.prepare("SELECT COUNT(*) FROM pipeline_jobs WHERE run_id = 'legacy';");
+            CHECK(sel.step() && !sel.hasError() && sel.columnInt(0) == 3);
+        }
+        {
+            auto sel = db.prepare("SELECT origine, stato, avviato_il, concluso_il, saltati "
+                                  "FROM pipeline_runs WHERE id = 'legacy';");
+            CHECK(sel.step() && !sel.hasError());
+            CHECK(sel.columnText(0) == "background");
+            CHECK(sel.columnText(1) == "completato_con_errori");
+            CHECK(sel.columnText(2) == "2026-01-01T00:00:00.000Z");
+            CHECK(sel.columnText(3) == "2026-01-03T00:00:00.000Z");
+            CHECK(sel.columnInt(4) == 0);
+        }
+        {
+            // Nessuna perdita di dati: payload e fasi originali intatti.
+            auto sel = db.prepare("SELECT fase, payload FROM pipeline_jobs WHERE job_key = 'k1';");
+            CHECK(sel.step() && sel.columnText(0) == "completed");
+            CHECK(sel.columnText(1).find("videoUrl") != std::string::npos);
+        }
+    }
+    // Riapertura: backfill idempotente, nessun secondo run legacy.
+    {
+        Core::Database db(dbPath);
+        auto sel = db.prepare("SELECT COUNT(*) FROM pipeline_runs;");
+        CHECK(sel.step() && sel.columnInt(0) == 1);
+    }
+
+    // DB nuovo e vuoto: nessun run sintetico.
+    {
+        const fs::path vuoto = dir / "vuoto.db";
+        Core::Database db(vuoto);
+        CHECK(db.isOpen());
+        auto sel = db.prepare("SELECT COUNT(*) FROM pipeline_runs;");
+        CHECK(sel.step() && sel.columnInt(0) == 0);
+    }
+
+    fs::remove_all(dir, ec);
+}
+
 // Pipeline fase 2: pool separati, budget globale di conversione, retry.
 static void testPipelineCoordinator() {
     namespace fs = std::filesystem;
@@ -2405,6 +2637,8 @@ int main(int argc, char** argv) {
     testPipelineGate();
     testPipelineJobStore();
     testPipelineJobStoreOrfani();
+    testPipelineRuns();
+    testPipelineRunsMigration();
     testPipelineCoordinator();
     testScheduler();
     testWorkerPool();

@@ -182,7 +182,16 @@ Pulizia guidata, due sole azioni sicure: mai file video.
 ### `GET /api/pipeline` (dal 3.0)
 
 Coda per-episodio della pipeline condivisa: conteggi per fase e job.
-Parametri: `fase` (opzionale), `limit` (default 100, tetto 500).
+Parametri:
+- `fase` (opzionale): fase esatta, oppure `problemi` (alias di
+  `failed` + `interrupted`).
+- `window` (default `tutti`): `recenti` = job non terminali oppure aggiornati
+  nelle ultime 24h; `storico` = job terminali aggiornati da più di 24h;
+  `tutti` = nessun filtro.
+- `run_id` (opzionale): solo i job dell'avvio indicato.
+- `offset` (default 0) e `limit` (default 100, tetto 500).
+
+I `counts` restano globali (tutte le fasi, tutti i run).
 
 ```json
 {
@@ -191,7 +200,8 @@ Parametri: `fase` (opzionale), `limit` (default 100, tetto 500).
                "downloaded_waiting_conversion": 0, "converting": 0,
                "completed": 0, "retry_wait": 1, "failed": 0, "interrupted": 0},
     "items": [
-        {"id": 1, "job_key": "animeW_scraper:/play/x#1", "serie": "Serie X",
+        {"id": 1, "run_id": "run-1794153364250-0",
+         "job_key": "animeW_scraper:/play/x#1", "serie": "Serie X",
          "episodio": 1, "origine": "interactive", "fase": "queued_download",
          "tentativi": 0, "prossima_esecuzione": 0, "priorita": 100, "errore": "",
          "creato_il": "2026-11-08T10:00:00.000Z",
@@ -217,6 +227,99 @@ torna in coda con scadenza immediata (`prossima_esecuzione = 0`). I
 Risponde `400` se `id` manca o non è un intero, `500` se lo store segnala un
 errore di storage. Su un job in una fase non riprovabile la chiamata è
 idempotente: nessuna riga cambia e la risposta resta `success`.
+
+---
+
+### Modello Run (schema v6)
+
+Un **Run** è un avvio della pipeline, manuale (`interactive`) o automatico
+(`background`). Ogni run è persistito in `pipeline_runs`; ogni job porta il
+`run_id` dell'avvio che lo ha prodotto. I job preesistenti alla v6 confluiscono
+nel run sintetico `legacy`, che la UI mostra come "Avvio precedente".
+
+Campi del run nelle risposte: `id`, `origine` (`manuale`/`automatico`),
+`avviato_il`, `concluso_il` (`null` finché è in corso), `stato`
+(`in_corso`, `completato`, `completato_con_errori`, `interrotto`), `totale`,
+`completati`, `non_riusciti` (fase `failed`), `saltati`, `in_corso` e
+`percent` = `(completati + non_riusciti) / totale * 100`, arrotondato.
+
+### `GET /api/overview` (dal 3.0)
+
+Per la Home: l'ultimo run, la coda globale e i problemi aperti.
+`run` è `null` se non esiste alcun run; `corrente` è il job attivo
+(`downloading`/`converting`) o il primo in `queued_download`/`retry_wait`
+del run.
+
+```json
+{
+    "success": true,
+    "run": {"id": "run-1794153364250-0", "origine": "manuale",
+            "avviato_il": "2026-11-08T17:03:00.000Z", "concluso_il": null,
+            "stato": "in_corso", "totale": 7, "completati": 3,
+            "non_riusciti": 1, "saltati": 0, "in_corso": 3, "percent": 57,
+            "corrente": {"serie": "Psyren", "episodio": 4, "fase": "converting"}},
+    "coda": {"queued": 2, "downloading": 1, "converting": 1, "retry": 0, "totale": 4},
+    "problemi": {"non_riusciti": 1, "interrotti": 0}
+}
+```
+
+Nota: `coda.queued` include anche `downloaded_waiting_conversion`; la somma
+dei campi è `coda.totale`. `coda` e `problemi` sono globali (i job non
+terminali appartengono comunque al run corrente; i problemi restano visibili
+anche dopo la chiusura del run che li ha prodotti).
+
+### `GET /api/runs` (dal 3.0)
+
+Vista "Avvii" di Attività.
+Parametri: `window` (`recenti` default | `storico` | `tutti`; 24h),
+`origine` (`tutte` default | `manuale` | `automatico`), `stato`
+(`tutti` default | `in_corso` | `completato` | `completato_con_errori` |
+`interrotto` | `problemi` = ultimi due), `limit` (default 20, tetto 100),
+`offset` (default 0).
+
+```json
+{
+    "success": true,
+    "items": [{"id": "run-...", "origine": "automatico",
+               "avviato_il": "...", "concluso_il": "...",
+               "stato": "completato_con_errori", "totale": 12,
+               "completati": 11, "non_riusciti": 1, "saltati": 0,
+               "in_corso": 0, "percent": 100}],
+    "total": 42,
+    "counts": {"in_corso": 1, "recenti": 5, "problemi": 2}
+}
+```
+
+`counts` è calcolato sulla sola `origine` (ignora `window`/`stato`/`limit`):
+`in_corso` = run non conclusi, `recenti` = in corso o conclusi nelle ultime
+24h, `problemi` = `completato_con_errori` + `interrotto`.
+
+### `GET /api/runs/:id` (dal 3.0)
+
+Dettaglio di un run con i job in ordine di `id`; `path` è la cartella serie
+(per la locandina). `404` se il run non esiste.
+
+```json
+{
+    "success": true,
+    "run": {"id": "run-...", "...": "come sopra"},
+    "jobs": [{"id": 12, "run_id": "run-...", "job_key": "...",
+              "serie": "Psyren", "episodio": 4, "origine": "interactive",
+              "fase": "converting", "tentativi": 0, "prossima_esecuzione": 0,
+              "priorita": 100, "errore": "",
+              "creato_il": "...", "aggiornato_il": "...",
+              "path": "/media/Psyren"}]
+}
+```
+
+### `POST /api/runs/:id/retry-failed` (dal 3.0)
+
+Rimette in coda (`queued_download`, scadenza immediata) tutti i job `failed`
+del run, senza azzerare i tentativi. `404` se il run non esiste.
+
+```json
+{"success": true, "retried": 2}
+```
 
 ---
 

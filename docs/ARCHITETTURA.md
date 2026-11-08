@@ -86,13 +86,40 @@ Le classi scraper (`BaseScraper`, `AnimeWScraper`, `AnimeUScraper`) vivono in
 Run manuale e scheduler sono **due percorsi d'ingresso distinti**, ma nel
 demone esiste **un solo esecutore**: `Core::PipelineGate` (pipeline condivisa,
 fase 1) serializza check periodico e run manuale, con precedenza al secondo.
-La coda persistente serve oggi i controlli periodici; la coda per-episodio
-condivisa fra le due origini è la fase successiva, non ancora implementata.
+La coda per-episodio condivisa fra le due origini è persistita in
+`pipeline_jobs`; ogni avvio è un **Run** (sotto).
+
+## Run (schema v6)
+
+Un **Run** è un avvio della pipeline — manuale (origine `interactive`) o
+automatico (`background`) — ed è l'unità che Home e Attività leggono.
+
+- Tabella `pipeline_runs`: `id` (`run-<epoch_ms>-<seq>`), `origine`,
+  `avviato_il`, `concluso_il` (NULL finché in corso), `stato` (`in_corso`,
+  `completato`, `completato_con_errori`, `interrotto`), `saltati`.
+- `pipeline_jobs.run_id` collega ogni job al suo avvio; indice
+  `(run_id, fase)`. I conteggi del run non sono contatori: si derivano dai job
+  (`completed`, `failed`, `interrupted`, non terminali), quindi non possono
+  divergere.
+- `ExecutionEngine::runPipeline` chiude i run rimasti aperti
+  (`closeOrphanRuns`), apre il run (`beginRun`), passa il `run_id` a ogni
+  `enqueue`, incrementa `saltati` per le serie già aggiornate e chiude sempre
+  il run con un guard RAII: `interrotto` su stop/eccezione, altrimenti
+  `completato_con_errori` se ci sono job `failed`/`interrupted`, altrimenti
+  `completato`.
+- I job preesistenti alla v6 finiscono nel run sintetico `legacy` (etichetta
+  UI "Avvio precedente"), con stato `completato_con_errori` se avevano
+  fallimenti, altrimenti `completato`.
+- API: `GET /api/overview` (ultimo run + coda + problemi),
+  `GET /api/runs` (finestra/origine/stato, paginato), `GET /api/runs/{id}`
+  (dettaglio job), `POST /api/runs/{id}/retry-failed`. `/api/pipeline` accetta
+  `run_id`, `offset`, `fase=problemi` e `window=recenti|storico|tutti`.
 
 ## Persistenza
 
 - `series_data.db` — SQLite vendored (`third_party/sqlite`), fonte
-  autorevole. Tabelle: `series`, `tasks`, `kv`, `migrations`.
+  autorevole. Tabelle: `series`, `tasks`, `kv`, `migrations`, `notifications`,
+  `pipeline_jobs`, `pipeline_runs`.
 - `series_data.json` — export della tabella `series`, riscritto a ogni
   modifica; serve come fallback di rollback per il binario precedente.
 - `SeriesRepository` è l'unico punto di mutazione: cache invalidata su
