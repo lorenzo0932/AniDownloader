@@ -86,6 +86,7 @@ if (it != files.end()) {
 | `DashboardPage.svelte` | `/gestione` | CRUD serie con griglia card / tabella densa, poster |
 | `DiscoverPage.svelte` | `/scopri` | Ricerca/filtri AnimeWorld, griglia, tooltip, Aggiungi |
 | `QueuePage.svelte` | `/coda` | Coda persistente: stato, tentativi, prossima esecuzione, "Riprova ora" |
+| `PipelinePage.svelte` | `/pipeline` | Coda per-episodio (JobKey): fase, origine, tentativi, errori |
 | `ConfigPage.svelte` | `/config` | Configurazione app |
 | `LogsPage.svelte` | `/logs` | Log viewer |
 
