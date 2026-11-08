@@ -253,6 +253,41 @@ namespace Core {
         return db.changes();
     }
 
+    int PipelineJobStore::resetOrfani() {
+        Database db(m_dbPath);
+        if (!db.isOpen()) {
+            m_lastError = db.lastError();
+            return -1;
+        }
+        Transaction tx(db);
+        if (!tx.active()) {
+            m_lastError = db.lastError();
+            return -1;
+        }
+        auto ripristina = [this, &db](const std::string& daFase, const std::string& aFase) -> int {
+            auto upd = db.prepare("UPDATE pipeline_jobs SET fase = ?, "
+                                  "aggiornato_il = strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+                                  "WHERE fase = ?;");
+            if (!upd.valid() || !upd.bindText(1, aFase) || !upd.bindText(2, daFase) ||
+                (upd.step(), upd.hasError())) {
+                m_lastError = upd.lastError();
+                return -1;
+            }
+            return db.changes();
+        };
+        const int download = ripristina("downloading", "queued_download");
+        if (download < 0)
+            return -1;
+        const int conversioni = ripristina("converting", "downloaded_waiting_conversion");
+        if (conversioni < 0)
+            return -1;
+        if (!tx.commit()) {
+            m_lastError = db.lastError();
+            return -1;
+        }
+        return download + conversioni;
+    }
+
     std::vector<PipelineJob> PipelineJobStore::list(const std::string& fase, int limit) const {
         std::vector<PipelineJob> out;
         Database db(m_dbPath);

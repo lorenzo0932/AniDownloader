@@ -68,6 +68,12 @@ namespace Core {
         // Da retry_wait a queued_download quando la scadenza è passata.
         int promuoviRetry(std::int64_t ora = 0);
 
+        // Recupera i job rimasti in una fase attiva per stop/crash: riporta
+        // downloading -> queued_download e converting ->
+        // downloaded_waiting_conversion. Le altre fasi non vengono toccate.
+        // Ritorna il numero di righe ripristinate, -1 su errore.
+        int resetOrfani();
+
         [[nodiscard]] std::vector<PipelineJob> list(const std::string& fase = "",
                                                     int limit = 100) const;
         [[nodiscard]] std::map<std::string, int> counts() const;
