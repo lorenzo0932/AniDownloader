@@ -7,6 +7,16 @@
   import DirectoryBrowser from './DirectoryBrowser.svelte';
   import StoragePanel from './StoragePanel.svelte';
 
+  // Tab: le preferenze vivono in un solo form sempre montato (pannelli
+  // nascosti via `hidden`) così le modifiche non salvate sopravvivono al
+  // cambio tab. Sistema è manutenzione: fuori dal form, senza Salva.
+  const TABS = [
+    { id: 'generali', label: 'Generali' },
+    { id: 'download', label: 'Download' },
+    { id: 'automazione', label: 'Automazione' },
+    { id: 'sistema', label: 'Sistema' },
+  ];
+
   let config = $state({});
   let error = $state('');
   let saved = $state(false);
@@ -14,16 +24,7 @@
   let showBrowser = $state(false);
   let browserTarget = $state('');
   let selectedTheme = $state(getTheme());
-  let cacheInfo = $state(null);
-  let cacheMsg = $state('');
-
-  function formatBytes(b) {
-    if (!b) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let v = b, u = 0;
-    while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
-    return (u === 0 ? v : v.toFixed(1)) + ' ' + units[u];
-  }
+  let tab = $state('generali');
 
   const THEME_OPTIONS = [
     { value: 'system', label: 'Sistema (default)' },
@@ -108,28 +109,22 @@
     showBrowser = false;
   }
 
-  // Cache miniature: info non bloccante + svuotamento con conferma.
-  async function loadCacheInfo() {
-    try {
-      cacheInfo = await api.cache.thumbs();
-    } catch {
-      cacheInfo = null;
-    }
+  // Roving tabindex: frecce sinistra/destra (più Home/End) spostano il tab
+  // attivo e il focus, come da pattern ARIA per le tablist.
+  function onTabKeydown(e, index) {
+    const gestiti = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+    if (!gestiti.includes(e.key)) return;
+    e.preventDefault();
+    let next = index;
+    if (e.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length;
+    else if (e.key === 'ArrowRight') next = (index + 1) % TABS.length;
+    else if (e.key === 'Home') next = 0;
+    else next = TABS.length - 1;
+    tab = TABS[next].id;
+    document.getElementById(`settings-tab-${TABS[next].id}`)?.focus();
   }
 
-  async function clearCache() {
-    if (!confirm('Svuotare la cache delle miniature? Verranno rigenerate al bisogno.')) return;
-    cacheMsg = '';
-    try {
-      const r = await api.cache.clearThumbs();
-      cacheMsg = `Rimossi ${r.removedFiles} file (${formatBytes(r.freedBytes)} liberati).`;
-      await loadCacheInfo();
-    } catch (e) {
-      error = e.message;
-    }
-  }
-
-  onMount(() => { load(); loadCacheInfo(); });
+  onMount(load);
 </script>
 
 <div in:pageEnter|global>
@@ -142,89 +137,41 @@
 {#if busy}
   <div class="center"><div class="spinner-sm"></div></div>
 {:else if config.notifiche && config.scheduling}
-  <div class="form-card">
-    <form onsubmit={(e) => { e.preventDefault(); save(); }}>
-      <DirectoryBrowser
-        show={showBrowser}
-        currentPath={browserTarget === 'json_file_path' ? (config.json_file_path || '~/Video') : (config.output_dir || '~/Video')}
-        title={browserTarget === 'json_file_path' ? 'Scegli file JSON' : 'Scegli cartella di output'}
-        onselect={onBrowserSelect}
-        oncancel={onBrowserCancel}
-      />
+  <div class="settings-shell">
+    <div class="tabs" role="tablist" aria-label="Sezioni impostazioni">
+      {#each TABS as t, i (t.id)}
+        <button type="button" role="tab"
+                id={`settings-tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls={`settings-panel-${t.id}`}
+                tabindex={tab === t.id ? 0 : -1}
+                class:active={tab === t.id}
+                onclick={() => (tab = t.id)}
+                onkeydown={(e) => onTabKeydown(e, i)}>
+          {t.label}
+        </button>
+      {/each}
+    </div>
 
-      <div class="settings-columns">
-        <div class="settings-col">
+    <div class="form-card">
+      <form aria-label="Preferenze" hidden={tab === 'sistema'}
+            onsubmit={(e) => { e.preventDefault(); save(); }}>
+        <DirectoryBrowser
+          show={showBrowser}
+          currentPath={browserTarget === 'json_file_path' ? (config.json_file_path || '~/Video') : (config.output_dir || '~/Video')}
+          title={browserTarget === 'json_file_path' ? 'Scegli file JSON' : 'Scegli cartella di output'}
+          onselect={onBrowserSelect}
+          oncancel={onBrowserCancel}
+        />
 
+        <div id="settings-panel-generali" class="panel" role="tabpanel"
+             aria-labelledby="settings-tab-generali" hidden={tab !== 'generali'}>
           <div class="group-box">
             <div class="group-title">Aspetto</div>
             <label for="theme-select">Tema:</label>
             <Dropdown bind:value={selectedTheme} options={THEME_OPTIONS} onchange={handleThemeChange} />
             <p class="field-hint">Scegli tra tema chiaro, scuro o automatico in base alle preferenze del browser.</p>
-          </div>
-
-          <div class="group-box">
-            <div class="group-title">Codifica e Prestazioni Video</div>
-
-            <div class="checkbox-row">
-              <input id="convert_to_h265" type="checkbox" bind:checked={config.convert_to_h265} />
-              <label for="convert_to_h265">Abilita compressione H.265 (HEVC)</label>
-            </div>
-            <p class="field-hint">Riduce le dimensioni del file (~50%) mantenendo la qualit&agrave;.</p>
-
-            <hr class="field-sep" />
-
-            <div class="checkbox-row">
-              <input id="burst_on_manual_start" type="checkbox" bind:checked={config.burst_on_manual_start} />
-              <label for="burst_on_manual_start">Download manuali con priorit&agrave; massima (burst)</label>
-            </div>
-            <p class="field-hint">
-              Usa ~85% della CPU invece del 50% dei controlli automatici: pi&ugrave; veloce quando sei al PC,
-              con pi&ugrave; calore e consumo. Vale dal prossimo avvio; lo scheduler resta sempre contenuto.
-            </p>
-
-            <hr class="field-sep" />
-
-            <div class="sub-title">Elaborazione Parallela (Chunk Splitting)</div>
-            <p class="field-hint">Divide il video in segmenti per accelerare la codifica su CPU multi-core.</p>
-
-            <label for="num_chunks">Numero di Chunk:</label>
-            <input id="num_chunks" type="number" min="0" max="32" bind:value={config.num_chunks}
-              placeholder="0 = Auto" />
-            <p class="field-hint">Numero di segmenti per la codifica parallela (0 = Auto)</p>
-
-            <div class="warning-box">
-              <svg class="warn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-              </svg>
-              <div>
-                <b>Attenzione alle Prestazioni:</b><br />
-                &bull; <b>H.265:</b> Richiede molta potenza di calcolo.<br />
-                &bull; <b>Chunk &gt; 1:</b> Aumenta drasticamente l'uso di RAM e CPU.<br />
-                &bull; <b>Auto:</b> Adatta automaticamente le risorse in base al tuo PC.
-              </div>
-            </div>
-          </div>
-
-        </div>
-        <div class="settings-col">
-
-          <div class="group-box">
-            <div class="group-title">Gestione File e Percorsi</div>
-
-            <label for="json_file_path">File Database Serie (JSON):</label>
-            <div class="input-row">
-              <input id="json_file_path" type="text" bind:value={config.json_file_path} placeholder="/path/to/series.json" />
-              <button type="button" class="btn-browse" onclick={pickJsonPath} title="Sfoglia">...</button>
-            </div>
-            <p class="field-hint">Percorso del file di configurazione JSON delle serie</p>
-
-            <label for="output_dir">Cartella di Destinazione (Output):</label>
-            <div class="input-row">
-              <input id="output_dir" type="text" bind:value={config.output_dir} placeholder="/path/to/downloads" />
-              <button type="button" class="btn-browse" onclick={pickOutputDir} title="Sfoglia">...</button>
-            </div>
-            <p class="field-hint">Cartella di destinazione per i file scaricati</p>
+            <p class="field-note">Il tema si applica subito; le altre preferenze si salvano con Salva modifiche.</p>
           </div>
 
           <div class="group-box">
@@ -256,7 +203,77 @@
             <label for="retry_delay_ms">Ritardo tra tentativi (ms)</label>
             <input id="retry_delay_ms" type="number" min="100" max="30000" step="100" bind:value={config.retry_delay_ms} />
           </div>
+        </div>
 
+        <div id="settings-panel-download" class="panel" role="tabpanel"
+             aria-labelledby="settings-tab-download" hidden={tab !== 'download'}>
+          <div class="download-grid">
+            <div class="group-box">
+              <div class="group-title">Gestione File e Percorsi</div>
+
+              <label for="json_file_path">File Database Serie (JSON):</label>
+              <div class="input-row">
+                <input id="json_file_path" type="text" bind:value={config.json_file_path} placeholder="/path/to/series.json" />
+                <button type="button" class="btn-browse" onclick={pickJsonPath} title="Sfoglia">...</button>
+              </div>
+              <p class="field-hint">Percorso del file di configurazione JSON delle serie</p>
+
+              <label for="output_dir">Cartella di Destinazione (Output):</label>
+              <div class="input-row">
+                <input id="output_dir" type="text" bind:value={config.output_dir} placeholder="/path/to/downloads" />
+                <button type="button" class="btn-browse" onclick={pickOutputDir} title="Sfoglia">...</button>
+              </div>
+              <p class="field-hint">Cartella di destinazione per i file scaricati</p>
+            </div>
+
+            <div class="group-box">
+              <div class="group-title">Codifica e Prestazioni Video</div>
+
+              <div class="checkbox-row">
+                <input id="convert_to_h265" type="checkbox" bind:checked={config.convert_to_h265} />
+                <label for="convert_to_h265">Abilita compressione H.265 (HEVC)</label>
+              </div>
+              <p class="field-hint">Riduce le dimensioni del file (~50%) mantenendo la qualit&agrave;.</p>
+
+              <hr class="field-sep" />
+
+              <div class="checkbox-row">
+                <input id="burst_on_manual_start" type="checkbox" bind:checked={config.burst_on_manual_start} />
+                <label for="burst_on_manual_start">Download manuali con priorit&agrave; massima (burst)</label>
+              </div>
+              <p class="field-hint">
+                Usa ~85% della CPU invece del 50% dei controlli automatici: pi&ugrave; veloce quando sei al PC,
+                con pi&ugrave; calore e consumo. Vale dal prossimo avvio; lo scheduler resta sempre contenuto.
+              </p>
+
+              <hr class="field-sep" />
+
+              <div class="sub-title">Elaborazione Parallela (Chunk Splitting)</div>
+              <p class="field-hint">Divide il video in segmenti per accelerare la codifica su CPU multi-core.</p>
+
+              <label for="num_chunks">Numero di Chunk:</label>
+              <input id="num_chunks" type="number" min="0" max="32" bind:value={config.num_chunks}
+                placeholder="0 = Auto" />
+              <p class="field-hint">Numero di segmenti per la codifica parallela (0 = Auto)</p>
+
+              <div class="warning-box">
+                <svg class="warn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <div>
+                  <b>Attenzione alle Prestazioni:</b><br />
+                  &bull; <b>H.265:</b> Richiede molta potenza di calcolo.<br />
+                  &bull; <b>Chunk &gt; 1:</b> Aumenta drasticamente l'uso di RAM e CPU.<br />
+                  &bull; <b>Auto:</b> Adatta automaticamente le risorse in base al tuo PC.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="settings-panel-automazione" class="panel" role="tabpanel"
+             aria-labelledby="settings-tab-automazione" hidden={tab !== 'automazione'}>
           <div class="group-box">
             <div class="group-title">Controlli Automatici</div>
 
@@ -282,31 +299,26 @@
             <Dropdown bind:value={config.notifiche.sorgente} options={SORGENTE_OPTIONS} onchange={() => {}} />
             <p class="field-hint">Memorizzata ora, attiva dal prossimo aggiornamento dell'app.</p>
           </div>
+        </div>
 
-          <div class="group-box">
-            <div class="group-title">Manutenzione</div>
-            <p class="field-hint">
-              Miniature poster: {cacheInfo ? `${cacheInfo.files} file, ${formatBytes(cacheInfo.bytes)}` : 'non disponibili'}.
-              La cache si autoriduce oltre i 500 MB e le miniature rimosse vengono rigenerate al bisogno.
-            </p>
-            <button type="button" class="btn-browse" onclick={clearCache}>Svuota cache miniature</button>
-            {#if cacheMsg}
-              <p class="field-hint">{cacheMsg}</p>
+        {#if tab !== 'sistema'}
+          <div class="form-footer">
+            <button type="button" class="btn-cancel" onclick={() => load()}>Annulla</button>
+            <button type="submit" class="btn-primary">Salva Modifiche</button>
+            {#if saved}
+              <span class="saved-msg">Salvato!</span>
             {/if}
           </div>
+        {/if}
+      </form>
 
-        </div>
-      </div>
-
-      <div class="form-footer">
-        <button type="button" class="btn-cancel" onclick={() => load()}>Annulla</button>
-        <button type="submit" class="btn-primary">Salva Modifiche</button>
-        {#if saved}
-          <span class="saved-msg">Salvato!</span>
+      <div id="settings-panel-sistema" class="panel" role="tabpanel"
+           aria-labelledby="settings-tab-sistema" hidden={tab !== 'sistema'}>
+        {#if tab === 'sistema'}
+          <StoragePanel />
         {/if}
       </div>
-    </form>
-    <StoragePanel />
+    </div>
   </div>
 {/if}
 </div>
@@ -322,18 +334,31 @@
     width: 24px; height: 24px; border: 2px solid var(--border-color); border-top-color: var(--accent);
     border-radius: 50%; animation: motion-spin var(--motion-spinner) linear infinite;
   }
-  .form-card {
-    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px;
-    padding: 1.5rem; max-width: 1100px;
-    margin: 0 auto;
-    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
-  }
-  .advanced-box { margin-top: 1.5rem; }
-  .group-box {
-    margin-bottom: 1.5rem; padding-bottom: 1rem;
+  .settings-shell { max-width: 760px; margin: 0 auto; }
+
+  .tabs {
+    display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 1rem;
     border-bottom: 1px solid var(--border-color);
   }
-  .group-box:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .tabs button {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: var(--text-secondary); padding: 0.5rem 0.9rem; cursor: pointer;
+    font-size: 0.9rem; font-family: inherit; border-radius: 6px 6px 0 0;
+  }
+  .tabs button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+  .tabs button.active { color: var(--accent-light); border-bottom-color: var(--accent); }
+  .tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .form-card {
+    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px;
+    padding: 1.5rem; margin: 0;
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
+  }
+  form[hidden] { display: none; }
+  .panel[hidden] { display: none; }
+
+  .group-box { margin-bottom: 1.5rem; }
+  .group-box:last-child { margin-bottom: 0; }
   .group-title {
     font-size: 0.9rem; font-weight: 700; color: var(--accent-light);
     margin-bottom: 1rem; padding-bottom: 0.5rem;
@@ -360,6 +385,11 @@
   .btn-browse:hover { border-color: var(--accent); color: var(--accent); }
   .field-hint {
     font-size: 0.78rem; color: var(--text-muted); margin: 0 0 0.75rem; line-height: 1.4;
+  }
+  .field-note {
+    font-size: 0.78rem; color: var(--text-secondary); line-height: 1.4;
+    background: var(--bg-tertiary); border-left: 3px solid var(--accent);
+    border-radius: 6px; padding: 0.5rem 0.65rem; margin: 0 0 0.25rem;
   }
   .field-sep {
     border: none; border-top: 1px solid var(--border-color); margin: 0.75rem 0;
@@ -388,24 +418,14 @@
   .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .saved-msg { color: var(--success); font-size: 0.85rem; animation: motion-fade var(--motion-enter) var(--motion-ease-out); }
 
-  .settings-columns {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2rem;
+  /* Solo il tab Download usa due colonne su schermi larghi. */
+  .download-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+  @media (min-width: 700px) {
+    .download-grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
   }
-  .settings-col { flex: 1; min-width: 400px; }
-  .settings-col .group-box {
-    border-bottom: none; margin-bottom: 0; padding-bottom: 0;
-  }
-  .settings-col .group-box:not(:last-of-type) {
-    margin-bottom: 1.5rem;
-  }
-  .form-card .form-footer { padding-top: 0; }
 
   @media (max-width: 768px) {
-    .settings-col { min-width: 100%; }
     .form-card { padding: 1rem; }
     .form-footer { flex-wrap: wrap; gap: 0.5rem; }
-    .settings-columns { gap: 0; }
   }
 </style>
