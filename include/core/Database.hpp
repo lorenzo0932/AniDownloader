@@ -71,7 +71,7 @@ namespace Core {
     class Database {
       public:
         static constexpr int kBusyTimeoutMs = 5000;
-        static constexpr int kSchemaVersion = 3;
+        static constexpr int kSchemaVersion = 4;
         // Apertura concorrente sullo stesso file fresco: PRAGMA journal_mode
         // può rispondere SQLITE_BUSY senza invocare il busy handler.
         static constexpr int kOpenRetries = 30;
@@ -88,6 +88,10 @@ namespace Core {
 
         bool execute(const std::string& sql, std::string* error = nullptr);
         Statement prepare(const std::string& sql);
+
+        // Righe modificate dall'ultima istruzione (sqlite3_changes): serve ai
+        // claim atomici per sapere se l'UPDATE ha davvero preso la riga.
+        [[nodiscard]] int changes() const;
 
         // Applica le migrazioni mancanti fino a kSchemaVersion (idempotente).
         bool migrate(std::string* error = nullptr);

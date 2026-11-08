@@ -286,8 +286,26 @@ commit dello stato emette `onEpisodeReady(serie, episodio)` per ogni report
 riuscito con episodio > 0: è l'unico punto in cui nasce una notifica (la CLI
 passa un callback vuoto: è interattiva).
 
-### PipelineGate
+### PipelineJobStore e PipelineCoordinator
 
+`include/core/PipelineJobStore.hpp` — `src/core/PipelineJobStore.cpp`
+`include/core/PipelineCoordinator.hpp` — `src/core/PipelineCoordinator.cpp`
+
+Fase 2 della pipeline condivisa. Lo store persiste un job per `JobKey`
+(identity + episodio) nella tabella `pipeline_jobs`: deduplica garantita
+dall'indice unico parziale, promozione di un job background a interattivo
+(priorità alta) senza cambiare la fase in corso, claim atomico con
+`sqlite3_changes`, transizioni condizionate, retry con backoff e failed
+terminale. Il coordinator possiede due pool separati: il download porta
+`queued_download → downloaded_waiting_conversion` e termina (non attende la
+conversione), la conversione ha budget globale pari ai suoi worker (default
+2) e consuma solo sorgenti complete.
+
+Stato attuale: store, coordinator e API di lettura sono implementati e
+testati; il collegamento dei due handler ai percorsi di download/conversione
+esistenti è la fase di integrazione successiva.
+
+### PipelineGate
 `include/core/PipelineGate.hpp` — `src/core/PipelineGate.cpp`
 
 Coordinatore di esecuzione del demone (pipeline condivisa, fase 1): garantisce

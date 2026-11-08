@@ -98,6 +98,28 @@ schedulato. Il badge è `COUNT(*) WHERE letta = 0`.
 
 Indice `idx_notifications_unread` su `(letta, id DESC)`.
 
+### `pipeline_jobs` (schema v4)
+
+Coda per-episodio della pipeline condivisa (fase 2). Una riga per `JobKey`
+(identity canonica + episodio locale), con **un solo job non terminale per
+chiave** garantito dall'indice unico parziale `idx_pipeline_jobs_key`.
+
+| Colonna | Tipo | Note |
+|---|---|---|
+| `id` | INTEGER PK | Auto-increment |
+| `job_key` | TEXT | Identity + episodio |
+| `serie` | TEXT | Nome serie |
+| `episodio` | INTEGER | Episodio locale |
+| `origine` | TEXT | `background` o `interactive` |
+| `fase` | TEXT | `queued_download`, `downloading`, `downloaded_waiting_conversion`, `converting`, `completed`, `retry_wait`, `failed`, `interrupted` |
+| `tentativi` | INTEGER | Retry |
+| `prossima_esecuzione` | INTEGER | Epoch unix; 0 = subito |
+| `priorita` | INTEGER | Claim: priorità poi anzianità |
+| `errore` | TEXT | Ultimo errore |
+| `creato_il`, `aggiornato_il` | TEXT | Timestamp ISO8601 |
+
+Indice `idx_pipeline_jobs_claim` su `(fase, prossima_esecuzione, priorita DESC, id)`.
+
 ## Dati derivati
 
 ### DownloadTask (include/scrapers/BaseScraper.hpp)
