@@ -147,6 +147,29 @@ come commit locali, il push resta su richiesta dell'utente.
   nuova.
 - Verifica mirata invece della suite completa a ogni passo.
 
+## Sotto-sessioni (agenti delegati)
+
+- **1 task autonomo = 1 sotto-sessione**, con handoff in `plan/<slug>.md`
+  (obiettivo, vincoli, passi, criteri di accettazione, rollback). La
+  sotto-sessione parte da contesto nuovo: riceve solo il prompt, non la
+  conversazione.
+- **Delega solo su richiesta esplicita o per un task realmente isolato**, non
+  per risparmiare token. Se servono poche letture, resta nella sessione
+  principale.
+- **Un solo agente per worktree**: `HEAD`, `build/`, porte dei test e
+  `plan/test-manuale.md` sono condivisi. Due agenti nello stesso worktree si
+  rubano il branch e corrompono la build.
+- **Parallelo solo con worktree separati** (`git worktree add`), build dir
+  dedicata, porte diverse e aree di codice disgiunte; i merge su `dev` restano
+  **in sequenza**.
+- **Prompt di delega obbligatorio**: branch da creare, vincoli (niente
+  push/fetch/PR/merge remoti, non toccare la produzione `:8989`, non
+  committare `plan/`), gate da eseguire (build, test mirati, format, tidy),
+  merge locale, riga nel registro e report finale con evidenze.
+- **Se l'agente è bloccato si ferma e riporta**: non chiede all'utente e non
+  prende decisioni di prodotto.
+- **Modello**: quello scelto con `/models` per la sessione; mai cambio a metà.
+
 ## Cosa fare / non fare
 
 - **`#pragma once`** in tutti gli header.

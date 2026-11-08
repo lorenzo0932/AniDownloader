@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
-const { listMock, statusMock, startMock, sseMock } = vi.hoisted(() => ({
+const { listMock, statusMock, startMock, sseMock, pipelineMock } = vi.hoisted(() => ({
   listMock: vi.fn(), statusMock: vi.fn(), startMock: vi.fn(),
   sseMock: { onopen: null, onmessage: null, onerror: null, close: vi.fn() },
+  pipelineMock: vi.fn(),
 }));
 vi.mock('../api.js', () => ({
   BASE: '',
@@ -15,6 +16,7 @@ vi.mock('../api.js', () => ({
     download: { status: (...args) => statusMock(...args), start: (...args) => startMock(...args), stop: async () => ({}) },
     series: { list: (...args) => listMock(...args) },
     config: { get: async () => ({ config: {} }) },
+    pipeline: { list: (...args) => pipelineMock(...args) },
     sse: () => sseMock,
   },
 }));
@@ -53,6 +55,8 @@ beforeEach(() => {
   startMock.mockReset();
   startMock.mockResolvedValue({});
   sseMock.onopen = sseMock.onmessage = sseMock.onerror = null;
+  pipelineMock.mockReset();
+  pipelineMock.mockResolvedValue({ counts: {} });
   listMock.mockImplementation(async (opts) => {
     const items = seriesFixture();
     if (opts?.sort === 'added' && opts?.dir === 'desc') return { series: [...items].reverse() };
@@ -170,5 +174,20 @@ describe('StatusPage home', () => {
     expect(screen.getByRole('button', { name: 'Avvia Download' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Nuovo Download' })).toBeNull();
     expect(screen.getByRole('button', { name: /Completati/ }).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('riepilogo attività: conteggi pipeline e link a /attivita', async () => {
+    pipelineMock.mockResolvedValue({ counts: {
+      queued_download: 2, retry_wait: 1, downloading: 3,
+      converting: 1, downloaded_waiting_conversion: 2,
+    } });
+    render(StatusPage);
+    const link = await screen.findByRole('link', { name: 'Vedi attività' });
+    expect(link.getAttribute('href')).toBe('/attivita');
+    const summary = screen.getByLabelText('Riepilogo attività');
+    expect(summary.textContent).toContain('In coda');
+    expect(summary.textContent).toContain('download: 3');
+    expect(summary.textContent).toContain('conversione: 3');
+    expect(pipelineMock).toHaveBeenCalledWith({ limit: 1 });
   });
 });

@@ -82,13 +82,15 @@ if (it != files.end()) {
 | Componente | Route | Descrizione |
 |------------|-------|-------------|
 | `App.svelte` | — | Shell con sidebar, routing lato client |
-| `StatusPage.svelte` | `/` | Home: download live, fasi, ultime aggiunte/scaricate |
+| `StatusPage.svelte` | `/` | Home: download live, fasi, riepilogo attività, ultime aggiunte/scaricate |
 | `DashboardPage.svelte` | `/gestione` | CRUD serie con griglia card / tabella densa, poster |
 | `DiscoverPage.svelte` | `/scopri` | Ricerca/filtri AnimeWorld, griglia, tooltip, Aggiungi |
-| `QueuePage.svelte` | `/coda` | Coda persistente: stato, tentativi, prossima esecuzione, "Riprova ora" |
-| `PipelinePage.svelte` | `/pipeline` | Coda per-episodio (JobKey): fase, origine, tentativi, errori |
-| `ConfigPage.svelte` | `/config` | Configurazione app |
+| `AttivitaPage.svelte` | `/attivita` | Attività per episodio: tab In corso/Storico, filtri, dettagli, "Riprova" |
+| `ConfigPage.svelte` | `/config` | Configurazione app + sezione Avanzate (coda dei controlli, sola lettura) |
 | `LogsPage.svelte` | `/logs` | Log viewer |
+
+Le vecchie route `/coda` e `/pipeline` reindirizzano a `/attivita`
+(`history.replaceState`); le relative voci non sono più in sidebar.
 
 ### Componenti condivisi
 
@@ -98,6 +100,7 @@ if (it != files.end()) {
 | `DetailModal.svelte` | Dettaglio serie, modifica ed eliminazione; variante read-only |
 | `NotificationBell.svelte` | Campanella in sidebar: badge non lette, pannello, SSE `notification`, notifica OS se la config lo prevede |
 | `StoragePanel.svelte` | In Impostazioni: spazio disco/cache/parziali, pulizia guidata |
+| `QueuePage.svelte` | In Impostazioni → Avanzate: coda dei controlli (`tasks`) in sola lettura, con Aggiorna |
 | `SeriesCollection.svelte` | Griglia con FLIP e densità (griglia/grande) |
 | `SeriesCard.svelte` | Card poster + titolo + badge |
 | `SeriesList.svelte` | Lista righe per la vista tabella |
@@ -158,6 +161,38 @@ Su mobile il back `← Serie` è l'unica via (niente X); su desktop restano
 X in info e Annulla/Salva nel form. Su mobile la locandina ha sfondo ambient
 (stessa immagine sfocata dietro, zero traffico extra): niente bande grigie.
 
+### Pagina Attività
+
+`/attivita` unifica le ex pagine Coda e Pipeline in linguaggio utente.
+
+- **Tab**: "In corso" (job per episodio in `queued_download`, `downloading`,
+  `downloaded_waiting_conversion`, `converting`, `retry_wait`, `failed`,
+  `interrupted`) e "Storico" (`completed`).
+- **Filtri**: Tutti / In corso / Errori / Completati. I filtri di esito
+  portano alla tab coerente (Errori/In corso → In corso, Completati →
+  Storico), così non si ottengono liste vuote per costruzione.
+- **Riga**: "Serie · Ep. N" + stato in italiano (In attesa, In download, In
+  conversione, In attesa conversione, Errore, Completato, Interrotto) + tempo
+  relativo da `aggiornato_il`. Dettagli espandibili (bottone con
+  `aria-expanded`) con JobKey, origine (background/interattivo), tentativi ed
+  errore.
+- **Riprova**: sui job `failed` chiama `POST /api/pipeline/retry` e ricarica
+  la lista; i tentativi non vengono azzerati. Polling leggero ogni 5 s.
+- **Accessibilità**: tablist/tab con `aria-selected`, filtri con
+  `aria-pressed`, focus visibile, messaggi di errore in `role="alert"`.
+
+La coda dei controlli (`tasks`) non è più una pagina: vive in Impostazioni →
+**Avanzate** (`QueuePage` con `readonly` e `embedded`), sola lettura e
+"Aggiorna".
+
+### Home: riepilogo attività
+
+Sotto l'header della Home una riga mostra "In coda: N · download: M ·
+conversione: K" (in coda = `queued_download` + `retry_wait`; conversione =
+`converting` + `downloaded_waiting_conversion`) con link a `/attivita`. I dati
+arrivano da `GET /api/pipeline` al mount, ogni 10 s e sugli eventi SSE `done`/
+`queue`; il resto del layout della Home non cambia.
+
 ### Home: righe recenti cliccabili
 
 Le righe di Ultime aggiunte/scaricate (`RecentSeriesRow`) aprono lo stesso
@@ -186,6 +221,10 @@ export const api = {
     browse: { list, mounts, places, mkdir, touch, remove },
     cache: { thumbs, clearThumbs },
     discover: { page, tooltip },
+    notifications: { list, read },
+    queue: { list, retry },
+    pipeline: { list, retry },
+    storage: { info, cleanup },
     sse: () => new EventSource('/api/download/events'),
 };
 ```

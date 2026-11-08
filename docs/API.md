@@ -193,10 +193,30 @@ Parametri: `fase` (opzionale), `limit` (default 100, tetto 500).
     "items": [
         {"id": 1, "job_key": "animeW_scraper:/play/x#1", "serie": "Serie X",
          "episodio": 1, "origine": "interactive", "fase": "queued_download",
-         "tentativi": 0, "prossima_esecuzione": 0, "priorita": 100, "errore": ""}
+         "tentativi": 0, "prossima_esecuzione": 0, "priorita": 100, "errore": "",
+         "creato_il": "2026-11-08T10:00:00.000Z",
+         "aggiornato_il": "2026-11-08T10:00:00.000Z"}
     ]
 }
 ```
+
+### `POST /api/pipeline/retry` (dal 3.0)
+
+"Riprova" su un job per-episodio: un job `failed` (o già `queued_download`)
+torna in coda con scadenza immediata (`prossima_esecuzione = 0`). I
+`tentativi` non vengono azzerati e l'errore precedente viene ripulito.
+
+```json
+{"id": 1}
+```
+
+```json
+{"success": true, "id": 1}
+```
+
+Risponde `400` se `id` manca o non è un intero, `500` se lo store segnala un
+errore di storage. Su un job in una fase non riprovabile la chiamata è
+idempotente: nessuna riga cambia e la risposta resta `success`.
 
 ---
 

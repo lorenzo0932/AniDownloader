@@ -63,6 +63,9 @@ namespace Core {
 
         // Retry con backoff: fase retry_wait e prossima = ora + delay.
         bool retry(std::int64_t id, std::int64_t delaySec, const std::string& errore = "");
+        // "Riprova": rimette subito in coda un job fallito o già in attesa,
+        // senza azzerare i tentativi (la storia resta leggibile).
+        bool retryNow(std::int64_t id);
         // Terminale.
         bool fail(std::int64_t id, const std::string& errore = "");
         // Da retry_wait a queued_download quando la scadenza è passata.

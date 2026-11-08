@@ -7,13 +7,12 @@
   import DiscoverPage from './lib/components/DiscoverPage.svelte';
   import ConfigPage from './lib/components/ConfigPage.svelte';
   import LogsPage from './lib/components/LogsPage.svelte';
-  import QueuePage from './lib/components/QueuePage.svelte';
-  import PipelinePage from './lib/components/PipelinePage.svelte';
+  import AttivitaPage from './lib/components/AttivitaPage.svelte';
   import NotificationBell from './lib/components/NotificationBell.svelte';
 
   const routeMap = {
-    '/': 'home', '/gestione': 'gestione', '/scopri': 'scopri', '/coda': 'coda',
-    '/pipeline': 'pipeline', '/config': 'config', '/logs': 'logs',
+    '/': 'home', '/gestione': 'gestione', '/scopri': 'scopri', '/attivita': 'attivita',
+    '/coda': 'attivita', '/pipeline': 'attivita', '/config': 'config', '/logs': 'logs',
   };
 
   let route = $state(routeMap[window.location.pathname] || 'home');
@@ -35,6 +34,12 @@
 
   onMount(() => {
     initTheme();
+
+    // Vecchi bookmark: /coda e /pipeline ora vivono in /attivita.
+    if (window.location.pathname === '/coda' || window.location.pathname === '/pipeline') {
+      history.replaceState(null, '', '/attivita');
+      route = 'attivita';
+    }
 
     // Load config for close warning
     (async () => {
@@ -73,6 +78,12 @@
     };
     window.addEventListener('anidl:config-saved', onConfigSaved);
 
+    // Navigazione interna richiesta da una pagina (es. riepilogo in Home).
+    const onNavigate = (e) => {
+      if (e.detail) navigateTo(e.detail);
+    };
+    window.addEventListener('anidl:navigate', onNavigate);
+
     window.addEventListener('popstate', () => {
       route = routeMap[window.location.pathname] || 'home';
     });
@@ -81,6 +92,7 @@
       clearInterval(statusInterval);
       window.removeEventListener('beforeunload', onBeforeUnload);
       window.removeEventListener('anidl:config-saved', onConfigSaved);
+      window.removeEventListener('anidl:navigate', onNavigate);
     };
   });
 </script>
@@ -112,13 +124,9 @@
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           {#if !sidebarCollapsed}<span>Scopri</span>{/if}
         </button>
-        <button class="nav-item" class:active={route === 'coda'} onclick={() => navigateTo('coda')}>
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
-          {#if !sidebarCollapsed}<span>Coda</span>{/if}
-        </button>
-        <button class="nav-item" class:active={route === 'pipeline'} onclick={() => navigateTo('pipeline')}>
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h6"/><circle cx="19" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg>
-          {#if !sidebarCollapsed}<span>Pipeline</span>{/if}
+        <button class="nav-item" class:active={route === 'attivita'} onclick={() => navigateTo('attivita')}>
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          {#if !sidebarCollapsed}<span>Attività</span>{/if}
         </button>
         <button class="nav-item" class:active={route === 'config'} onclick={() => navigateTo('config')}>
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -139,10 +147,8 @@
           <SeriesManagerPage />
         {:else if route === 'scopri'}
           <DiscoverPage />
-        {:else if route === 'coda'}
-          <QueuePage />
-        {:else if route === 'pipeline'}
-          <PipelinePage />
+        {:else if route === 'attivita'}
+          <AttivitaPage />
         {:else if route === 'config'}
           <ConfigPage />
         {:else if route === 'logs'}

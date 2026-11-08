@@ -145,7 +145,7 @@ export const api = {
     retry: (id) => request('POST', '/api/queue/retry', { id }),
   },
 
-  // Pipeline condivisa (fase 2): coda per-episodio, sola lettura.
+  // Pipeline condivisa (fase 2): coda per-episodio, vista e retry manuale.
   pipeline: {
     list: (opts = {}) => {
       const params = [];
@@ -153,6 +153,7 @@ export const api = {
       if (Number.isInteger(opts.limit)) params.push('limit=' + opts.limit);
       return request('GET', '/api/pipeline' + (params.length ? '?' + params.join('&') : ''));
     },
+    retry: (id) => request('POST', '/api/pipeline/retry', { id }),
   },
 
   // Spazio occupato e pulizia guidata (cache miniature, residui .aria2).
