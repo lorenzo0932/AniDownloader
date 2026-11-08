@@ -91,7 +91,45 @@ resta solo il task `AniDownloader_WebServer` (AtLogOn, `--web --silent`).
 |----|------------|-------|
 | Linux | `anidownloaderd.service` (systemd user) via `install.sh` | reale |
 | Windows | Task `AniDownloader_WebServer` (AtLogOn) via `install.ps1` | ? (da verificare su macchina reale) |
-| macOS | `packaging/macos/com.anidownloader.daemon.plist` (installazione manuale con `launchctl`, log in `/tmp`; vedi commento nel file) | gap (testing HW differito) |
+| macOS | `install-mac.sh` → LaunchAgent `com.anidownloader.daemon` (log in `~/Library/Logs/AniDownloader`); `uninstall-mac.sh` per la rimozione | testing su Mac fisico differito |
+
+## macOS — installazione headless
+
+Il demone (web + scheduler interno, senza timer OS) si installa come
+**LaunchAgent dell'utente**: nessun `sudo`, nessun servizio di sistema.
+
+```bash
+./install-mac.sh                  # ultima release stabile
+./install-mac.sh --dev            # ultima prerelease (fallback stabile)
+./install-mac.sh v3.0.0-dev.5     # versione specifica
+./install-mac.sh --local          # build dal checkout corrente
+./install-mac.sh --status         # stato LaunchAgent + /api/status
+./install-mac.sh --uninstall      # rimuove agente e binario (config conservata)
+./install-mac.sh --uninstall --purge   # rimuove anche config e log
+```
+
+Dove finisce tutto:
+
+| Cosa | Percorso |
+|---|---|
+| Binario | `~/.local/share/anidownloader-headless/anidownloaderd` |
+| Symlink | `~/.local/bin/anidownloaderd` |
+| LaunchAgent | `~/Library/LaunchAgents/com.anidownloader.daemon.plist` |
+| Log | `~/Library/Logs/AniDownloader/daemon.out.log` / `daemon.err.log` |
+| Config e dati | `~/.config/AniDownloader/` |
+
+Il plist generato usa percorsi assoluti (launchd non espande `~`) e mette
+`/opt/homebrew/bin` nel `PATH`. Riavvio: `launchctl kickstart -k
+gui/$(id -u)/com.anidownloader.daemon`. Verifica: `./install-mac.sh --status`.
+
+**Limiti di firma/notarization**: il binario headless non è firmato né
+notarizzato, quindi Gatekeeper può bloccarlo al primo avvio (dialogo "non
+puoi aprire"). Il LaunchAgent avviato da launchd non passa dal Gatekeeper
+come un'app lanciata dal Finder, ma in caso di blocco:
+`xattr -d com.apple.quarantine <binario>` oppure
+`spctl --add --label AniDownloader <binario>`. La distribuzione .dmg Tauri
+segue lo stesso limite finché non c'è una firma Apple Developer. Su Intel
+le release pubblicano solo `mac-aarch64`: usare `--local`.
 
 ## Matrice di parità Linux / Windows / macOS
 
@@ -103,10 +141,10 @@ Stato verificato (`CI` = compilazione+smoke in GitHub Actions;
 |--------------|-------|---------|-------|
 | Build + smoke web (`--web` home 200) | CI | CI | CI |
 | Test C++ completi | CI reale | — (solo build) | — (solo build) |
-| Installer interattivo | `install.sh` reale | `install.ps1` ? | gap (`install-mac.sh` da scrivere, Fase 1) |
-| Demone all'avvio (web + scheduler) | systemd service reale | Task AtLogOn ? | plist manuale (gap testing reale) |
+| Installer interattivo | `install.sh` reale | `install.ps1` ? | `install-mac.sh` (da verificare su HW) |
+| Demone all'avvio (web + scheduler) | systemd service reale | Task AtLogOn ? | LaunchAgent via `install-mac.sh` (testing HW differito) |
 | Notifiche desktop | sì (Tauri `notify_episode`, permesso OS) | da verificare su HW | da verificare su HW |
-| Uninstall | `uninstall.sh` reale | `uninstall.ps1` ? | gap |
+| Uninstall | `uninstall.sh` reale | `uninstall.ps1` ? | `uninstall-mac.sh` (testing HW differito) |
 
 > Mai dichiarare parità senza check su macchina reale: le celle `?`
 > richiedono testing utente con checklist (Fasi 1–2 del piano).
