@@ -343,7 +343,7 @@
         <button type="button" class="btn-ghost" onclick={copia}>{copiato ? 'Copiato' : 'Copia'}</button>
         <button type="button" class="btn-ghost" onclick={scarica}>Scarica</button>
         <span class="sr-only" aria-live="polite">{copiato ? 'Log copiati' : ''}</span>
-        <button type="button" class="btn-primary" onclick={aggiorna} disabled={busy}>Aggiorna</button>
+        <button type="button" class="btn-ghost" onclick={aggiorna} disabled={busy}>Aggiorna</button>
       </div>
 
       {#if error && lines.length === 0}
@@ -530,6 +530,7 @@
     font-weight: 500;
   }
   .btn-ghost:hover { border-color: var(--accent); color: var(--text-primary); }
+  .btn-ghost:disabled { opacity: 0.6; cursor: default; }
   .btn-ghost[aria-pressed='true'] {
     background: var(--accent-bg);
     border-color: var(--accent);

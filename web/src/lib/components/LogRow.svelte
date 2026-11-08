@@ -41,16 +41,16 @@
 <style>
   .log-row {
     display: grid;
-    grid-template-columns: 64px 64px minmax(0, 1fr);
+    grid-template-columns: 72px 64px minmax(0, 1fr);
     gap: 0.5rem;
     align-items: start;
     padding: 2px 0.75rem;
-    min-height: 22px;
-    line-height: 1.5;
+    min-height: 24px;
+    line-height: 1.55;
     font-family: 'Consolas', 'Menlo', 'Monaco', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Courier New', monospace;
-    font-size: 0.76rem;
+    font-size: 0.8rem;
     content-visibility: auto;
-    contain-intrinsic-size: 22px;
+    contain-intrinsic-size: 24px;
   }
   .log-row:hover { background: var(--bg-tertiary); }
 
@@ -63,13 +63,13 @@
 
   .log-level {
     justify-self: start;
-    padding: 0 4px;
+    padding: 1px 5px;
     border-radius: 4px;
-    font-size: 0.62rem;
+    font-size: 0.65rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     white-space: nowrap;
-    margin-top: 2px;
+    margin-top: 1px;
   }
   .livello-error { color: var(--danger); background: var(--danger-bg); }
   .livello-warn { color: var(--warning-text); background: var(--warning-bg); }
