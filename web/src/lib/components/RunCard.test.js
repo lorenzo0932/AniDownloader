@@ -31,8 +31,6 @@ describe('RunCard', () => {
     const onopen = vi.fn();
     render(RunCard, {
       run: baseRun(),
-      coda: { queued: 2, downloading: 1, converting: 1, retry: 0, totale: 4 },
-      problemi: { non_riusciti: 1, interrotti: 0 },
       onopen,
     });
 
@@ -50,7 +48,9 @@ describe('RunCard', () => {
     expect(screen.getByText('3 in corso')).toBeTruthy();
     expect(screen.getByText('1 non riuscito')).toBeTruthy();
     expect(screen.getByText('7 totali')).toBeTruthy();
-    expect(screen.getByText(/Coda: 2 in attesa/)).toBeTruthy();
+    // La card mostra solo il run: niente numeri globali di coda/problemi.
+    expect(screen.queryByText(/Coda:/)).toBeNull();
+    expect(screen.queryByText(/Problemi aperti:/)).toBeNull();
 
     const link = screen.getByRole('link', { name: 'Apri attività' });
     expect(link.getAttribute('href')).toBe('/attivita');
@@ -91,12 +91,11 @@ describe('RunCard', () => {
         percent: 100,
         corrente: null,
       }),
-      problemi: { non_riusciti: 2, interrotti: 0 },
     });
 
     expect(screen.getByText('Completato con errori')).toBeTruthy();
     expect(screen.getByText('2 non riusciti')).toBeTruthy();
-    expect(screen.getByText('Problemi registrati: 2')).toBeTruthy();
+    expect(screen.queryByText(/Problemi aperti:/)).toBeNull();
   });
 
   it('fasi reali del backend: downloaded_waiting_conversion e retry_wait', () => {

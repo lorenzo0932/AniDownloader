@@ -26,6 +26,22 @@
   let overviewTimer = null;
   let disposed = false;
 
+  // Numeri globali (fuori dal run): vivono in una nota sotto la card, non
+  // dentro la card, per non mescolare gli scope.
+  let codaItems = $derived.by(() => {
+    const coda = overview?.coda;
+    if (!coda) return [];
+    const items = [];
+    if (coda.queued > 0) items.push(`${coda.queued} in attesa`);
+    if (coda.downloading > 0) items.push(`${coda.downloading} in download`);
+    if (coda.converting > 0) items.push(`${coda.converting} in conversione`);
+    if (coda.retry > 0) items.push(`${coda.retry} in retry`);
+    return items;
+  });
+  let problemiAperti = $derived(
+    (overview?.problemi?.non_riusciti || 0) + (overview?.problemi?.interrotti || 0)
+  );
+
   async function loadOverview() {
     try {
       const data = await api.runs.overview();
@@ -223,10 +239,25 @@
 
   <RunCard
     run={overview?.run ?? null}
-    coda={overview?.coda ?? null}
-    problemi={overview?.problemi ?? null}
     onopen={apriAttivita}
   />
+
+  {#if codaItems.length > 0 || problemiAperti > 0}
+    <div class="overview-notes">
+      {#if codaItems.length > 0}
+        <p class="overview-line">
+          In coda adesso: {codaItems.join(' · ')}
+          <a href="/attivita" class="overview-link" onclick={apriAttivita}>Vedi attività</a>
+        </p>
+      {/if}
+      {#if problemiAperti > 0}
+        <p class="overview-line">
+          Problemi aperti: {problemiAperti}
+          <a href="/attivita?tab=problemi" class="overview-link">Vedi problemi</a>
+        </p>
+      {/if}
+    </div>
+  {/if}
 
   {#if overviewError}
     <p class="overview-note" role="status">{overviewError}</p>
@@ -344,6 +375,15 @@
   }
 
   .overview-note { margin: 0; color: var(--text-muted); font-size: 0.78rem; }
+
+  /* Nota globale sotto la card: nessun box, solo testo e link. */
+  .overview-notes { display: flex; flex-direction: column; gap: 0.15rem; margin-top: -0.55rem; }
+  .overview-line { margin: 0; font-size: 0.78rem; color: var(--text-muted); }
+  .overview-link {
+    margin-left: 0.35rem; color: var(--accent-light); font-weight: 600;
+    text-decoration: none;
+  }
+  .overview-link:hover { text-decoration: underline; }
 
   .dashboard-tables {
     display: grid;
