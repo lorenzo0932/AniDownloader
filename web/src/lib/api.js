@@ -134,5 +134,16 @@ export const api = {
       id === undefined ? {} : { id }),
   },
 
+  // Coda persistente (tabella `tasks`): vista e retry manuale.
+  queue: {
+    list: (opts = {}) => {
+      const params = [];
+      if (opts.stato) params.push('stato=' + encodeURIComponent(opts.stato));
+      if (Number.isInteger(opts.limit)) params.push('limit=' + opts.limit);
+      return request('GET', '/api/queue' + (params.length ? '?' + params.join('&') : ''));
+    },
+    retry: (id) => request('POST', '/api/queue/retry', { id }),
+  },
+
   sse: () => new EventSource(BASE + '/api/download/events'),
 };

@@ -43,7 +43,7 @@ namespace Web {
         httplib::Server m_svr;
         Core::SeriesRepository m_seriesRepository;
         // Stesso DB delle serie: le notifiche vivono nella tabella v3.
-        std::filesystem::path m_notificationsDbPath;
+        std::filesystem::path m_dbPath;
         // Scheduler interno (B4): parte con start(), si ferma con stop().
         // Vive quanto il server: in --web il demone è web + scheduler.
         Core::Scheduler m_scheduler;
@@ -63,6 +63,7 @@ namespace Web {
         void setupRoutes();
         void setupInfoRoutes();
         void setupNotificationRoutes();
+        void setupQueueRoutes();
         void setupSeriesRoutes();
         void setupBrowseRoutes();
         void setupDiscoverRoutes();

@@ -2,7 +2,9 @@
 
 #include "core/Database.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <utility>
 
 namespace Core {
 
@@ -175,6 +177,83 @@ namespace Core {
             return -1;
         }
         return sel.columnInt(0);
+    }
+
+    std::vector<QueueStore::Voce> QueueStore::list(const std::string& stato, int limit) const {
+        std::vector<Voce> out;
+        Database db(m_dbPath);
+        if (!db.isOpen()) {
+            m_lastError = db.lastError();
+            return out;
+        }
+        const int cap = (limit <= 0) ? 100 : (std::min)(limit, 500);
+        const std::string colonne = "SELECT id, kind, serie, episodio, stato, tentativi, "
+                                    "prossima_esecuzione, priorita, creato_il FROM tasks ";
+        const std::string ordine =
+            " ORDER BY CASE stato WHEN 'attivo' THEN 0 WHEN 'attesa' THEN 1 "
+            "WHEN 'fallito' THEN 2 ELSE 3 END, priorita DESC, id DESC LIMIT ?;";
+        auto sel = stato.empty() ? db.prepare(colonne + "WHERE stato != 'fatto'" + ordine)
+                                 : db.prepare(colonne + "WHERE stato = ?" + ordine);
+        if (!sel.valid() || (!stato.empty() && !sel.bindText(1, stato)) ||
+            !sel.bindInt(stato.empty() ? 1 : 2, cap)) {
+            m_lastError = sel.lastError();
+            return out;
+        }
+        while (sel.step()) {
+            if (sel.hasError()) {
+                m_lastError = sel.lastError();
+                break;
+            }
+            Voce v;
+            v.id = sel.columnInt(0);
+            v.kind = sel.columnText(1);
+            v.serie = sel.columnText(2);
+            v.episodio = static_cast<int>(sel.columnInt(3));
+            v.stato = sel.columnText(4);
+            v.tentativi = static_cast<int>(sel.columnInt(5));
+            v.prossimaEsecuzione = sel.columnInt(6);
+            v.priorita = static_cast<int>(sel.columnInt(7));
+            v.creatoIl = sel.columnText(8);
+            out.push_back(std::move(v));
+        }
+        return out;
+    }
+
+    std::map<std::string, int> QueueStore::counts() const {
+        std::map<std::string, int> out;
+        Database db(m_dbPath);
+        if (!db.isOpen()) {
+            m_lastError = db.lastError();
+            return out;
+        }
+        auto sel = db.prepare("SELECT stato, COUNT(*) FROM tasks GROUP BY stato;");
+        if (!sel.valid()) {
+            m_lastError = sel.lastError();
+            return out;
+        }
+        while (sel.step()) {
+            if (sel.hasError()) {
+                m_lastError = sel.lastError();
+                break;
+            }
+            out[sel.columnText(0)] = static_cast<int>(sel.columnInt(1));
+        }
+        return out;
+    }
+
+    bool QueueStore::retryNow(std::int64_t id) {
+        Database db(m_dbPath);
+        if (!db.isOpen()) {
+            m_lastError = db.lastError();
+            return false;
+        }
+        auto upd = db.prepare("UPDATE tasks SET stato = 'attesa', prossima_esecuzione = 0 "
+                              "WHERE id = ? AND stato IN ('attesa', 'fallito');");
+        if (!upd.valid() || !upd.bindInt(1, id) || (upd.step(), upd.hasError())) {
+            m_lastError = upd.lastError();
+            return false;
+        }
+        return true;
     }
 
 } // namespace Core

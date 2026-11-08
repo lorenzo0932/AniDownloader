@@ -100,6 +100,47 @@ Segna come lette. Con `{"id": N}` solo quella; con body vuoto `{}` tutte.
 
 ---
 
+### `GET /api/queue` (dal 3.0)
+
+Vista della coda persistente (tabella `tasks`). Senza `stato` restituisce la
+coda attiva (attesa + attivo + fallito); i completati si chiedono con
+`?stato=fatto`.
+
+**Parametri query:**
+- `stato` (opzionale) — `attesa`, `attivo`, `fallito`, `fatto`
+- `limit` (opzionale) — default 100, tetto 500
+
+```json
+{
+    "success": true,
+    "counts": {"attesa": 1, "attivo": 0, "fatto": 12, "fallito": 1},
+    "items": [
+        {"id": 4, "kind": "check", "serie": "", "episodio": 0, "stato": "attesa",
+         "tentativi": 0, "prossima_esecuzione": 0, "priorita": 0,
+         "creato_il": "2026-11-08T10:00:00Z"}
+    ]
+}
+```
+
+`prossima_esecuzione` è epoch Unix: `0` = eseguibile subito; un valore futuro
+è il backoff del retry.
+
+### `POST /api/queue/retry` (dal 3.0)
+
+"Riprova ora": rimette in `attesa` con scadenza immediata un task fallito (o
+già in attesa). I `tentativi` non vengono azzerati, così la storia resta
+leggibile.
+
+```json
+{"id": 4}
+```
+
+```json
+{"success": true, "id": 4}
+```
+
+---
+
 ### `GET /api/series`
 
 Lista delle serie.

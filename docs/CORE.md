@@ -268,7 +268,10 @@ Eventi per SSE: `avviato`, `completato`, `riprova`, `fallito`.
 
 Coda persistente nella tabella `tasks`: `claim()` atomico, `complete()`,
 `failRetry()` con backoff, `failDead()`, `resetOrfani()` per il crash
-recovery. Ogni istanza apre la propria connessione (WAL + busy-timeout).
+recovery. Per la UI: `list(stato, limit)` (default: coda attiva, senza i
+completati), `counts()` per i badge e `retryNow(id)` per rimettere in attesa
+un fallito senza azzerare i tentativi.
+Ogni istanza apre la propria connessione (WAL + busy-timeout).
 
 ### CheckRunner
 

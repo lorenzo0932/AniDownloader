@@ -1510,6 +1510,27 @@ static void testQueueStore() {
         CHECK(q.complete(idOrfano));
     }
 
+    // Vista UI: lista ordinata (attivo, attesa, fallito), conteggi e retry.
+    // DB separato: la coda precedente contiene già task completati/falliti.
+    const fs::path dbVista = dir / "vista.db";
+    Core::QueueStore qv(dbVista);
+    const auto idVista = qv.enqueue("check", "Serie Vista", 1, "{}", 0);
+    const auto idFallito = qv.enqueue("check", "Serie Ko", 2, "{}", 0);
+    CHECK(idVista > 0 && idFallito > 0);
+    CHECK(qv.failDead(idFallito));
+    auto viste = qv.list();
+    CHECK(viste.size() == 2);
+    CHECK(viste[0].id == idVista && viste[0].stato == "attesa");
+    CHECK(viste[1].id == idFallito && viste[1].stato == "fallito");
+    auto conti = qv.counts();
+    CHECK(conti["attesa"] == 1 && conti["fallito"] == 1);
+    CHECK(qv.retryNow(idFallito));
+    viste = qv.list("attesa");
+    CHECK(viste.size() == 2);
+    conti = qv.counts();
+    CHECK(conti["fallito"] == 0 && conti["attesa"] == 2);
+    CHECK(qv.complete(idVista) && qv.complete(idFallito));
+
     fs::remove_all(dir, ec);
 }
 

@@ -85,6 +85,7 @@ if (it != files.end()) {
 | `StatusPage.svelte` | `/` | Home: download live, fasi, ultime aggiunte/scaricate |
 | `DashboardPage.svelte` | `/gestione` | CRUD serie con griglia card / tabella densa, poster |
 | `DiscoverPage.svelte` | `/scopri` | Ricerca/filtri AnimeWorld, griglia, tooltip, Aggiungi |
+| `QueuePage.svelte` | `/coda` | Coda persistente: stato, tentativi, prossima esecuzione, "Riprova ora" |
 | `ConfigPage.svelte` | `/config` | Configurazione app |
 | `LogsPage.svelte` | `/logs` | Log viewer |
 
