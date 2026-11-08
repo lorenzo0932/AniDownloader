@@ -63,6 +63,13 @@ beforeEach(() => {
 });
 
 describe('AttivitaPage', () => {
+  it('Recenti è il tab attivo di default (classe e aria-selected)', async () => {
+    render(AttivitaPage);
+    const recenti = screen.getByRole('tab', { name: 'Recenti' });
+    expect(recenti.getAttribute('aria-selected')).toBe('true');
+    expect(recenti.classList.contains('active')).toBe(true);
+  });
+
   it('tab Recenti: attivi e conclusi nelle ultime 24h, non lo storico vecchio', async () => {
     render(AttivitaPage);
     expect(await screen.findByText('Serie X · Ep. 1')).toBeTruthy();
