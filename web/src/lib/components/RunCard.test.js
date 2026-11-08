@@ -34,7 +34,7 @@ describe('RunCard', () => {
       onopen,
     });
 
-    expect(screen.getByText('Avvio in corso')).toBeTruthy();
+    expect(screen.getByText('Avvio corrente')).toBeTruthy();
     expect(screen.getByText('manuale')).toBeTruthy();
 
     const bar = screen.getByRole('progressbar');
@@ -47,7 +47,7 @@ describe('RunCard', () => {
     expect(screen.getByText('3 completati')).toBeTruthy();
     expect(screen.getByText('3 in corso')).toBeTruthy();
     expect(screen.getByText('1 non riuscito')).toBeTruthy();
-    expect(screen.getByText('7 totali')).toBeTruthy();
+    expect(screen.getByText(/7 episodi/)).toBeTruthy();
     // La card mostra solo il run: niente numeri globali di coda/problemi.
     expect(screen.queryByText(/Coda:/)).toBeNull();
     expect(screen.queryByText(/Problemi aperti:/)).toBeNull();
@@ -75,7 +75,7 @@ describe('RunCard', () => {
     expect(screen.getByText('Completato')).toBeTruthy();
     expect(screen.getByText('7 completati')).toBeTruthy();
     expect(screen.queryByText('0 non riusciti')).toBeNull();
-    expect(screen.getByText(/Durata 7 min/)).toBeTruthy();
+    expect(screen.getByText(/7 min/)).toBeTruthy();
     expect(screen.queryByRole('progressbar')).toBeNull();
     expect(screen.getByRole('link', { name: 'Vedi dettaglio' }).getAttribute('href')).toBe('/attivita');
   });
@@ -91,8 +91,8 @@ describe('RunCard', () => {
     });
 
     expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.getByText('Nessun episodio da elaborare')).toBeTruthy();
-    expect(screen.getByText('27 saltati')).toBeTruthy();
+    expect(screen.getByText('Nessun episodio nuovo')).toBeTruthy();
+    expect(screen.getByText('27 serie già aggiornate')).toBeTruthy();
   });
 
   it('run con errori: conteggio non riusciti in evidenza', () => {
