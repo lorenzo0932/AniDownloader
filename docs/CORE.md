@@ -25,18 +25,17 @@ void run(const std::vector<Series>& seriesList,
 
 ### Flusso
 
-1. **Planning parallelo** — per ogni serie lancia un thread separato
-   che chiama `PlanningService::planSingleSeries()`. Ogni thread:
-   - Istanzia lo scraper appropriato
-   - Scraping della pagina episodi
-   - Calcolo del prossimo episodio da scaricare
-   - Restituisce `DownloadTask[]`
+1. **Planning e download in overlap (pipeline B)** — per ogni serie lancia
+   un thread separato che chiama `PlanningService::planSingleSeries()`. Ogni
+   thread, appena finita la propria serie, mette i `DownloadTask` nella coda
+   condivisa e sveglia i worker: non si attende la fine di tutte le analisi.
+   I task ad alta priorità già pronti passano davanti.
 
-2. **Scheduling** — ordina per priorità (high priority prima), poi
-   crea un thread pool con `maxConcurrentTasks × 2` workers.
+2. **Esecuzione** — i worker consumano la coda mentre la pianificazione
+   continua; ogni task passa da `MediaProcessor::processTask`.
 
-3. **Esecuzione** — ogni worker prende il prossimo task disponibile
-   (indice atomico) e chiama `MediaProcessor::processTask()`.
+3. **Chiusura** — pianificazione finita e coda vuota: i worker terminano;
+   `onAnalysisDone` scatta a fine pianificazione.
 
 ### Callback
 
