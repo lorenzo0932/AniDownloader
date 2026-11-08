@@ -90,8 +90,50 @@ resta solo il task `AniDownloader_WebServer` (AtLogOn, `--web --silent`).
 | OS | Meccanismo | Stato |
 |----|------------|-------|
 | Linux | `anidownloaderd.service` (systemd user) via `install.sh` | reale |
-| Windows | Task `AniDownloader_WebServer` (AtLogOn) via `install.ps1` | ? (da verificare su macchina reale) |
+| Windows | Task `AniDownloader_WebServer` (AtLogOn, RunLevel Limited) via `install.ps1` | da verificare su macchina reale |
 | macOS | `install-mac.sh` → LaunchAgent `com.anidownloader.daemon` (log in `~/Library/Logs/AniDownloader`); `uninstall-mac.sh` per la rimozione | testing su Mac fisico differito |
+
+## Windows — installazione headless
+
+Installazione e rimozione sono gestite da PowerShell, senza privilegi di
+amministratore (`RunLevel Limited`):
+
+```powershell
+.\install.ps1        # menu: CLI e/o demone; crea shortcut e task
+.\uninstall.ps1      # menu: solo binario / solo servizi / tutto
+```
+
+Dove finisce tutto:
+
+| Cosa | Percorso |
+|---|---|
+| Binario | `%LOCALAPPDATA%\AniDownloader\AniDownloader.exe` |
+| Shortcut | `%APPDATA%\Microsoft\Windows\Start Menu\Programs\AniDownloader` |
+| Config e dati | `%APPDATA%\AniDownloader\` (`config.json`, `series_data.db`, export JSON) |
+| Task demone | `AniDownloader_WebServer` (`--web --silent`) |
+| Task legacy | `AniDownloader_AutoCheck` — solo rimosso, mai ricreato |
+
+### Comportamento del task
+
+| Situazione | Cosa succede |
+|---|---|
+| Login | il task parte a ogni logon dell'utente (`AtLogOn`) |
+| Logoff | il processo termina con la sessione; riparte al login successivo (non è un servizio) |
+| Sospensione/ibernazione | il processo è sospeso con il sistema; al risveglio lo scheduler interno fa un giro immediato di catch-up, senza arretrati |
+| Batteria | avvio e prosecuzione consentiti (`DisallowStartIfOnBatteries=false`, `StopIfGoingOnBatteries=false`) |
+| Crash del processo | riavvio automatico fino a 3 volte, intervallo 1 minuto |
+| Limite di esecuzione | nessuno (`PT0S`), pensato per un demone always-on |
+
+Lo scheduler è **interno** al demone: non esiste più un timer OS separato
+(ADR-004), quindi non ci sono task `anidownloader-check.*` da configurare.
+
+### Notifiche su Windows
+
+L'app desktop (Tauri) invia la notifica di sistema con il comando
+`notify_episode` (plugin `notification`), la stessa strada di Linux e macOS.
+Il server web aperto in un browser usa la Web Notification API. La resa dei
+toast Windows (permessi, Focus Assist) **non è ancora verificata su hardware
+reale**: se il sistema blocca le notifiche, resta il badge in-app.
 
 ## macOS — installazione headless
 
