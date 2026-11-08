@@ -5,6 +5,7 @@
 #include "core/ExecutionEngine.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/Logger.hpp"
+#include "core/PipelineJobStore.hpp"
 #include "core/SeriesRepository.hpp"
 
 #include <algorithm>
@@ -51,6 +52,17 @@ namespace Core {
         }
 
         ExecutionEngine engine(config);
+        // Pipeline condivisa (fase 2): i job per-episodio sono persistiti e
+        // lavorati in due pool; lo stato serie si aggiorna al completamento.
+        PipelineJobStore pipelineStore(repo.dbPath());
+        engine.setPipeline(&pipelineStore, "background", [&repo](const std::string& name, int ep) {
+            const auto now = std::chrono::system_clock::now();
+            const auto tt = std::chrono::system_clock::to_time_t(now);
+            const auto tm = *std::gmtime(&tt);
+            std::array<char, 24> ts{};
+            std::strftime(ts.data(), ts.size(), "%Y-%m-%dT%H:%M:%SZ", &tm);
+            repo.applyDownloadedEpisodes({{name, ep}}, ts.data());
+        });
         engine.run(
             serie, burst, stop,
             [&](const std::string& n, int ep, const std::string& m) {

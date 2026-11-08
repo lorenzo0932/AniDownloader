@@ -10,6 +10,8 @@
 
 namespace Core {
 
+    class PipelineJobStore;
+
     struct TaskReport {
         std::string name;
         bool success;
@@ -38,7 +40,21 @@ namespace Core {
                  const SkippedCb& onTaskSkipped, // AGGIUNTO
                  const AnalysisCb& onAnalysisDone, ActivityCb onActivity = {});
 
+        // Pipeline condivisa (fase 2): se impostata, i task pianificati vengono
+        // accodati nel DB (JobKey) e lavorati in due pool download/conversione.
+        void setPipeline(PipelineJobStore* store, std::string origin,
+                         std::function<void(const std::string&, int)> onCompleted = {});
+
       private:
+        void runPipeline(const std::vector<Series>& seriesList, bool burstMode,
+                         std::atomic<bool>& stopSignal, ProgressCb onProgress,
+                         const StatusCb& onStatus, FinishedCb onTaskFinished,
+                         const SkippedCb& onTaskSkipped, const AnalysisCb& onAnalysisDone,
+                         ActivityCb onActivity);
+
         Config::AppConfigManager& m_config;
+        PipelineJobStore* m_store{nullptr};
+        std::string m_origin{"background"};
+        std::function<void(const std::string&, int)> m_onCompleted;
     };
 } // namespace Core

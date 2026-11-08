@@ -17,7 +17,7 @@ namespace Core {
 
         constexpr const char* kColonne =
             "id, job_key, serie, episodio, origine, fase, tentativi, prossima_esecuzione, "
-            "priorita, errore, creato_il, aggiornato_il";
+            "priorita, errore, payload, serie_path, file_path, creato_il, aggiornato_il";
 
         PipelineJob leggiRiga(Statement& sel) {
             PipelineJob j;
@@ -31,8 +31,11 @@ namespace Core {
             j.prossimaEsecuzione = sel.columnInt(7);
             j.priorita = static_cast<int>(sel.columnInt(8));
             j.errore = sel.columnText(9);
-            j.creatoIl = sel.columnText(10);
-            j.aggiornatoIl = sel.columnText(11);
+            j.payload = sel.columnText(10);
+            j.seriePath = sel.columnText(11);
+            j.filePath = sel.columnText(12);
+            j.creatoIl = sel.columnText(13);
+            j.aggiornatoIl = sel.columnText(14);
             return j;
         }
 
@@ -50,10 +53,10 @@ namespace Core {
 
     std::string PipelineJobStore::lastError() const { return m_lastError; }
 
-    PipelineJobStore::EsitoEnqueue PipelineJobStore::enqueue(const std::string& jobKey,
-                                                             const std::string& serie, int episodio,
-                                                             const std::string& origine,
-                                                             int priorita) {
+    PipelineJobStore::EsitoEnqueue
+    PipelineJobStore::enqueue(const std::string& jobKey, const std::string& serie, int episodio,
+                              const std::string& origine, int priorita, const std::string& payload,
+                              const std::string& seriePath) {
         EsitoEnqueue esito;
         Database db(m_dbPath);
         if (!db.isOpen()) {
@@ -97,9 +100,10 @@ namespace Core {
             return esito;
         }
         auto ins = db.prepare("INSERT INTO pipeline_jobs(job_key, serie, episodio, origine, "
-                              "priorita) VALUES (?, ?, ?, ?, ?);");
+                              "priorita, payload, serie_path) VALUES (?, ?, ?, ?, ?, ?, ?);");
         if (!ins.valid() || !ins.bindText(1, jobKey) || !ins.bindText(2, serie) ||
             !ins.bindInt(3, episodio) || !ins.bindText(4, origine) || !ins.bindInt(5, priorita) ||
+            !ins.bindText(6, payload) || !ins.bindText(7, seriePath) ||
             (ins.step(), ins.hasError())) {
             m_lastError = ins.lastError();
             return esito;
@@ -159,6 +163,23 @@ namespace Core {
             return std::nullopt;
         }
         return job;
+    }
+
+    bool PipelineJobStore::setFilePath(std::int64_t id, const std::string& filePath) {
+        Database db(m_dbPath);
+        if (!db.isOpen()) {
+            m_lastError = db.lastError();
+            return false;
+        }
+        auto upd = db.prepare("UPDATE pipeline_jobs SET file_path = ?, "
+                              "aggiornato_il = strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+                              "WHERE id = ?;");
+        if (!upd.valid() || !upd.bindText(1, filePath) || !upd.bindInt(2, id) ||
+            (upd.step(), upd.hasError())) {
+            m_lastError = upd.lastError();
+            return false;
+        }
+        return db.changes() == 1;
     }
 
     bool PipelineJobStore::transition(std::int64_t id, const std::string& daFase,

@@ -70,6 +70,10 @@ namespace Core {
         // o senza nome file → path vuoto = shadow disattivato.
         static std::filesystem::path dbPathFor(const std::filesystem::path& jsonFilePath);
 
+        // DB effettivo dell'istanza (per chi deve aprire lo stesso file, es.
+        // la coda per-episodio della pipeline).
+        [[nodiscard]] const std::filesystem::path& dbPath() const noexcept { return m_dbPath; }
+
       private:
         // Helper sotto lock (NON acquisiscono m_mutex: il chiamante lo detiene
         // già). loadLocked ricarica se necessario, saveLocked persiste e
