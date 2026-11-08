@@ -124,8 +124,8 @@
           </tr>
         </thead>
         <tbody>
-          {#each items as item (item.id)}
-            <tr>
+          {#each items as item, i (item.id)}
+            <tr style="--i:{Math.min(i, 8)}">
               <td class="mono">{item.kind}</td>
               <td>{item.serie || '—'}</td>
               <td class="mono">{item.episodio || '—'}</td>
@@ -183,6 +183,10 @@
     border-bottom: 1px solid var(--border-color);
   }
   .coda-table th { color: var(--text-muted); font-weight: 600; }
+  .coda-table tbody tr {
+    animation: motion-rise var(--motion-enter) var(--motion-ease-out) backwards;
+    animation-delay: calc(var(--i, 0) * var(--motion-stagger));
+  }
   .coda-table tbody tr:hover { background: var(--bg-hover); }
   .mono { font-variant-numeric: tabular-nums; }
   .stato { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 12px; }

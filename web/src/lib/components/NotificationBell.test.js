@@ -2,6 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import NotificationBell from './NotificationBell.svelte';
 
+// happy-dom non ha la Web Animations API usata dalle transizioni Svelte.
+if (typeof Element !== 'undefined' && !Element.prototype.animate) {
+  Element.prototype.animate = function () {
+    const anim = {
+      currentTime: 0,
+      playState: 'finished',
+      onfinish: null,
+      cancel() {}, play() {}, pause() {}, reverse() {},
+      finished: null,
+    };
+    anim.finished = Promise.resolve().then(() => { anim.onfinish?.(); });
+    return anim;
+  };
+}
+
 const { listMock, readMock } = vi.hoisted(() => ({
   listMock: vi.fn(),
   readMock: vi.fn(),
