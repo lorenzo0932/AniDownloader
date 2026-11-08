@@ -94,6 +94,12 @@ namespace Core {
                 retryOrFailCtx(store, *job, "payload job illeggibile");
                 continue;
             }
+            if (task.fileName.empty() || task.videoUrl.empty()) {
+                // Job senza dati sufficienti: mai passarlo a MediaProcessor
+                // (un fileName vuoto punterebbe alla cartella serie).
+                retryOrFailCtx(store, *job, "payload incompleto");
+                continue;
+            }
             Series serie;
             serie.name = job->serie;
             serie.path = job->seriePath;
@@ -108,7 +114,14 @@ namespace Core {
                               });
             auto strategyDl = m_ctx.strategy;
             strategyDl.convertToH265 = false;
-            const ProcessResult res = mp.processTask(task, serie, strategyDl);
+            ProcessResult res;
+            try {
+                res = mp.processTask(task, serie, strategyDl);
+            } catch (const std::exception& e) {
+                // Un job rotto non deve mai abbattere il demone.
+                retryOrFailCtx(store, *job, std::string("eccezione: ") + e.what());
+                continue;
+            }
             if (!res.success) {
                 retryOrFailCtx(store, *job, res.errorMessage);
                 continue;
@@ -147,8 +160,14 @@ namespace Core {
                                       m_ctx.onActivity(n, ep, p);
                               });
             double convTime = 0.0;
-            const bool ok = !job->filePath.empty() &&
-                            mp.convertFile(job->filePath, job->serie, m_ctx.strategy, convTime);
+            bool ok = false;
+            try {
+                ok = !job->filePath.empty() &&
+                     mp.convertFile(job->filePath, job->serie, m_ctx.strategy, convTime);
+            } catch (const std::exception& e) {
+                retryOrFailCtx(store, *job, std::string("eccezione: ") + e.what());
+                continue;
+            }
             if (!ok) {
                 retryOrFailCtx(store, *job, "conversione fallita");
                 continue;
