@@ -38,8 +38,10 @@
   let loading = $state(false);
   let error = $state('');
 
-  async function load() {
-    loading = true;
+  // silent: polling in background, senza cambiare lo stato del pulsante
+  // (altrimenti "Aggiorna"/"Aggiorno…" lampeggia ogni 5 secondi).
+  async function load(silent = false) {
+    if (!silent) loading = true;
     try {
       const data = await api.pipeline.list({ limit: 200 });
       items = data.items || [];
@@ -47,7 +49,7 @@
     } catch (e) {
       error = e.message;
     } finally {
-      loading = false;
+      if (!silent) loading = false;
     }
   }
 
@@ -128,7 +130,7 @@
     load();
     // Nessun evento SSE dedicato alla pipeline: polling leggero condiviso
     // con la vecchia pagina Pipeline.
-    const timer = setInterval(load, 5000);
+    const timer = setInterval(() => load(true), 5000);
     return () => clearInterval(timer);
   });
 </script>
@@ -136,14 +138,14 @@
 <div class="attivita" in:pageEnter|global>
   <header class="head">
     <h1>Attività</h1>
-    <button class="btn-refresh" onclick={load} disabled={loading} aria-label="Aggiorna attività">
+    <button class="btn-refresh" onclick={() => load()} disabled={loading} aria-label="Aggiorna attività">
       {loading ? 'Aggiorno…' : 'Aggiorna'}
     </button>
   </header>
 
   <div class="tabs" role="tablist" aria-label="Attività">
     <button role="tab" id="tab-recenti" aria-selected={tab === 'recenti'}
-            aria-controls="panel-attivita" class:active={tab === 'corso'}
+            aria-controls="panel-attivita" class:active={tab === 'recenti'}
             onclick={() => scegliTab('recenti')}>Recenti</button>
     <button role="tab" id="tab-storico" aria-selected={tab === 'storico'}
             aria-controls="panel-attivita" class:active={tab === 'storico'}
