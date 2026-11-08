@@ -1694,9 +1694,25 @@ static void testPipelineJobStore() {
     CHECK(store.promuoviRetry(0) == 0); // non ancora scaduto
     CHECK(store.promuoviRetry(static_cast<std::int64_t>(std::time(nullptr)) + 3700) == 1);
 
-    // Terminale, poi la stessa JobKey può ripartire.
+    // Terminale, poi "Riprova" lo rimette subito in coda senza azzerare i
+    // tentativi; la stessa richiesta su un job già in attesa è idempotente.
     CHECK(store.fail(primo.id, "ko"));
     CHECK(store.counts()["failed"] == 1);
+    CHECK(store.retryNow(primo.id));
+    {
+        const auto righe = store.list("queued_download");
+        CHECK(righe.size() == 1);
+        CHECK(righe[0].fase == "queued_download");
+        CHECK(righe[0].prossimaEsecuzione == 0);
+        CHECK(righe[0].tentativi == 1);
+        CHECK(righe[0].errore.empty());
+    }
+    CHECK(store.retryNow(primo.id));
+    CHECK(store.list().size() == 1);
+    CHECK(store.fail(primo.id, "ko"));
+    CHECK(store.counts()["failed"] == 1);
+
+    // Terminale, poi la stessa JobKey può ripartire.
     const auto ripartito =
         store.enqueue(chiave, "Serie X", 1, "background", 0,
                       R"({"videoUrl":"https://x/v.mp4","fileName":"ep.mp4"})", "/media/Serie X");

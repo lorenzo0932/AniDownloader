@@ -2,6 +2,10 @@
   import { onMount } from 'svelte';
   import { api } from '../api.js';
 
+  // `embedded`: sezione dentro Impostazioni (niente header proprio).
+  // `readonly`: sola diagnostica, nessun retry manuale.
+  let { readonly = false, embedded = false } = $props();
+
   let items = $state([]);
   let counts = $state({ attesa: 0, attivo: 0, fatto: 0, fallito: 0 });
   let loading = $state(false);
@@ -76,13 +80,21 @@
   });
 </script>
 
-<div class="coda">
-  <header class="coda-head">
-    <h1>Coda</h1>
-    <button class="btn-refresh" onclick={load} disabled={loading}>
-      {loading ? 'Aggiorno…' : 'Aggiorna'}
-    </button>
-  </header>
+<div class="coda" class:embedded>
+  {#if !embedded}
+    <header class="coda-head">
+      <h1>Coda</h1>
+      <button class="btn-refresh" onclick={load} disabled={loading}>
+        {loading ? 'Aggiorno…' : 'Aggiorna'}
+      </button>
+    </header>
+  {:else}
+    <div class="coda-tools">
+      <button class="btn-refresh" onclick={load} disabled={loading} aria-label="Aggiorna coda dei controlli">
+        {loading ? 'Aggiorno…' : 'Aggiorna'}
+      </button>
+    </div>
+  {/if}
 
   <div class="coda-chips" aria-label="Conteggi coda">
     <span class="chip">In attesa <strong>{counts.attesa}</strong></span>
@@ -121,7 +133,7 @@
               <td class="mono">{item.tentativi}</td>
               <td>{prossima(item.prossima_esecuzione)}</td>
               <td>
-                {#if puoRiprovare(item)}
+                {#if !readonly && puoRiprovare(item)}
                   <button class="btn-retry" onclick={() => retry(item)}
                           aria-label={'Riprova task ' + item.id}>
                     Riprova ora
@@ -138,6 +150,8 @@
 
 <style>
   .coda { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+  .coda.embedded { padding: 0; max-width: none; }
+  .coda-tools { display: flex; justify-content: flex-end; margin-bottom: 0.75rem; }
   .coda-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
   .coda-head h1 { font-size: 1.4rem; }
   .btn-refresh {

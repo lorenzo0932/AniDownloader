@@ -17,6 +17,10 @@ vi.mock('../api.js', () => ({
       thumbs: (...args) => thumbsMock(...args),
       clearThumbs: () => Promise.resolve({ removedFiles: 0, freedBytes: 0 }),
     },
+    queue: {
+      list: () => Promise.resolve({ items: [], counts: {} }),
+    },
+    sse: () => ({ onmessage: null, close() {} }),
   },
 }));
 

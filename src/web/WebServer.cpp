@@ -473,7 +473,9 @@ namespace Web {
                                  {"tentativi", j.tentativi},
                                  {"prossima_esecuzione", j.prossimaEsecuzione},
                                  {"priorita", j.priorita},
-                                 {"errore", j.errore}});
+                                 {"errore", j.errore},
+                                 {"creato_il", j.creatoIl},
+                                 {"aggiornato_il", j.aggiornatoIl}});
             }
             const auto counts = store.counts();
             auto conta = [&counts](const char* chiave) {
@@ -492,6 +494,27 @@ namespace Web {
                                          {"failed", conta("failed")},
                                          {"interrupted", conta("interrupted")}}}}));
         });
+
+        // "Riprova": rimette in coda un job fallito (o già in attesa).
+        m_svr.Post(
+            "/api/pipeline/retry", [this](const httplib::Request& req, httplib::Response& res) {
+                try {
+                    const auto body = nlohmann::json::parse(req.body);
+                    if (!body.contains("id") || !body["id"].is_number_integer()) {
+                        sendJson(res, errorJson("Missing id"), 400);
+                        return;
+                    }
+                    const auto id = body["id"].get<std::int64_t>();
+                    Core::PipelineJobStore store(m_dbPath);
+                    if (!store.retryNow(id)) {
+                        sendJson(res, errorJson("Storage error: " + store.lastError(), 500), 500);
+                        return;
+                    }
+                    sendJson(res, successJson({{"id", id}}));
+                } catch (const std::exception&) {
+                    sendJson(res, errorJson("Invalid retry data"), 400);
+                }
+            });
     }
 
     // ---- SPAZIO ----

@@ -219,6 +219,25 @@ namespace Core {
         return db.changes() == 1;
     }
 
+    bool PipelineJobStore::retryNow(std::int64_t id) {
+        Database db(m_dbPath);
+        if (!db.isOpen()) {
+            m_lastError = db.lastError();
+            return false;
+        }
+        auto upd = db.prepare("UPDATE pipeline_jobs SET fase = 'queued_download', "
+                              "prossima_esecuzione = 0, errore = '', "
+                              "aggiornato_il = strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+                              "WHERE id = ? AND fase IN ('queued_download', 'failed');");
+        if (!upd.valid() || !upd.bindInt(1, id) || (upd.step(), upd.hasError())) {
+            m_lastError = upd.lastError();
+            return false;
+        }
+        // Come QueueStore::retryNow: la UPDATE è condizionata alla fase, ma una
+        // riga non riprovabile non è un errore di storage (idempotente).
+        return true;
+    }
+
     bool PipelineJobStore::fail(std::int64_t id, const std::string& errore) {
         Database db(m_dbPath);
         if (!db.isOpen()) {

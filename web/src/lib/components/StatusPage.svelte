@@ -32,6 +32,22 @@
   let summary = $derived(phase === 'done' ? stats : null);
   let recentAdded = $state([]);
   let recentlyDownloaded = $state([]);
+  let pipelineCounts = $state(null);
+
+  async function loadPipelineSummary() {
+    try {
+      const data = await api.pipeline.list({ limit: 1 });
+      pipelineCounts = data.counts || {};
+    } catch {
+      // Riepilogo non essenziale: la Home resta usabile senza pipeline.
+      pipelineCounts = pipelineCounts || null;
+    }
+  }
+
+  function apriAttivita(e) {
+    e?.preventDefault();
+    window.dispatchEvent(new CustomEvent('anidl:navigate', { detail: 'attivita' }));
+  }
 
   async function loadRecentAdded() {
     try {
@@ -171,6 +187,7 @@
           loadRecentAdded();
           loadRecentlyDownloaded();
         }
+        if (data.type === 'done' || data.type === 'queue') loadPipelineSummary();
       } catch { /* ignore parse errors */ }
     };
     sse.onerror = () => { sseConnected = false; };
@@ -182,6 +199,9 @@
     connectSse();
     loadRecentAdded();
     loadRecentlyDownloaded();
+    loadPipelineSummary();
+    const pipelineInterval = setInterval(loadPipelineSummary, 10000);
+    return () => clearInterval(pipelineInterval);
   });
 
   onDestroy(() => {
@@ -204,6 +224,17 @@
 
   {#if error}
     <div class="error" role="alert">{error}</div>
+  {/if}
+
+  {#if pipelineCounts}
+    <div class="pipeline-summary" aria-label="Riepilogo attività">
+      <span>In coda: <strong>{(pipelineCounts.queued_download ?? 0) + (pipelineCounts.retry_wait ?? 0)}</strong></span>
+      <span class="sep" aria-hidden="true">·</span>
+      <span>download: <strong>{pipelineCounts.downloading ?? 0}</strong></span>
+      <span class="sep" aria-hidden="true">·</span>
+      <span>conversione: <strong>{(pipelineCounts.converting ?? 0) + (pipelineCounts.downloaded_waiting_conversion ?? 0)}</strong></span>
+      <a href="/attivita" class="pipeline-link" onclick={apriAttivita}>Vedi attività</a>
+    </div>
   {/if}
 
   {#if summary}
@@ -351,6 +382,19 @@
     background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;
     padding: 0.65rem 0.75rem;
   }
+
+  .pipeline-summary {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.5rem;
+    background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px;
+    padding: 0.55rem 0.75rem; font-size: 0.85rem; color: var(--text-secondary);
+  }
+  .pipeline-summary strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .pipeline-summary .sep { color: var(--text-muted); }
+  .pipeline-link {
+    margin-left: auto; color: var(--accent-light); font-weight: 600;
+    text-decoration: none; white-space: nowrap;
+  }
+  .pipeline-link:hover { text-decoration: underline; }
   .summary-icon { width: 18px; height: 18px; color: var(--success); flex-shrink: 0; margin-top: 2px; }
   .summary-body { flex: 1; min-width: 0; }
   .summary-title { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); display: block; margin-bottom: 0.3rem; }
