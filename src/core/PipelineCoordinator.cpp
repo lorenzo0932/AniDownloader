@@ -1,6 +1,10 @@
 #include "core/PipelineCoordinator.hpp"
 
 #include "core/Logger.hpp"
+#include "core/MediaProcessor.hpp"
+#include "core/Series.hpp"
+
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -45,6 +49,116 @@ namespace Core {
             m_threads.emplace_back([this] { cicloDownload(); });
         for (int i = 0; i < m_conversionThreads; ++i)
             m_threads.emplace_back([this] { cicloConversione(); });
+    }
+
+    void PipelineCoordinator::start(const PipelineRunContext& ctx) {
+        if (m_attivo.exchange(true))
+            return;
+        m_ctx = ctx;
+        m_usaCtx = true;
+        for (int i = 0; i < m_downloadThreads; ++i)
+            m_threads.emplace_back([this] { cicloDownloadCtx(); });
+        for (int i = 0; i < m_conversionThreads; ++i)
+            m_threads.emplace_back([this] { cicloConversioneCtx(); });
+    }
+
+    namespace {
+        void retryOrFailCtx(PipelineJobStore& store, const PipelineJob& job,
+                            const std::string& errore) {
+            if (job.tentativi >= PipelineJobStore::kMaxTentativi) {
+                store.fail(job.id, errore);
+                return;
+            }
+            const auto i = static_cast<std::size_t>((std::min)(job.tentativi, 2));
+            store.retry(job.id, PipelineCoordinator::kBackoffSecondi[i], errore);
+        }
+    } // namespace
+
+    void PipelineCoordinator::cicloDownloadCtx() {
+        PipelineJobStore store(m_dbPath);
+        while (m_attivo.load()) {
+            store.promuoviRetry();
+            auto job = store.claim("queued_download", "downloading");
+            if (!job.has_value()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            DownloadTask task;
+            task.shouldProcess = true;
+            task.episodeNumber = job->episodio;
+            try {
+                const auto payload = nlohmann::json::parse(job->payload);
+                task.videoUrl = payload.value("videoUrl", "");
+                task.fileName = payload.value("fileName", "");
+            } catch (const std::exception&) {
+                retryOrFailCtx(store, *job, "payload job illeggibile");
+                continue;
+            }
+            Series serie;
+            serie.name = job->serie;
+            serie.path = job->seriePath;
+            auto progress = [this, ep = job->episodio](const std::string& n, const std::string& m) {
+                if (m_ctx.onProgress)
+                    m_ctx.onProgress(n, ep, m);
+            };
+            MediaProcessor mp(progress, *m_ctx.stop,
+                              [this, n = job->serie, ep = job->episodio](const TaskProgress& p) {
+                                  if (m_ctx.onActivity)
+                                      m_ctx.onActivity(n, ep, p);
+                              });
+            auto strategyDl = m_ctx.strategy;
+            strategyDl.convertToH265 = false;
+            const ProcessResult res = mp.processTask(task, serie, strategyDl);
+            if (!res.success) {
+                retryOrFailCtx(store, *job, res.errorMessage);
+                continue;
+            }
+            store.setFilePath(job->id, res.filePath);
+            if (m_ctx.strategy.convertToH265) {
+                store.transition(job->id, "downloading", "downloaded_waiting_conversion");
+            } else {
+                store.transition(job->id, "downloading", "completed");
+                if (m_ctx.onCompleted)
+                    m_ctx.onCompleted(job->serie, job->episodio);
+                if (m_ctx.onFinished)
+                    m_ctx.onFinished(job->serie, job->episodio, res.downloadTime, 0.0);
+            }
+        }
+    }
+
+    void PipelineCoordinator::cicloConversioneCtx() {
+        PipelineJobStore store(m_dbPath);
+        while (m_attivo.load()) {
+            auto job = store.claim("downloaded_waiting_conversion", "converting");
+            if (!job.has_value()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            Series serie;
+            serie.name = job->serie;
+            serie.path = job->seriePath;
+            auto progress = [this, ep = job->episodio](const std::string& n, const std::string& m) {
+                if (m_ctx.onProgress)
+                    m_ctx.onProgress(n, ep, m);
+            };
+            MediaProcessor mp(progress, *m_ctx.stop,
+                              [this, n = job->serie, ep = job->episodio](const TaskProgress& p) {
+                                  if (m_ctx.onActivity)
+                                      m_ctx.onActivity(n, ep, p);
+                              });
+            double convTime = 0.0;
+            const bool ok = !job->filePath.empty() &&
+                            mp.convertFile(job->filePath, job->serie, m_ctx.strategy, convTime);
+            if (!ok) {
+                retryOrFailCtx(store, *job, "conversione fallita");
+                continue;
+            }
+            store.transition(job->id, "converting", "completed");
+            if (m_ctx.onCompleted)
+                m_ctx.onCompleted(job->serie, job->episodio);
+            if (m_ctx.onFinished)
+                m_ctx.onFinished(job->serie, job->episodio, 0.0, convTime);
+        }
     }
 
     void PipelineCoordinator::stop() {
