@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { pageEnter } from '../motion.js';
-  import { api } from '../api.js';
+  import { api, posterUrl, posterSrcSet } from '../api.js';
 
   // Fasi che compongono "In corso": tutto ciò che non è ancora completato.
   // `interrupted` resta visibile qui invece di sparire da entrambe le tab.
@@ -25,7 +25,6 @@
     ['tutti', 'Tutti'],
     ['corso', 'In corso'],
     ['errori', 'Errori'],
-    ['completati', 'Completati'],
   ];
 
   let items = $state([]);
@@ -55,10 +54,9 @@
   }
 
   function scegliFiltro(f) {
+    // I filtri raffinano solo la tab "In corso": lo Storico è per definizione
+    // completato, quindi non ha filtri di stato.
     filtro = f;
-    // I filtri di esito vivono nella tab coerente: evitare liste vuote.
-    if (f === 'completati') tab = 'storico';
-    else if (f === 'corso' || f === 'errori') tab = 'corso';
   }
 
   function inCorso(j) {
@@ -68,7 +66,6 @@
   function passaFiltro(j) {
     if (filtro === 'corso') return inCorso(j) && j.fase !== 'failed';
     if (filtro === 'errori') return j.fase === 'failed';
-    if (filtro === 'completati') return j.fase === 'completed';
     return true;
   }
 
@@ -104,7 +101,7 @@
   }
 
   function origine(j) {
-    return j.origine === 'interactive' ? 'interattivo' : 'background';
+    return j.origine === 'interactive' ? 'manuale' : 'automatico';
   }
 
   async function riprova(j) {
@@ -143,13 +140,15 @@
             onclick={() => scegliTab('storico')}>Storico</button>
   </div>
 
-  <div class="filtri" role="group" aria-label="Filtra attività">
-    {#each FILTRI as [valore, label] (valore)}
-      <button class="chip" aria-pressed={filtro === valore}
-              class:attivo={filtro === valore}
-              onclick={() => scegliFiltro(valore)}>{label}</button>
-    {/each}
-  </div>
+  {#if tab === 'corso'}
+    <div class="filtri" role="group" aria-label="Filtra attività in corso">
+      {#each FILTRI as [valore, label] (valore)}
+        <button class="chip" aria-pressed={filtro === valore}
+                class:attivo={filtro === valore}
+                onclick={() => scegliFiltro(valore)}>{label}</button>
+      {/each}
+    </div>
+  {/if}
 
   {#if error}
     <p class="err" role="alert">{error}</p>
@@ -168,6 +167,13 @@
             <button class="job-main" onclick={() => toggle(j.id)}
                     aria-expanded={aperti[j.id] ? 'true' : 'false'}
                     aria-label={`Dettagli di ${titolo(j)}`}>
+              {#if j.path}
+                <img class="job-poster" src={posterUrl(j.path, 96)}
+                     srcset={posterSrcSet(j.path)} sizes="36px" alt=""
+                     loading="lazy" decoding="async" width="36" height="50" />
+              {:else}
+                <span class="job-poster job-poster-empty" aria-hidden="true"></span>
+              {/if}
               <span class="job-title">{titolo(j)}</span>
               <span class="job-stato stato-{j.fase}">{etichetta(j.fase)}</span>
               <span class="job-tempo">{tempoRelativo(j.aggiornato_il)}</span>
@@ -177,11 +183,7 @@
               <div class="job-details">
                 <dl>
                   <div>
-                    <dt>JobKey</dt>
-                    <dd class="mono">{j.job_key || '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Origine</dt>
+                    <dt>Avviato da</dt>
                     <dd>{origine(j)}</dd>
                   </div>
                   <div>
@@ -259,6 +261,11 @@
     padding: 0.65rem 0.8rem; text-align: left; cursor: pointer; font-size: 0.9rem;
   }
   .job-main:hover { background: var(--bg-hover); }
+  .job-poster {
+    width: 36px; height: 50px; object-fit: cover; border-radius: 6px;
+    flex: 0 0 auto; background: var(--poster-frame-bg, var(--bg-tertiary));
+    border: 1px solid var(--border-color);
+  }
   .job-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .job-tempo { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
   .job-stato { font-size: 12px; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; }

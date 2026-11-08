@@ -6,7 +6,6 @@
   import Dropdown from '../Dropdown.svelte';
   import DirectoryBrowser from './DirectoryBrowser.svelte';
   import StoragePanel from './StoragePanel.svelte';
-  import QueuePage from './QueuePage.svelte';
 
   let config = $state({});
   let error = $state('');
@@ -308,14 +307,6 @@
       </div>
     </form>
     <StoragePanel />
-    <div class="group-box advanced-box">
-      <div class="group-title">Avanzate</div>
-      <p class="field-hint">
-        Coda dei controlli automatici (diagnostica, sola lettura).
-        Lo stato di download e conversioni vive in <b>Attività</b>.
-      </p>
-      <QueuePage readonly embedded />
-    </div>
   </div>
 {/if}
 </div>

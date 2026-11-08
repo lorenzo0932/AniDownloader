@@ -3,6 +3,7 @@
   import { pageEnter } from '../motion.js';
   import { api } from '../api.js';
   import Dropdown from '../Dropdown.svelte';
+  import QueuePage from './QueuePage.svelte';
 
   let lines = $state([]);
   let count = $state(100);
@@ -50,6 +51,15 @@
     <pre class="log-view">{#each lines as line}{line}
   {/each}</pre>
   {/if}
+
+  <details class="diagnostica">
+    <summary>Diagnostica — coda dei controlli automatici</summary>
+    <p class="hint">
+      Dettaglio tecnico dei controlli periodici. Lo stato di download e
+      conversioni vive in <b>Attività</b>.
+    </p>
+    <QueuePage readonly embedded />
+  </details>
 </div>
 
 <style>
@@ -71,6 +81,16 @@
     width: 24px; height: 24px; border: 2px solid var(--border-color); border-top-color: var(--accent);
     border-radius: 50%; animation: motion-spin var(--motion-spinner) linear infinite;
   }
+  .diagnostica {
+    margin-top: 1.5rem; border: 1px solid var(--border-color); border-radius: 10px;
+    background: var(--bg-secondary); padding: 0.75rem 1rem;
+  }
+  .diagnostica summary {
+    cursor: pointer; color: var(--text-secondary); font-size: 0.85rem; font-weight: 600;
+  }
+  .diagnostica[open] summary { margin-bottom: 0.5rem; }
+  .hint { color: var(--text-muted); font-size: 12px; margin-bottom: 0.5rem; }
+
   .log-view {
     background: var(--log-bg); border: 1px solid var(--border-color); border-radius: 12px;
     padding: 1rem; font-family: 'Consolas', 'Menlo', 'Monaco', 'DejaVu Sans Mono', 'Noto Sans Mono', 'Courier New', monospace;

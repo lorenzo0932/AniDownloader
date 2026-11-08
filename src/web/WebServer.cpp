@@ -462,8 +462,14 @@ namespace Web {
             const std::string fase =
                 req.has_param("fase") ? req.get_param_value("fase") : std::string();
             Core::PipelineJobStore store(m_dbPath);
+            // Nome -> cartella serie: serve alla UI per la locandina.
+            std::map<std::string, std::string> percorsi;
+            for (const auto& s : m_seriesRepository.snapshotSeriesData())
+                percorsi[s.name] = s.path;
             nlohmann::json items = nlohmann::json::array();
             for (const auto& j : store.list(fase, limit)) {
+                const auto it = percorsi.find(j.serie);
+                const std::string percorso = it == percorsi.end() ? "" : it->second;
                 items.push_back({{"id", j.id},
                                  {"job_key", j.jobKey},
                                  {"serie", j.serie},
