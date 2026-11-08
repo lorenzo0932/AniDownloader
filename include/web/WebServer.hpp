@@ -3,6 +3,7 @@
 #include "config/AppConfigManager.hpp"
 #include "core/ExecutionEngine.hpp"
 #include "core/NotificationStore.hpp"
+#include "core/PipelineGate.hpp"
 #include "core/Scheduler.hpp"
 #include "core/SeriesRepository.hpp"
 #include "web/DownloadState.hpp"
@@ -44,6 +45,9 @@ namespace Web {
         Core::SeriesRepository m_seriesRepository;
         // Stesso DB delle serie: le notifiche vivono nella tabella v3.
         std::filesystem::path m_dbPath;
+        // Un solo esecutore nel demone (pipeline condivisa, fase 1):
+        // scheduler (background) e run manuale (interattivo) si alternano.
+        Core::PipelineGate m_pipelineGate;
         // Scheduler interno (B4): parte con start(), si ferma con stop().
         // Vive quanto il server: in --web il demone è web + scheduler.
         Core::Scheduler m_scheduler;

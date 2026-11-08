@@ -50,9 +50,13 @@ Stato dello scheduler interno (ADR-004).
     "attivo": true,
     "inPausa": false,
     "checkInCoda": 0,
-    "ultimoGiro": 1720000000
+    "ultimoGiro": 1720000000,
+    "pipeline": {"inEsecuzione": false, "interattivoInAttesa": false}
 }
 ```
+
+`pipeline.inEsecuzione` è true mentre gira un check o un run manuale;
+`pipeline.interattivoInAttesa` è true quando un run manuale aspetta il turno.
 
 ### `PUT /api/scheduler/pausa` (dal 3.0)
 

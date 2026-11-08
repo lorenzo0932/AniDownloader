@@ -83,9 +83,11 @@ Le classi scraper (`BaseScraper`, `AnimeWScraper`, `AnimeUScraper`) vivono in
 7. Frontend aggiorna Home, Gestione e log in tempo reale
 ```
 
-Run manuale e scheduler sono **due percorsi distinti**: la coda persistente
-serve oggi solo i controlli periodici. Una pipeline condivisa è progettata
-ma non ancora implementata.
+Run manuale e scheduler sono **due percorsi d'ingresso distinti**, ma nel
+demone esiste **un solo esecutore**: `Core::PipelineGate` (pipeline condivisa,
+fase 1) serializza check periodico e run manuale, con precedenza al secondo.
+La coda persistente serve oggi i controlli periodici; la coda per-episodio
+condivisa fra le due origini è la fase successiva, non ancora implementata.
 
 ## Persistenza
 

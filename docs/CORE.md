@@ -277,7 +277,6 @@ un fallito senza azzerare i tentativi.
 Ogni istanza apre la propria connessione (WAL + busy-timeout).
 
 ### CheckRunner
-
 `include/core/CheckRunner.hpp` — `src/core/CheckRunner.cpp`
 
 Un giro completo check → download → commit stato. Usato sia dalla CLI sia
@@ -287,8 +286,18 @@ commit dello stato emette `onEpisodeReady(serie, episodio)` per ogni report
 riuscito con episodio > 0: è l'unico punto in cui nasce una notifica (la CLI
 passa un callback vuoto: è interattiva).
 
-### NotificationStore
+### PipelineGate
 
+`include/core/PipelineGate.hpp` — `src/core/PipelineGate.cpp`
+
+Coordinatore di esecuzione del demone (pipeline condivisa, fase 1): garantisce
+che check periodico e run manuale non lanciano due `ExecutionEngine`
+concorrenti. L'interattivo ha precedenza per il turno successivo; il
+background aspetta se c'è un interattivo in attesa. Nessuna preemption: chi
+sta girando finisce il turno. `Guard` è RAII (rilascio anche su eccezione) e
+lo stato è esposto in `GET /api/scheduler/status` sotto `pipeline`.
+
+### NotificationStore
 `include/core/NotificationStore.hpp` — `src/core/NotificationStore.cpp`
 
 Notifiche "pronto da guardare" nella tabella SQLite `notifications` (schema

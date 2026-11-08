@@ -18,6 +18,7 @@ namespace Config {
 
 namespace Core {
     struct QueueTask;
+    class PipelineGate;
     class SeriesRepository;
 
     struct SchedulerStato {
@@ -55,6 +56,10 @@ namespace Core {
             std::function<void(const std::string& serie, int episodio, std::int64_t id)>;
         void onEpisodioPronto(NotificaCb cb);
 
+        // Coordinatore del demone: se impostato, ogni check acquisisce il
+        // turno in background (l'interattivo ha precedenza). Prima di start().
+        void setGate(PipelineGate* gate) noexcept;
+
         // Condivide il repository del demone (web + scheduler stessa istanza:
         // un solo mutex sulle serie). Chiamare prima di start(); mai dopo.
         // Senza wiring il giro crea un'istanza propria (CLI/test).
@@ -72,6 +77,7 @@ namespace Core {
         std::string m_jsonPath;
         std::string m_dbPath;
         SeriesRepository* m_repo{nullptr};
+        PipelineGate* m_gate{nullptr};
         WorkerPool m_pool;
         std::function<void(const std::string& tipo, const QueueTask& task)> m_onEvento;
         NotificaCb m_onEpisodioPronto;
