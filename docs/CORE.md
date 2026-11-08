@@ -6,7 +6,9 @@ Namespace `Core::` — include `Core::`.
 
 `include/core/ExecutionEngine.hpp` — `src/core/ExecutionEngine.cpp`
 
-Motore principale di esecuzione. Coordina planning, scheduling e download.
+Motore principale del run manuale (CLI o `POST /api/download/start`).
+Coordina planning, scheduling e download. Non è usato dallo scheduler
+interno, che passa da `CheckRunner` + `WorkerPool`.
 
 ### Metodo principale
 
@@ -230,3 +232,93 @@ compareVersions("2.0.0", "2.1.0")   → -1, 0, +1
 
 Usa `https://api.github.com/repos/lorenzo0932/AniDownloader/releases/latest`
 con `cpr` per HTTP GET. Confronto semver rigoroso.
+
+---
+
+## Scheduler e coda persistente (ADR-004)
+
+### Scheduler
+
+`include/core/Scheduler.hpp` — `src/core/Scheduler.cpp`
+
+Sostituisce i timer OS. Un thread di tick valuta ogni 30 s se il controllo
+periodico è maturo e accoda un task `check`; l'esecuzione è del `WorkerPool`.
+Intervallo da config `scheduling.intervalloMinuti` (default 15, range 5–1440).
+
+```cpp
+Scheduler scheduler(config, jsonPath);
+scheduler.start();
+scheduler.pausa(true);   // i task restano in coda
+scheduler.stato();       // { attivo, inPausa, checkInCoda, ultimoGiro }
+```
+
+Stop cooperativo: niente nuovi giri, attesa di quello in corso, mai kill.
+
+### WorkerPool
+
+`include/core/WorkerPool.hpp` — `src/core/WorkerPool.cpp`
+
+N thread che reclamano task dalla coda ed eseguono l'handler registrato per
+`kind`. Retry con backoff progressivo 5'/15'/1h, poi `fallito` definitivo.
+Eventi per SSE: `avviato`, `completato`, `riprova`, `fallito`.
+
+### QueueStore
+
+`include/core/QueueStore.hpp` — `src/core/QueueStore.cpp`
+
+Coda persistente nella tabella `tasks`: `claim()` atomico, `complete()`,
+`failRetry()` con backoff, `failDead()`, `resetOrfani()` per il crash
+recovery. Ogni istanza apre la propria connessione (WAL + busy-timeout).
+
+### CheckRunner
+
+`include/core/CheckRunner.hpp` — `src/core/CheckRunner.cpp`
+
+Un giro completo check → download → commit stato. Usato sia dalla CLI sia
+dall'handler `check` dello scheduler: un solo punto di verità. Con repository
+condiviso evita due istanze con mutex separati sullo stesso file.
+
+---
+
+## Database e persistenza
+
+### Database
+
+`include/core/Database.hpp` — `src/core/Database.cpp`
+
+Wrapper RAII su SQLite vendored. Statement preparati con binding 1-based,
+transazioni, migrazioni. Schema: `series`, `tasks`, `kv`, `migrations`.
+
+### DbImporter
+
+`include/core/DbImporter.hpp` — `src/core/DbImporter.cpp`
+
+Import JSON → SQLite con backup, dry-run, transazione e verifica
+conteggi + hash; rollback automatico su errore. Usato al primo avvio del DB.
+
+### SeriesRepository
+
+`include/core/SeriesRepository.hpp` — `src/core/SeriesRepository.cpp`
+
+Unico punto di mutazione delle serie. Il DB è la fonte; il JSON è export e
+fallback di rollback. Cache invalidata su (mtime,size) del DB.
+Mutazioni atomiche `addSeries`/`updateSeries`/`removeSeries` con vincolo
+anti-duplicato (identity = servizio + URL canonico).
+
+---
+
+## Altri moduli
+
+### ThumbCache
+
+`include/core/ThumbCache.hpp` — `src/core/ThumbCache.cpp`
+
+Miniature WebP su disco per `GET /api/poster`: tier 32/96/480/720/1080 px,
+chiave FNV-1a su path+mtime+size+w+q, tetto 500 MB con eviction LRU.
+
+### InstanceLock
+
+`include/core/InstanceLock.hpp` — `src/core/InstanceLock.cpp`
+
+Lock esclusivo non bloccante su file (flock su POSIX, handle esclusivo su
+Windows). Protegge un giro completo: snapshot → download → commit.

@@ -34,6 +34,55 @@ void from_json(const nlohmann::json& j, Series& s);
 void to_json(nlohmann::json& j, const Series& s);
 ```
 
+Il JSON è l'**export** del DB (fallback di rollback), non la fonte: le
+letture runtime passano da `SeriesRepository` → SQLite.
+
+## Persistenza SQLite (ADR-004)
+
+`series_data.db` accanto al JSON. Schema versionato in `migrations`.
+
+### `series`
+
+Rispecchia 1:1 i campi di `Series`; chiave primaria `name`. Le fonti
+alternative restano un sotto-documento JSON (`alternate_sources`).
+
+| Colonna | Tipo | Note |
+|---|---|---|
+| `name` | TEXT PK | Nome serie |
+| `service` | TEXT | Scraper primario |
+| `path` | TEXT | Cartella destinazione |
+| `continue_series` | INTEGER | 0/1 |
+| `is_high_priority` | INTEGER | 0/1 |
+| `passed_episodes` | INTEGER | Episodi già visti |
+| `series_page_url` | TEXT | URL pagina serie |
+| `episode_list_selector` | TEXT | Riservato |
+| `download_link_selector` | TEXT | Riservato |
+| `last_downloaded_at` | TEXT | ISO8601 |
+| `last_downloaded_episode` | INTEGER | Ultimo episodio |
+| `alternate_sources` | TEXT | JSON array |
+
+### `tasks` (coda persistente)
+
+| Colonna | Tipo | Note |
+|---|---|---|
+| `id` | INTEGER PK | Auto-increment |
+| `kind` | TEXT | Oggi `check`; download/convert/notify previsti |
+| `serie` | TEXT | Nome serie (vuoto per check globale) |
+| `episodio` | INTEGER | 0 se non applicabile |
+| `payload` | TEXT | JSON libero per il worker |
+| `stato` | TEXT | `attesa`, `attivo`, `fatto`, `fallito` (CHECK) |
+| `tentativi` | INTEGER | Contatore retry |
+| `prossima_esecuzione` | INTEGER | Epoch unix; 0 = subito |
+| `priorita` | INTEGER | Ordinamento claim |
+| `creato_il` | TEXT | Timestamp |
+
+Indice `idx_tasks_claim` su `(stato, prossima_esecuzione, priorita DESC, id)`.
+
+### `kv` e `migrations`
+
+`kv` conserva stato interno (es. ultimo giro scheduler); `migrations`
+registra le versioni di schema applicate.
+
 ## Dati derivati
 
 ### DownloadTask (include/scrapers/BaseScraper.hpp)
