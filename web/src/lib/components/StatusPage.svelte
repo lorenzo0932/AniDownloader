@@ -35,7 +35,7 @@
     if (coda.queued > 0) items.push(`${coda.queued} in attesa`);
     if (coda.downloading > 0) items.push(`${coda.downloading} in download`);
     if (coda.converting > 0) items.push(`${coda.converting} in conversione`);
-    if (coda.retry > 0) items.push(`${coda.retry} in retry`);
+    if (coda.retry > 0) items.push(`${coda.retry} da riprovare`);
     return items;
   });
   let problemiAperti = $derived(

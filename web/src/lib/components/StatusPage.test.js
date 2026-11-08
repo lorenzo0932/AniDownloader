@@ -149,7 +149,7 @@ describe('StatusPage home', () => {
     }));
     render(StatusPage);
 
-    expect(await screen.findByText(/In coda adesso: 2 in attesa · 3 in download · 1 in conversione · 4 in retry/)).toBeTruthy();
+    expect(await screen.findByText(/In coda adesso: 2 in attesa · 3 in download · 1 in conversione · 4 da riprovare/)).toBeTruthy();
     expect(screen.getByText(/Problemi aperti: 3/)).toBeTruthy();
 
     const attivita = screen.getByRole('link', { name: 'Vedi attività' });
@@ -188,7 +188,7 @@ describe('StatusPage home', () => {
     render(StatusPage);
 
     expect(await screen.findByText('Ultimo avvio')).toBeTruthy();
-    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100');
+    expect(screen.queryByRole('progressbar')).toBeNull();
     expect(screen.getByText('7 completati')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Vedi dettaglio' })).toBeTruthy();
   });

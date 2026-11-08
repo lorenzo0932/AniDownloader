@@ -47,7 +47,12 @@ describe('RunRow', () => {
     expect(screen.getByText('✓ 3')).toBeTruthy();
     expect(screen.getByText('◷ 2')).toBeTruthy();
     expect(screen.getByText('! 1')).toBeTruthy();
-    expect(screen.getByText('in corso')).toBeTruthy();
+    expect(screen.getByText('In corso')).toBeTruthy();
+  });
+
+  it('mostra i saltati accanto ai conteggi', () => {
+    render(RunRow, { run: run({ saltati: 2 }), jobs: [] });
+    expect(screen.getByText('– 2')).toBeTruthy();
   });
 
   it('progressbar determinata con aria-valuenow e aria-valuetext', () => {
@@ -69,14 +74,14 @@ describe('RunRow', () => {
     });
     expect(screen.queryByRole('progressbar')).toBeNull();
     expect(screen.getByText('5m 12s')).toBeTruthy();
-    expect(screen.getByText('completato')).toBeTruthy();
+    expect(screen.getByText('Completato')).toBeTruthy();
   });
 
   it('"Riprova tutti" è separato dal bottone di espansione', async () => {
     const onRetryFailed = vi.fn();
     const onToggle = vi.fn();
     const { container } = render(RunRow, {
-      run: run(), jobs: [], onRetryFailed, onToggle,
+      run: run(), jobs: [], expanded: true, onRetryFailed, onToggle,
     });
     const retry = screen.getByRole('button', {
       name: 'Riprova tutti i non riusciti di Avvio manuale',
@@ -91,7 +96,7 @@ describe('RunRow', () => {
   });
 
   it('senza non riusciti non c\'è "Riprova tutti"', () => {
-    render(RunRow, { run: run({ non_riusciti: 0 }), jobs: [] });
+    render(RunRow, { run: run({ non_riusciti: 0 }), jobs: [], expanded: true });
     expect(screen.queryByRole('button', { name: /Riprova tutti/ })).toBeNull();
   });
 

@@ -267,7 +267,9 @@ describe('AttivitaPage', () => {
   it('"Riprova tutti" chiama retryFailed e ricarica', async () => {
     render(AttivitaPage);
     await screen.findByText('Avvio manuale');
-    await fireEvent.click(screen.getByRole('button', {
+    await fireEvent.click(document.querySelector('[data-run-id="run-1"] .run-main'));
+    await waitFor(() => expect(runsGetMock).toHaveBeenCalledWith('run-1'));
+    await fireEvent.click(await screen.findByRole('button', {
       name: 'Riprova tutti i non riusciti di Avvio manuale',
     }));
     await waitFor(() => expect(runsRetryFailedMock).toHaveBeenCalledWith('run-1'));

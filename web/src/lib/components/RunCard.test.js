@@ -74,10 +74,25 @@ describe('RunCard', () => {
     expect(screen.getByText('Ultimo avvio')).toBeTruthy();
     expect(screen.getByText('Completato')).toBeTruthy();
     expect(screen.getByText('7 completati')).toBeTruthy();
-    expect(screen.getByText('0 non riusciti')).toBeTruthy();
+    expect(screen.queryByText('0 non riusciti')).toBeNull();
     expect(screen.getByText(/Durata 7 min/)).toBeTruthy();
-    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100');
+    expect(screen.queryByRole('progressbar')).toBeNull();
     expect(screen.getByRole('link', { name: 'Vedi dettaglio' }).getAttribute('href')).toBe('/attivita');
+  });
+
+  it('run senza episodi: niente barra, messaggio dedicato e saltati', () => {
+    render(RunCard, {
+      run: baseRun({
+        stato: 'completato',
+        concluso_il: '2026-11-08T17:10:00.000Z',
+        totale: 0, completati: 0, in_corso: 0, non_riusciti: 0,
+        saltati: 27, percent: 0, corrente: null,
+      }),
+    });
+
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.getByText('Nessun episodio da elaborare')).toBeTruthy();
+    expect(screen.getByText('27 saltati')).toBeTruthy();
   });
 
   it('run con errori: conteggio non riusciti in evidenza', () => {

@@ -84,16 +84,18 @@
       </div>
     {/if}
 
-    <div
-      class="run-progress"
-      role="progressbar"
-      aria-valuemin="0"
-      aria-valuemax="100"
-      aria-valuenow={percent}
-      aria-valuetext="{run.completati} di {run.totale} episodi"
-    >
-      <span class="run-progress-fill" style={`width: ${percent}%`}></span>
-    </div>
+    {#if inCorso && (run.totale ?? 0) > 0}
+      <div
+        class="run-progress"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={percent}
+        aria-valuetext="{run.completati} di {run.totale} episodi"
+      >
+        <span class="run-progress-fill" style={`width: ${percent}%`}></span>
+      </div>
+    {/if}
 
     {#if inCorso && run.corrente}
       <p class="run-current">
@@ -102,21 +104,34 @@
     {/if}
 
     <div class="run-counts">
-      <span class="count count-done">
-        {run.completati} {run.completati === 1 ? 'completato' : 'completati'}
-      </span>
-      <span class="count count-active">{run.in_corso} in corso</span>
-      <span class="count count-error">
-        {run.non_riusciti} {run.non_riusciti === 1 ? 'non riuscito' : 'non riusciti'}
-      </span>
-      {#if (run.saltati || 0) > 0}
-        <span class="count count-skipped">
-          {run.saltati} {run.saltati === 1 ? 'saltato' : 'saltati'}
+      {#if (run.totale ?? 0) === 0}
+        <span class="count count-total">Nessun episodio da elaborare</span>
+        {#if (run.saltati || 0) > 0}
+          <span class="count count-skipped">
+            {run.saltati} {run.saltati === 1 ? 'saltato' : 'saltati'}
+          </span>
+        {/if}
+      {:else}
+        <span class="count count-done">
+          {run.completati} {run.completati === 1 ? 'completato' : 'completati'}
+        </span>
+        {#if inCorso || (run.in_corso || 0) > 0}
+          <span class="count count-active">{run.in_corso} in corso</span>
+        {/if}
+        {#if (run.non_riusciti || 0) > 0}
+          <span class="count count-error">
+            {run.non_riusciti} {run.non_riusciti === 1 ? 'non riuscito' : 'non riusciti'}
+          </span>
+        {/if}
+        {#if (run.saltati || 0) > 0}
+          <span class="count count-skipped">
+            {run.saltati} {run.saltati === 1 ? 'saltato' : 'saltati'}
+          </span>
+        {/if}
+        <span class="count count-total">
+          {run.totale} {run.totale === 1 ? 'totale' : 'totali'}
         </span>
       {/if}
-      <span class="count count-total">
-        {run.totale} {run.totale === 1 ? 'totale' : 'totali'}
-      </span>
     </div>
 
     <a class="run-cta" href="/attivita" onclick={handleOpen}>
@@ -155,7 +170,10 @@
     height: 6px; border-radius: 3px; background: var(--bg-tertiary);
     overflow: hidden; margin: 0.1rem 0;
   }
-  .run-progress-fill { display: block; height: 100%; background: var(--accent); }
+  .run-progress-fill {
+    display: block; height: 100%; background: var(--accent);
+    transition: width 220ms var(--motion-ease-out);
+  }
 
   .run-current { margin: 0; font-size: 0.85rem; font-weight: 500; color: var(--text-primary); }
 
