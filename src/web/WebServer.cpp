@@ -103,6 +103,7 @@ namespace Web {
         // Demone: scheduler e route CRUD condividono lo stesso repository
         // (un solo mutex sulle serie). Prima di start(), mai dopo.
         m_scheduler.useRepository(&m_seriesRepository);
+        m_scheduler.setGate(&m_pipelineGate);
         // Ogni client SSE occupa un thread del pool per l'intera connessione:
         // pool dinamico proporzionale alla macchina (coerente con lo stile del
         // resto del codice, es. getExecutionStrategy), minimo garantito 16.
@@ -303,10 +304,14 @@ namespace Web {
         // ---- SCHEDULER (B6): stato + pausa, eventi via SSE ----
         m_svr.Get("/api/scheduler/status", [this](const httplib::Request&, httplib::Response& res) {
             const auto s = m_scheduler.stato();
-            sendJson(res, successJson({{"attivo", s.attivo},
-                                       {"inPausa", s.inPausa},
-                                       {"checkInCoda", s.checkInCoda},
-                                       {"ultimoGiro", s.ultimoGiro}}));
+            sendJson(res, successJson(
+                              {{"attivo", s.attivo},
+                               {"inPausa", s.inPausa},
+                               {"checkInCoda", s.checkInCoda},
+                               {"ultimoGiro", s.ultimoGiro},
+                               {"pipeline",
+                                {{"inEsecuzione", m_pipelineGate.inEsecuzione()},
+                                 {"interattivoInAttesa", m_pipelineGate.interattivoInAttesa()}}}}));
         });
         m_svr.Put("/api/scheduler/pausa",
                   [this](const httplib::Request& req, httplib::Response& res) {
@@ -1439,6 +1444,21 @@ namespace Web {
         broadcastSseEvent(nlohmann::json({{"type", "started"}}).dump());
 
         m_downloadThread = std::thread([this, seriesList, burst]() {
+            // Pipeline condivisa (fase 1): il run manuale è l'origine
+            // interattiva. Se un check è in corso aspetta il turno (senza
+            // avviare un secondo ExecutionEngine), poi ha la precedenza.
+            if (m_pipelineGate.inEsecuzione()) {
+                broadcastSseEvent(nlohmann::json({{"type", "overall"},
+                                                  {"status", "In attesa del turno in corso"}})
+                                      .dump());
+            }
+            auto turno = m_pipelineGate.acquire(true, &m_stopSignal);
+            if (!turno.owns()) {
+                m_downloadRunning.store(false);
+                broadcastSseEvent(nlohmann::json({{"type", "done"}, {"stopped", true}}).dump());
+                return;
+            }
+
             // Feature 11: lock transazionale (planning → download → save).
             // Un'altra istanza (CLI o altro demone) attiva → rifiuto chiaro.
             std::filesystem::path execLockPath = Config::PathHelper::getConfigDir() / "exec.lock";

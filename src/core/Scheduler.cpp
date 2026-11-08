@@ -6,6 +6,7 @@
 #include "core/ExecutionEngine.hpp"
 #include "core/Logger.hpp"
 #include "core/NotificationStore.hpp"
+#include "core/PipelineGate.hpp"
 #include "core/QueueStore.hpp"
 #include "core/SeriesRepository.hpp"
 
@@ -56,6 +57,14 @@ namespace Core {
         m_pool.onKind("check", [this](const QueueTask& task) {
             (void)task;
             std::atomic<bool> maiAbortito{false}; // 2-bis: il giro non si interrompe
+            // Pipeline condivisa (fase 1): un solo esecutore nel demone.
+            // Il check è background: se un interattivo è in attesa, aspetta.
+            PipelineGate::Guard turno;
+            if (m_gate != nullptr) {
+                turno = m_gate->acquire(false, &m_attivo);
+                if (!turno.owns())
+                    return EsitoTask::Riprova;
+            }
             auto notifica = [this](const std::string& serie, int episodio) {
                 NotificationStore store(m_dbPath);
                 std::int64_t id = 0;
@@ -122,6 +131,8 @@ namespace Core {
     }
 
     void Scheduler::onEpisodioPronto(NotificaCb cb) { m_onEpisodioPronto = std::move(cb); }
+
+    void Scheduler::setGate(PipelineGate* gate) noexcept { m_gate = gate; }
 
     bool Scheduler::running() const noexcept { return m_attivo.load(); }
 

@@ -8,6 +8,7 @@
 #include "core/FileUtils.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/NotificationStore.hpp"
+#include "core/PipelineGate.hpp"
 #include "core/ProcessUtils.hpp"
 #include "core/QueueStore.hpp"
 #include "core/Scheduler.hpp"
@@ -1636,6 +1637,54 @@ static void testNotificationStore() {
     fs::remove_all(dir, ec);
 }
 
+// Pipeline condivisa (fase 1): un solo esecutore, priorità interattiva.
+static void testPipelineGate() {
+    Core::PipelineGate gate;
+    std::atomic<bool> stop{false};
+
+    // Background in esecuzione: l'interattivo aspetta e non fa preemption.
+    auto bg = gate.acquire(false, &stop);
+    CHECK(bg.owns());
+    CHECK(gate.inEsecuzione());
+
+    std::atomic<bool> interEntrato{false};
+    std::thread inter([&] {
+        auto g = gate.acquire(true, &stop);
+        if (g.owns())
+            interEntrato.store(true);
+    });
+    for (int i = 0; i < 200 && !gate.interattivoInAttesa(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    CHECK(gate.interattivoInAttesa());
+    CHECK(!interEntrato.load());
+    bg = Core::PipelineGate::Guard{};
+    inter.join();
+    CHECK(interEntrato.load());
+    CHECK(!gate.inEsecuzione());
+
+    // Interattivo in attesa: un nuovo background non lo supera.
+    auto inter2 = gate.acquire(true, &stop);
+    CHECK(inter2.owns());
+    std::atomic<bool> bgEntrato{false};
+    std::thread bgThread([&] {
+        auto g = gate.acquire(false, &stop);
+        if (g.owns())
+            bgEntrato.store(true);
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    CHECK(!bgEntrato.load());
+    inter2 = Core::PipelineGate::Guard{};
+    bgThread.join();
+    CHECK(bgEntrato.load());
+
+    // Stop durante l'attesa: nessun turno acquisito.
+    auto held = gate.acquire(false, &stop);
+    CHECK(held.owns());
+    std::atomic<bool> stop2{true};
+    auto annullato = gate.acquire(true, &stop2);
+    CHECK(!annullato.owns());
+}
+
 // CheckRunner skip-paths (mai rete): libreria vuota e lock occupato.
 // Scheduler: ciclo completo su libreria vuota senza toccare la rete
 // (il giro trova zero serie e marca il task fallito). Cleanup sempre.
@@ -2142,6 +2191,7 @@ int main(int argc, char** argv) {
     testConcurrentWrites();
     testQueueStore();
     testNotificationStore();
+    testPipelineGate();
     testScheduler();
     testWorkerPool();
 
