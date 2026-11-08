@@ -36,7 +36,7 @@ namespace Core {
 
         void run(const std::vector<Series>& seriesList, bool burstMode,
                  std::atomic<bool>& stopSignal, ProgressCb onProgress, const StatusCb& onStatus,
-                 FinishedCb onTaskFinished,
+                 const FinishedCb& onTaskFinished,
                  const SkippedCb& onTaskSkipped, // AGGIUNTO
                  const AnalysisCb& onAnalysisDone, ActivityCb onActivity = {});
 
@@ -48,7 +48,7 @@ namespace Core {
       private:
         void runPipeline(const std::vector<Series>& seriesList, bool burstMode,
                          std::atomic<bool>& stopSignal, ProgressCb onProgress,
-                         const StatusCb& onStatus, FinishedCb onTaskFinished,
+                         const StatusCb& onStatus, const FinishedCb& onTaskFinished,
                          const SkippedCb& onTaskSkipped, const AnalysisCb& onAnalysisDone,
                          ActivityCb onActivity);
 

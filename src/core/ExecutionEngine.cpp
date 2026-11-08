@@ -35,7 +35,7 @@ namespace Core {
 
     void ExecutionEngine::runPipeline(const std::vector<Series>& seriesList, bool burstMode,
                                       std::atomic<bool>& stopSignal, ProgressCb onProgress,
-                                      const StatusCb& onStatus, FinishedCb onTaskFinished,
+                                      const StatusCb& onStatus, const FinishedCb& onTaskFinished,
                                       const SkippedCb& onTaskSkipped,
                                       const AnalysisCb& onAnalysisDone, ActivityCb onActivity) {
         PipelineJobStore& store = *m_store;
@@ -141,13 +141,12 @@ namespace Core {
 
     void ExecutionEngine::run(const std::vector<Series>& seriesList, bool burstMode,
                               std::atomic<bool>& stopSignal, ProgressCb onProgress,
-                              const StatusCb& onStatus, FinishedCb onTaskFinished,
+                              const StatusCb& onStatus, const FinishedCb& onTaskFinished,
                               const SkippedCb& onTaskSkipped, const AnalysisCb& onAnalysisDone,
                               ActivityCb onActivity) {
         if (m_store != nullptr) {
             runPipeline(seriesList, burstMode, stopSignal, std::move(onProgress), onStatus,
-                        std::move(onTaskFinished), onTaskSkipped, onAnalysisDone,
-                        std::move(onActivity));
+                        onTaskFinished, onTaskSkipped, onAnalysisDone, std::move(onActivity));
             return;
         }
         onStatus("Analisi parallelizzata in corso...");
