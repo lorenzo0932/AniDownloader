@@ -1578,6 +1578,17 @@ namespace Web {
                     std::array<char, 24> ts{};
                     std::strftime(ts.data(), ts.size(), "%Y-%m-%dT%H:%M:%SZ", &tm);
                     m_seriesRepository.applyDownloadedEpisodes({{name, ep}}, ts.data());
+                    // Anche il run manuale produce la notifica "pronto": il
+                    // badge si aggiorna in diretta via SSE.
+                    Core::NotificationStore notifiche(m_dbPath);
+                    std::int64_t id = 0;
+                    if (notifiche.add(name, ep, &id)) {
+                        nlohmann::json ev = {{"type", "notification"},
+                                             {"id", id},
+                                             {"serie", name},
+                                             {"episodio", ep}};
+                        broadcastSseEvent(ev.dump());
+                    }
                 });
 
             std::mutex mapMutex;
