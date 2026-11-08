@@ -4,6 +4,7 @@
 #include "scrapers/ScraperUtils.hpp"
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <format>
 #include <memory>
@@ -16,6 +17,7 @@ namespace Core {
 
     struct PlanningResult {
         std::mutex mutex;
+        std::condition_variable cv;
         std::vector<std::pair<Series, DownloadTask>> tasks;
         std::vector<std::string> errors;
     };
@@ -86,6 +88,7 @@ namespace Core {
                         }
                     }
                 }
+                result->cv.notify_all();
 
                 if (!hasWork && !anyError) {
                     if (onTaskSkipped)
@@ -96,73 +99,46 @@ namespace Core {
             });
         }
 
-        while (*pending > 0 && !stopSignal) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        }
-
-        std::vector<std::pair<Series, DownloadTask>> toProcess;
-        {
-            std::lock_guard<std::mutex> lock(result->mutex);
-            toProcess = std::move(result->tasks);
-            for (const auto& err : result->errors) {
-                auto colon = err.find(':');
-                if (colon != std::string::npos && onProgress) {
-                    onProgress(err.substr(0, colon), 0, "❌ Errore: " + err.substr(colon + 2));
-                    if (onActivity)
-                        onActivity(err.substr(0, colon), 0,
-                                   {TaskPhase::Error, -1, err.substr(colon + 2)});
-                }
-            }
-        }
-
-        if (stopSignal) {
-            // Latenza di stop storica: non attendiamo i worker in volo (I/O di
-            // rete in corso = decine di secondi), li detachiamo e si fermano
-            // da soli al prossimo check di stopSignal.
-            for (auto& t : analysisThreads)
-                t.detach();
-            onStatus("Processo interrotto.");
-            return;
-        }
-
-        // Percorso normale: pending == 0 ⇒ worker già terminati. Join esplicito
-        // (obbligatorio per std::thread prima del distruttore, no-op per jthread).
-        for (auto& t : analysisThreads)
-            t.join();
-        if (onAnalysisDone)
-            onAnalysisDone();
-
-        if (toProcess.empty()) {
-            onStatus("Tutto aggiornato.");
-            return;
-        }
-
-        std::sort(toProcess.begin(), toProcess.end(), [](const auto& a, const auto& b) {
-            return a.first.isHighPriority > b.first.isHighPriority;
-        });
-
-        onStatus(std::format("Inizio elaborazione di {} serie...", toProcess.size()));
-        auto strategy = m_config.getExecutionStrategy(toProcess.size(), burstMode);
-
-        if (onActivity) {
-            for (const auto& [series, task] : toProcess)
-                onActivity(series.name, task.episodeNumber,
-                           {TaskPhase::Queued, -1, "In attesa di elaborazione"});
-        }
-
-        std::atomic<size_t> nextIndex(0);
+        // Pipeline B: produzione e consumo in overlap. I worker partono con la
+        // prima serie pianificata e consumano i task man mano che arrivano;
+        // non si attende la fine di tutte le analisi. La priorità alta resta
+        // davanti tra i task già pronti (nessuna preemption).
+        auto strategy = m_config.getExecutionStrategy(seriesList.size(), burstMode);
+        std::atomic<size_t> elaborati{0};
         std::vector<std::future<void>> workers;
-        int downloadWorkers = (std::min)(static_cast<int>(toProcess.size()),
+        int downloadWorkers = (std::min)(static_cast<int>(seriesList.size()),
                                          (std::max)(strategy.maxConcurrentTasks * 2, 4));
         workers.reserve(downloadWorkers);
         for (int i = 0; i < downloadWorkers; ++i) {
             workers.push_back(std::async(std::launch::async, [&]() {
                 while (true) {
-                    size_t idx = nextIndex.fetch_add(1);
-                    if (idx >= toProcess.size() || stopSignal)
-                        break;
+                    std::pair<Series, DownloadTask> item;
+                    {
+                        std::unique_lock<std::mutex> lock(result->mutex);
+                        result->cv.wait_for(lock, std::chrono::milliseconds(50), [&] {
+                            return !result->tasks.empty() || pending->load() == 0 ||
+                                   stopSignal.load();
+                        });
+                        if (stopSignal)
+                            return;
+                        if (result->tasks.empty()) {
+                            if (pending->load() == 0)
+                                return;
+                            continue;
+                        }
+                        auto it =
+                            std::find_if(result->tasks.begin(), result->tasks.end(),
+                                         [](const auto& t) { return t.first.isHighPriority; });
+                        if (it == result->tasks.end())
+                            it = result->tasks.begin();
+                        item = std::move(*it);
+                        result->tasks.erase(it);
+                    }
 
-                    auto& item = toProcess[idx];
+                    if (onActivity)
+                        onActivity(item.first.name, item.second.episodeNumber,
+                                   {TaskPhase::Queued, -1, "In attesa di elaborazione"});
+
                     auto taskProgressCb = [onProgress, epNum = item.second.episodeNumber](
                                               const std::string& name, const std::string& msg) {
                         if (onProgress)
@@ -185,9 +161,6 @@ namespace Core {
                         m_config.get<bool>("auto_cleanup_on_close", true) &&
                         !m_config.get<bool>("resume_interrupted_downloads", true)) {
                         std::string expPath = ScraperUtils::expandTilde(item.first.path);
-                        // Feature 11: i parziali vivono in .part/.part.aria2.
-                        // Il nome finale esiste solo dopo il publish (file valido):
-                        // non va mai toccato in un cleanup.
                         std::filesystem::path partFile =
                             std::filesystem::path(expPath) / (item.second.fileName + ".part");
                         try {
@@ -222,19 +195,52 @@ namespace Core {
                     }
                     if (onTaskFinished)
                         onTaskFinished(report);
+                    elaborati.fetch_add(1);
                 }
             }));
         }
 
+        while (*pending > 0 && !stopSignal)
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        {
+            std::lock_guard<std::mutex> lock(result->mutex);
+            for (const auto& err : result->errors) {
+                auto colon = err.find(':');
+                if (colon != std::string::npos && onProgress) {
+                    onProgress(err.substr(0, colon), 0, "❌ Errore: " + err.substr(colon + 2));
+                    if (onActivity)
+                        onActivity(err.substr(0, colon), 0,
+                                   {TaskPhase::Error, -1, err.substr(colon + 2)});
+                }
+            }
+        }
+        result->cv.notify_all();
+
+        if (stopSignal) {
+            // Latenza di stop storica: non attendiamo i worker in volo (I/O di
+            // rete in corso = decine di secondi), li detachiamo e si fermano
+            // da soli al prossimo check di stopSignal.
+            for (auto& t : analysisThreads)
+                t.detach();
+            onStatus("Processo interrotto.");
+            return;
+        }
+
+        for (auto& t : analysisThreads)
+            t.join();
+        if (onAnalysisDone)
+            onAnalysisDone();
         for (auto& f : workers) {
             while (f.wait_for(std::chrono::milliseconds(200)) != std::future_status::ready) {
                 if (stopSignal)
                     break;
             }
-            if (stopSignal)
-                break;
         }
-        onStatus(stopSignal ? "Processo interrotto." : "Elaborazione completata.");
+        if (elaborati.load() == 0)
+            onStatus("Tutto aggiornato.");
+        else
+            onStatus("Elaborazione completata.");
     }
 
 } // namespace Core
