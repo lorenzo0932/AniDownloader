@@ -52,7 +52,7 @@ describe('RunRow', () => {
 
   it('mostra i saltati accanto ai conteggi', () => {
     render(RunRow, { run: run({ saltati: 2 }), jobs: [] });
-    expect(screen.getByText('– 2')).toBeTruthy();
+    expect(screen.getByText('2 saltati')).toBeTruthy();
   });
 
   it('progressbar determinata con aria-valuenow e aria-valuetext', () => {
