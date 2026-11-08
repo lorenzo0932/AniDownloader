@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
 // Coda persistente dei task (B4/B6, ADR-004): gli accodatori (scheduler,
 // "scarica ora", CLI) scrivono righe, i worker le reclamano con claim
@@ -52,6 +54,29 @@ namespace Core {
         bool failDead(std::int64_t id);
 
         std::int64_t pendingCount(const std::string& kind = "");
+
+        // Vista per la UI coda: righe con stato e scadenza. stato vuoto =
+        // tutte tranne i completati (la coda attiva); "fatto" esplicito li
+        // include. Ordine: attivo, attesa, fallito, poi priorità e anzianità.
+        struct Voce {
+            std::int64_t id{0};
+            std::string kind;
+            std::string serie;
+            int episodio{0};
+            std::string stato;
+            int tentativi{0};
+            std::int64_t prossimaEsecuzione{0};
+            int priorita{0};
+            std::string creatoIl;
+        };
+        [[nodiscard]] std::vector<Voce> list(const std::string& stato = "", int limit = 100) const;
+
+        // Conteggi per stato (attesa/attivo/fatto/fallito): badge della UI.
+        [[nodiscard]] std::map<std::string, int> counts() const;
+
+        // "Riprova ora": rimette in attesa un task fallito (o già in attesa)
+        // senza azzerare i tentativi, così la storia resta leggibile.
+        bool retryNow(std::int64_t id);
 
       private:
         std::filesystem::path m_dbPath;

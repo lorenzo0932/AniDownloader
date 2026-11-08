@@ -98,7 +98,7 @@ namespace Web {
           m_configJsonPath(Config::PathHelper::getConfigDir() / "config.json"),
           m_seriesRepository(resolveJsonPath(configManager),
                              Core::SeriesRepository::dbPathFor(resolveJsonPath(configManager))),
-          m_notificationsDbPath(Core::SeriesRepository::dbPathFor(resolveJsonPath(configManager))),
+          m_dbPath(Core::SeriesRepository::dbPathFor(resolveJsonPath(configManager))),
           m_scheduler(configManager, resolveJsonPath(configManager).string()) {
         // Demone: scheduler e route CRUD condividono lo stesso repository
         // (un solo mutex sulle serie). Prima di start(), mai dopo.
@@ -278,6 +278,7 @@ namespace Web {
         // dominio (routes distinte: l'ordine tra gruppi non altera il matching).
         setupInfoRoutes();
         setupNotificationRoutes();
+        setupQueueRoutes();
         setupSeriesRoutes();
         setupBrowseRoutes();
         setupDiscoverRoutes();
@@ -374,6 +375,69 @@ namespace Web {
         }
     }
 
+    // ---- CODA ----
+    void WebServer::setupQueueRoutes() {
+        // Vista della coda persistente: stessa tabella tasks dello scheduler.
+        // La UI si aggiorna sugli eventi SSE `queue` e rilegge questa lista.
+        m_svr.Get("/api/queue", [this](const httplib::Request& req, httplib::Response& res) {
+            int limit = 100;
+            if (req.has_param("limit")) {
+                try {
+                    limit = std::stoi(req.get_param_value("limit"));
+                } catch (const std::exception&) {
+                    Core::Logger::warn("/api/queue: parametro 'limit' non valido");
+                }
+            }
+            const std::string stato =
+                req.has_param("stato") ? req.get_param_value("stato") : std::string();
+            Core::QueueStore coda(m_dbPath);
+            nlohmann::json items = nlohmann::json::array();
+            for (const auto& v : coda.list(stato, limit)) {
+                items.push_back({{"id", v.id},
+                                 {"kind", v.kind},
+                                 {"serie", v.serie},
+                                 {"episodio", v.episodio},
+                                 {"stato", v.stato},
+                                 {"tentativi", v.tentativi},
+                                 {"prossima_esecuzione", v.prossimaEsecuzione},
+                                 {"priorita", v.priorita},
+                                 {"creato_il", v.creatoIl}});
+            }
+            const auto counts = coda.counts();
+            auto conta = [&counts](const char* chiave) {
+                const auto it = counts.find(chiave);
+                return it == counts.end() ? 0 : it->second;
+            };
+            sendJson(res, successJson({{"items", items},
+                                       {"counts",
+                                        {{"attesa", conta("attesa")},
+                                         {"attivo", conta("attivo")},
+                                         {"fatto", conta("fatto")},
+                                         {"fallito", conta("fallito")}}}}));
+        });
+
+        // "Riprova ora" su un task fallito: torna in attesa senza azzerare
+        // i tentativi (la storia resta visibile nella UI).
+        m_svr.Post("/api/queue/retry", [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                auto body = nlohmann::json::parse(req.body);
+                if (!body.contains("id")) {
+                    sendJson(res, errorJson("Missing id"), 400);
+                    return;
+                }
+                const auto id = body["id"].get<std::int64_t>();
+                Core::QueueStore coda(m_dbPath);
+                if (!coda.retryNow(id)) {
+                    sendJson(res, errorJson("Storage error: " + coda.lastError(), 500), 500);
+                    return;
+                }
+                sendJson(res, successJson({{"id", id}}));
+            } catch (const std::exception&) {
+                sendJson(res, errorJson("Invalid retry data"), 400);
+            }
+        });
+    }
+
     // ---- NOTIFICHE ----
     void WebServer::setupNotificationRoutes() {
         // Lista (più recenti prima) + conteggio non lette. Il client tiene il
@@ -389,7 +453,7 @@ namespace Web {
                         Core::Logger::warn("/api/notifications: parametro 'limit' non valido");
                     }
                 }
-                Core::NotificationStore store(m_notificationsDbPath);
+                Core::NotificationStore store(m_dbPath);
                 nlohmann::json items = nlohmann::json::array();
                 for (const auto& n : store.list(limit)) {
                     items.push_back({{"id", n.id},
@@ -405,7 +469,7 @@ namespace Web {
         // Body vuoto = segna tutte come lette; {"id": N} = solo quella.
         m_svr.Post(
             "/api/notifications/read", [this](const httplib::Request& req, httplib::Response& res) {
-                Core::NotificationStore store(m_notificationsDbPath);
+                Core::NotificationStore store(m_dbPath);
                 bool ok = true;
                 try {
                     auto body = req.body.empty() ? nlohmann::json::object()
