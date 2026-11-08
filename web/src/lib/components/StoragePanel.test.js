@@ -90,11 +90,13 @@ describe('StoragePanel', () => {
     await waitFor(() => expect(cleanupMock).toHaveBeenCalledWith('parziali'));
   });
 
-  it('flush: senza dati disco la barra resta a 0%', async () => {
+  it('disco non disponibile: totalBytes 0, niente valori finti né barra', async () => {
     infoMock.mockResolvedValue({ freeBytes: 0, totalBytes: 0, cache: {}, partial: {}, series: [] });
     render(StoragePanel);
     await screen.findByText('Cache miniature');
-    const barra = screen.getByRole('progressbar', { name: 'Utilizzo disco' });
-    expect(barra.getAttribute('aria-valuenow')).toBe('0');
+
+    expect(screen.getByText('Non disponibile')).toBeTruthy();
+    expect(screen.queryByText(/liberi su/)).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
   });
 });
