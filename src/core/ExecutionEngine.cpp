@@ -39,6 +39,11 @@ namespace Core {
                                       const SkippedCb& onTaskSkipped,
                                       const AnalysisCb& onAnalysisDone, ActivityCb onActivity) {
         PipelineJobStore& store = *m_store;
+        const int orfani = store.resetOrfani();
+        if (orfani < 0)
+            Core::Logger::warn("Reset job orfani della pipeline fallito: " + store.lastError());
+        else if (orfani > 0)
+            Core::Logger::info(std::format("Ripristinati {} job orfani della pipeline", orfani));
         onStatus("Analisi e download in parallelo...");
 
         auto strategy = m_config.getExecutionStrategy(seriesList.size(), burstMode);

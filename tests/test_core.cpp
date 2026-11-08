@@ -1713,6 +1713,59 @@ static void testPipelineJobStore() {
     fs::remove_all(dir, ec);
 }
 
+// Pipeline fase 2: recupero dei job orfani dopo stop/crash.
+static void testPipelineJobStoreOrfani() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_pipeline_orfani";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    Core::PipelineJobStore store(dir / "p.db");
+    // Database vuoto: nessun orfano da ripristinare.
+    CHECK(store.resetOrfani() == 0);
+
+    const auto inDownload = store.enqueue("serie:/dl#1", "Serie", 1, "background");
+    const auto inConversione = store.enqueue("serie:/conv#2", "Serie", 2, "background");
+    const auto completato = store.enqueue("serie:/ok#3", "Serie", 3, "background");
+    CHECK(inDownload.creato && inConversione.creato && completato.creato);
+
+    // Un job resta in downloading, l'altro arriva in converting.
+    const auto presoDl = store.claim("queued_download", "downloading");
+    CHECK(presoDl.has_value() && presoDl->id == inDownload.id);
+    const auto presoConv = store.claim("queued_download", "downloading");
+    CHECK(presoConv.has_value() && presoConv->id == inConversione.id);
+    CHECK(store.transition(inConversione.id, "downloading", "downloaded_waiting_conversion"));
+    const auto presoConverting = store.claim("downloaded_waiting_conversion", "converting");
+    CHECK(presoConverting.has_value() && presoConverting->id == inConversione.id);
+
+    // Il terzo job è completato e non deve essere toccato dal reset.
+    const auto presoOk = store.claim("queued_download", "downloading");
+    CHECK(presoOk.has_value() && presoOk->id == completato.id);
+    CHECK(store.transition(completato.id, "downloading", "completed"));
+
+    CHECK(store.resetOrfani() == 2);
+    {
+        const auto righe = store.list();
+        CHECK(righe.size() == 3);
+        const auto faseDi = [&righe](std::int64_t id) {
+            for (const auto& r : righe) {
+                if (r.id == id)
+                    return r.fase;
+            }
+            return std::string{};
+        };
+        CHECK(faseDi(inDownload.id) == "queued_download");
+        CHECK(faseDi(inConversione.id) == "downloaded_waiting_conversion");
+        CHECK(faseDi(completato.id) == "completed");
+    }
+    // Secondo giro: le fasi ripristinate non sono più orfane.
+    CHECK(store.resetOrfani() == 0);
+
+    fs::remove_all(dir, ec);
+}
+
 // Pipeline fase 2: pool separati, budget globale di conversione, retry.
 static void testPipelineCoordinator() {
     namespace fs = std::filesystem;
@@ -2335,6 +2388,7 @@ int main(int argc, char** argv) {
     testNotificationStore();
     testPipelineGate();
     testPipelineJobStore();
+    testPipelineJobStoreOrfani();
     testPipelineCoordinator();
     testScheduler();
     testWorkerPool();

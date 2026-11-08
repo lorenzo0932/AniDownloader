@@ -1466,6 +1466,19 @@ namespace Web {
             Core::Logger::info(std::format("LAN:    http://{}:{}", lanIp, m_port));
         }
 
+        // Job rimasti in una fase attiva dopo un crash/stop: vanno riportati
+        // nelle fasi di partenza prima che scheduler e run li cerchino.
+        {
+            Core::PipelineJobStore pipelineStore(m_dbPath);
+            const int orfani = pipelineStore.resetOrfani();
+            if (orfani < 0)
+                Core::Logger::warn("Reset job orfani della pipeline fallito: " +
+                                   pipelineStore.lastError());
+            else if (orfani > 0)
+                Core::Logger::info(
+                    std::format("Ripristinati {} job orfani della pipeline", orfani));
+        }
+
         // Scheduler interno (B4): parte solo a bind riuscito, vive quanto il
         // server. In --web il demone è web + scheduler (ADR-004 §8).
         m_scheduler.start();
