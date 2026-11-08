@@ -300,9 +300,13 @@ terminale. Il coordinator possiede due pool separati: il download porta
 conversione), la conversione ha budget globale pari ai suoi worker (default
 2) e consuma solo sorgenti complete.
 
-Stato attuale: store, coordinator e API di lettura sono implementati e
-testati; il collegamento dei due handler ai percorsi di download/conversione
-esistenti è la fase di integrazione successiva.
+Integrazione (fase 2): `ExecutionEngine::setPipeline()` abilita il percorso a
+due pool. La pianificazione accoda un job per `JobKey` (identity+episodio) con
+payload `videoUrl`/`fileName` e `serie_path`; il pool download usa
+`processTask` con conversione disattivata e salva `file_path`, il pool
+conversione (2) usa `convertFile`. Al completamento aggiorna lo stato serie
+(callback del chiamante). `PipelineCoordinator` resta il coordinatore
+generico testato, usato dai test e disponibile per il demone.
 
 ### PipelineGate
 `include/core/PipelineGate.hpp` — `src/core/PipelineGate.cpp`

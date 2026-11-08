@@ -1525,6 +1525,19 @@ namespace Web {
             m_configManager.reloadConfig();
             Core::ExecutionEngine engine(m_configManager);
 
+            // Pipeline condivisa (fase 2): run manuale = origine interattiva.
+            // Ogni episodio completato aggiorna subito lo stato della serie.
+            Core::PipelineJobStore pipelineStore(m_dbPath);
+            engine.setPipeline(
+                &pipelineStore, "interactive", [this](const std::string& name, int ep) {
+                    const auto now = std::chrono::system_clock::now();
+                    const auto tt = std::chrono::system_clock::to_time_t(now);
+                    const auto tm = *std::gmtime(&tt);
+                    std::array<char, 24> ts{};
+                    std::strftime(ts.data(), ts.size(), "%Y-%m-%dT%H:%M:%SZ", &tm);
+                    m_seriesRepository.applyDownloadedEpisodes({{name, ep}}, ts.data());
+                });
+
             std::mutex mapMutex;
             std::map<std::string, int> maxEpisodes;
 

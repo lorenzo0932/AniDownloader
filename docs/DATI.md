@@ -120,6 +120,10 @@ chiave** garantito dall'indice unico parziale `idx_pipeline_jobs_key`.
 
 Indice `idx_pipeline_jobs_claim` su `(fase, prossima_esecuzione, priorita DESC, id)`.
 
+Colonne aggiunte dalla v5: `payload` (JSON con `videoUrl`/`fileName` per
+ricostruire il task), `serie_path` (cartella serie) e `file_path` (file
+prodotto dal download, consumato dal pool di conversione).
+
 ## Dati derivati
 
 ### DownloadTask (include/scrapers/BaseScraper.hpp)

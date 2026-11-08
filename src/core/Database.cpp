@@ -105,6 +105,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pipeline_jobs_key
 CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_claim
     ON pipeline_jobs(fase, prossima_esecuzione, priorita DESC, id);
 )";
+
+        // v5: payload del job (videoUrl/fileName per ricostruire il task),
+        // percorso serie (per ricostruire Series) e file finale prodotto dal
+        // download, usato poi dal pool di conversione.
+        constexpr const char* kSchemaV5 = R"(
+ALTER TABLE pipeline_jobs ADD COLUMN payload TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE pipeline_jobs ADD COLUMN serie_path TEXT NOT NULL DEFAULT '';
+ALTER TABLE pipeline_jobs ADD COLUMN file_path TEXT NOT NULL DEFAULT '';
+)";
     } // namespace
 
     struct Statement::Impl {
@@ -377,7 +386,7 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_claim
             return true;
         };
         if (!applica(1, kSchemaV1) || !applica(2, kSchemaV2) || !applica(3, kSchemaV3) ||
-            !applica(4, kSchemaV4))
+            !applica(4, kSchemaV4) || !applica(5, kSchemaV5))
             return false;
         m_impl->schemaVersion = attuale;
         if (!tx.commit()) {

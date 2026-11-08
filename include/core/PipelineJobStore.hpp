@@ -25,6 +25,9 @@ namespace Core {
         std::int64_t prossimaEsecuzione{0};
         int priorita{0};
         std::string errore;
+        std::string payload; // JSON: videoUrl/fileName per ricostruire il task
+        std::string seriePath;
+        std::string filePath; // prodotto dal download, consumato dalla conversione
         std::string creatoIl;
         std::string aggiornatoIl;
     };
@@ -43,12 +46,16 @@ namespace Core {
         // secondo. Una richiesta interattiva promuove un job background
         // (origine + priorità alta) senza toccare la fase in corso.
         EsitoEnqueue enqueue(const std::string& jobKey, const std::string& serie, int episodio,
-                             const std::string& origine, int priorita = 0);
+                             const std::string& origine, int priorita = 0,
+                             const std::string& payload = "{}", const std::string& seriePath = "");
 
         // Claim atomico: prende il job eseguibile più prioritario nella fase
         // di partenza e lo porta a quella di arrivo. nullopt = niente pronto.
         std::optional<PipelineJob> claim(const std::string& daFase, const std::string& aFase,
                                          std::int64_t ora = 0);
+
+        // File finale prodotto dal download (letto dal pool conversione).
+        bool setFilePath(std::int64_t id, const std::string& filePath);
 
         // Transizione atomica condizionata alla fase corrente.
         bool transition(std::int64_t id, const std::string& daFase, const std::string& aFase,

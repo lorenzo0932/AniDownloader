@@ -1096,6 +1096,7 @@ static void testDatabase() {
         CHECK(db.execute("INSERT INTO series(name) VALUES ('Vecchia');"));
         CHECK(db.execute("DROP TABLE tasks;"));
         CHECK(db.execute("DROP TABLE notifications;"));
+        CHECK(db.execute("DROP TABLE pipeline_jobs;"));
         CHECK(db.execute("DELETE FROM migrations WHERE version >= 2;"));
     }
     {
@@ -1696,8 +1697,18 @@ static void testPipelineJobStore() {
     // Terminale, poi la stessa JobKey può ripartire.
     CHECK(store.fail(primo.id, "ko"));
     CHECK(store.counts()["failed"] == 1);
-    const auto ripartito = store.enqueue(chiave, "Serie X", 1, "background");
+    const auto ripartito =
+        store.enqueue(chiave, "Serie X", 1, "background", 0,
+                      R"({"videoUrl":"https://x/v.mp4","fileName":"ep.mp4"})", "/media/Serie X");
     CHECK(ripartito.creato && ripartito.id != primo.id);
+    CHECK(store.setFilePath(ripartito.id, "/media/Serie X/ep.mp4"));
+    {
+        const auto righe = store.list("queued_download");
+        CHECK(righe.size() == 1);
+        CHECK(righe[0].seriePath == "/media/Serie X");
+        CHECK(righe[0].filePath == "/media/Serie X/ep.mp4");
+        CHECK(righe[0].payload.find("videoUrl") != std::string::npos);
+    }
 
     fs::remove_all(dir, ec);
 }
