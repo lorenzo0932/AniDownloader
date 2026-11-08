@@ -279,6 +279,7 @@ namespace Web {
         setupInfoRoutes();
         setupNotificationRoutes();
         setupQueueRoutes();
+        setupStorageRoutes();
         setupSeriesRoutes();
         setupBrowseRoutes();
         setupDiscoverRoutes();
@@ -434,6 +435,73 @@ namespace Web {
                 sendJson(res, successJson({{"id", id}}));
             } catch (const std::exception&) {
                 sendJson(res, errorJson("Invalid retry data"), 400);
+            }
+        });
+    }
+
+    // ---- SPAZIO ----
+    void WebServer::setupStorageRoutes() {
+        // Fotografia su richiesta: spazio libero del disco di output, cache
+        // miniature e occupazione per serie (con i residui .aria2/.part).
+        // La scansione è volutamente on-demand: nessun polling in background.
+        m_svr.Get("/api/storage", [this](const httplib::Request&, httplib::Response& res) {
+            const auto outDir = m_configManager.get<std::string>("output_dir", "");
+            const auto disco = Core::diskSpace(outDir);
+            const auto cache = Core::thumbCacheInfo();
+            const auto serie = m_seriesRepository.snapshotSeriesData();
+
+            nlohmann::json items = nlohmann::json::array();
+            std::int64_t partialFiles = 0;
+            std::int64_t partialBytes = 0;
+            for (const auto& s : serie) {
+                const auto uso = Core::scanSpace(s.path);
+                partialFiles += uso.partialFiles;
+                partialBytes += uso.partialBytes;
+                items.push_back({{"name", s.name},
+                                 {"path", s.path},
+                                 {"files", uso.files},
+                                 {"bytes", uso.bytes},
+                                 {"partialFiles", uso.partialFiles},
+                                 {"partialBytes", uso.partialBytes}});
+            }
+            std::sort(
+                items.begin(), items.end(), [](const nlohmann::json& a, const nlohmann::json& b) {
+                    return a.value("bytes", std::int64_t{0}) > b.value("bytes", std::int64_t{0});
+                });
+            sendJson(res,
+                     successJson({{"freeBytes", disco.freeBytes},
+                                  {"totalBytes", disco.totalBytes},
+                                  {"cache", {{"files", cache.files}, {"bytes", cache.bytes}}},
+                                  {"partial", {{"files", partialFiles}, {"bytes", partialBytes}}},
+                                  {"series", items}}));
+        });
+
+        // Pulizia guidata: solo due azioni sicure, mai file video.
+        m_svr.Post("/api/storage/cleanup", [this](const httplib::Request& req,
+                                                  httplib::Response& res) {
+            try {
+                auto body = nlohmann::json::parse(req.body);
+                const auto azione = body.value("azione", "");
+                if (azione == "cache") {
+                    const auto rimosso = Core::clearThumbCache();
+                    sendJson(res, successJson({{"removedFiles", rimosso.files},
+                                               {"freedBytes", rimosso.bytes}}));
+                    return;
+                }
+                if (azione == "parziali") {
+                    std::int64_t files = 0;
+                    std::int64_t bytes = 0;
+                    for (const auto& s : m_seriesRepository.snapshotSeriesData()) {
+                        const auto rimosso = Core::removePartialFiles(s.path);
+                        files += rimosso.partialFiles;
+                        bytes += rimosso.partialBytes;
+                    }
+                    sendJson(res, successJson({{"removedFiles", files}, {"freedBytes", bytes}}));
+                    return;
+                }
+                sendJson(res, errorJson("Azione non supportata"), 400);
+            } catch (const std::exception&) {
+                sendJson(res, errorJson("Invalid cleanup data"), 400);
             }
         });
     }

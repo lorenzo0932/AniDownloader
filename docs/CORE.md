@@ -195,6 +195,9 @@ countVideoFiles(dirPath)        → conteggio
 readNfoDescription(seriesPath)  → testo descrizione
 findPosterPath(seriesPath)      → path poster
 listDirectories(dirPath)        → vector<DirEntry>
+scanSpace(seriesPath)           → {files, bytes, partialFiles, partialBytes}
+removePartialFiles(seriesPath)  → rimuove solo .aria2/.part
+diskSpace(path)                 → {freeBytes, totalBytes}
 ```
 
 ---

@@ -1016,4 +1016,81 @@ namespace Core {
 #endif
     }
 
+    namespace {
+        bool isPartialName(const std::string& name) {
+            return name.size() >= 6 && (name.compare(name.size() - 6, 6, ".aria2") == 0 ||
+                                        name.compare(name.size() - 5, 5, ".part") == 0);
+        }
+    } // namespace
+
+    SpaceUsage scanSpace(const std::string& seriesPath) {
+        SpaceUsage out;
+        if (seriesPath.empty())
+            return out;
+        std::error_code ec;
+        const auto root = std::filesystem::path(expandUserPath(seriesPath));
+        if (!std::filesystem::is_directory(root, ec))
+            return out;
+        std::filesystem::recursive_directory_iterator it(root, ec), end;
+        while (!ec && it != end) {
+            std::error_code entryEc;
+            if (it->is_regular_file(entryEc) && !entryEc) {
+                const auto size = static_cast<std::int64_t>(it->file_size(entryEc));
+                if (!entryEc) {
+                    ++out.files;
+                    out.bytes += size;
+                    if (isPartialName(it->path().filename().string())) {
+                        ++out.partialFiles;
+                        out.partialBytes += size;
+                    }
+                }
+            }
+            it.increment(ec);
+        }
+        return out;
+    }
+
+    SpaceUsage removePartialFiles(const std::string& seriesPath) {
+        SpaceUsage out;
+        if (seriesPath.empty())
+            return out;
+        std::error_code ec;
+        const auto root = std::filesystem::path(expandUserPath(seriesPath));
+        if (!std::filesystem::is_directory(root, ec))
+            return out;
+        std::vector<std::filesystem::path> daRimuovere;
+        std::filesystem::recursive_directory_iterator it(root, ec), end;
+        while (!ec && it != end) {
+            std::error_code entryEc;
+            if (it->is_regular_file(entryEc) && !entryEc &&
+                isPartialName(it->path().filename().string())) {
+                daRimuovere.push_back(it->path());
+            }
+            it.increment(ec);
+        }
+        for (const auto& p : daRimuovere) {
+            std::error_code sizeEc;
+            const auto size = static_cast<std::int64_t>(std::filesystem::file_size(p, sizeEc));
+            std::error_code rmEc;
+            if (std::filesystem::remove(p, rmEc) && !rmEc) {
+                ++out.partialFiles;
+                if (!sizeEc)
+                    out.partialBytes += size;
+            }
+        }
+        return out;
+    }
+
+    DiskSpace diskSpace(const std::string& path) {
+        DiskSpace out;
+        std::error_code ec;
+        const auto p = std::filesystem::path(expandUserPath(path));
+        const auto info = std::filesystem::space(p, ec);
+        if (ec)
+            return out;
+        out.freeBytes = info.available;
+        out.totalBytes = info.capacity;
+        return out;
+    }
+
 } // namespace Core

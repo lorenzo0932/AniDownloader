@@ -5,6 +5,7 @@
   import { getTheme, setTheme } from '../theme.svelte.js';
   import Dropdown from '../Dropdown.svelte';
   import DirectoryBrowser from './DirectoryBrowser.svelte';
+  import StoragePanel from './StoragePanel.svelte';
 
   let config = $state({});
   let error = $state('');
@@ -305,6 +306,7 @@
         {/if}
       </div>
     </form>
+    <StoragePanel />
   </div>
 {/if}
 </div>
