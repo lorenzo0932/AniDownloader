@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
-const { configGetMock, configSetMock, storageInfoMock, storageCleanupMock } = vi.hoisted(() => ({
+const { configGetMock, configSetMock, storageInfoMock, storageCleanupMock,
+        browseListMock, browseMountsMock, browsePlacesMock } = vi.hoisted(() => ({
   configGetMock: vi.fn(),
   configSetMock: vi.fn(),
   storageInfoMock: vi.fn(),
   storageCleanupMock: vi.fn(),
+  browseListMock: vi.fn(),
+  browseMountsMock: vi.fn(),
+  browsePlacesMock: vi.fn(),
 }));
 vi.mock('../api.js', () => ({
   BASE: '',
@@ -19,6 +23,11 @@ vi.mock('../api.js', () => ({
     storage: {
       info: (...args) => storageInfoMock(...args),
       cleanup: (...args) => storageCleanupMock(...args),
+    },
+    browse: {
+      list: (...args) => browseListMock(...args),
+      mounts: (...args) => browseMountsMock(...args),
+      places: (...args) => browsePlacesMock(...args),
     },
     queue: {
       list: () => Promise.resolve({ items: [], counts: {} }),
@@ -65,6 +74,9 @@ describe('ConfigPage — tab', () => {
     localStorage.clear();
     storageInfoMock.mockResolvedValue(STORAGE);
     storageCleanupMock.mockResolvedValue({ success: true, removedFiles: 0, freedBytes: 0 });
+    browseListMock.mockResolvedValue({ path: '/tmp', entries: [] });
+    browseMountsMock.mockResolvedValue({ mounts: [] });
+    browsePlacesMock.mockResolvedValue({ places: [] });
   });
 
   it('default: tab Generali attiva, Aspetto visibile, Automazione nascosta', async () => {
@@ -181,9 +193,9 @@ describe('ConfigPage — tab', () => {
     expect(stop.checked).toBe(false);
 
     await fireEvent.click(tab('Download'));
-    const output = screen.getByLabelText('Cartella di Destinazione (Output):');
-    await fireEvent.input(output, { target: { value: '/tmp/nuova-output' } });
-    expect(output.value).toBe('/tmp/nuova-output');
+    const jsonPath = screen.getByLabelText('File Database Serie (JSON):');
+    await fireEvent.input(jsonPath, { target: { value: '/tmp/serie.json' } });
+    expect(jsonPath.value).toBe('/tmp/serie.json');
 
     await fireEvent.click(tab('Automazione'));
     await fireEvent.click(tab('Generali'));
@@ -191,8 +203,24 @@ describe('ConfigPage — tab', () => {
     // Form sempre montato: i valori non salvati sono ancora lì.
     expect(screen.getByLabelText('Mostra conferma prima di interrompere un download').checked).toBe(false);
     await fireEvent.click(tab('Download'));
-    expect(screen.getByLabelText('Cartella di Destinazione (Output):').value).toBe('/tmp/nuova-output');
+    expect(screen.getByLabelText('File Database Serie (JSON):').value).toBe('/tmp/serie.json');
     expect(configSetMock).not.toHaveBeenCalled();
+  });
+
+  it('nessun campo output_dir: resta solo il picker del file JSON', async () => {
+    configGetMock.mockResolvedValue({ config: {} });
+    render(ConfigPage);
+    await screen.findByRole('tab', { name: 'Generali' });
+    await fireEvent.click(tab('Download'));
+
+    // La cartella di output non esiste più: i download usano series.path.
+    expect(screen.queryByLabelText('Cartella di Destinazione (Output):')).toBeNull();
+    expect(document.querySelector('#output_dir')).toBeNull();
+
+    // L'unico picker rimasto è quello del database serie.
+    expect(document.querySelectorAll('.btn-browse')).toHaveLength(1);
+    await fireEvent.click(screen.getByTitle('Sfoglia'));
+    expect(await screen.findByText('Scegli file JSON')).toBeTruthy();
   });
 
   it('tastiera: frecce muovono tab attivo, roving tabindex e focus', async () => {
