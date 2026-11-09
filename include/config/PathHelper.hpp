@@ -12,7 +12,6 @@ namespace Config {
 
         static fs::path getConfigDir();
         static fs::path getLogDir();
-        static fs::path getVideosDir();
         // Cache dell'applicazione su disco: XDG_CACHE_HOME/~/.cache (Linux),
         // %LOCALAPPDATA%\AniDownloader\Cache (Windows),
         // ~/Library/Caches (macOS).

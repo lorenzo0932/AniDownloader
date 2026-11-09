@@ -45,8 +45,6 @@ namespace Config {
 #endif
     }
 
-    fs::path PathHelper::getVideosDir() { return getHome() / "Videos" / "Convertiti"; }
-
     fs::path PathHelper::getCacheDir() {
 #ifdef _WIN32
         const char* localappdata = std::getenv("LOCALAPPDATA");
