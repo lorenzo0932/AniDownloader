@@ -1,5 +1,6 @@
 # Build artifacts
 build/
+build-release/
 build_debug/
 build-asan/
 build-debug/
