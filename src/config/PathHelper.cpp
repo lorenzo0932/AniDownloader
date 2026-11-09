@@ -1,5 +1,6 @@
 #include "config/PathHelper.hpp"
 #include <cstdlib>
+#include <system_error>
 
 namespace Config {
     const std::string PathHelper::APP_NAME = "AniDownloader";
@@ -24,6 +25,8 @@ namespace Config {
 #ifdef _WIN32
         const char* appdata = std::getenv("APPDATA");
         return appdata ? fs::path(appdata) / APP_NAME : getHome() / APP_NAME;
+#elif defined(__APPLE__)
+        return getHome() / "Library" / "Application Support" / APP_NAME;
 #else
         const char* xdg = std::getenv("XDG_CONFIG_HOME");
         return xdg ? fs::path(xdg) / APP_NAME : getHome() / ".config" / APP_NAME;
@@ -34,6 +37,8 @@ namespace Config {
 #ifdef _WIN32
         const char* localappdata = std::getenv("LOCALAPPDATA");
         return localappdata ? fs::path(localappdata) / APP_NAME : getHome() / APP_NAME;
+#elif defined(__APPLE__)
+        return getHome() / "Library" / "Logs" / APP_NAME;
 #else
         const char* xdg = std::getenv("XDG_CACHE_HOME");
         return xdg ? fs::path(xdg) / APP_NAME : getHome() / ".cache" / APP_NAME;
@@ -42,15 +47,42 @@ namespace Config {
 
     fs::path PathHelper::getVideosDir() { return getHome() / "Videos" / "Convertiti"; }
 
-    fs::path PathHelper::getThumbCacheDir() {
+    fs::path PathHelper::getCacheDir() {
 #ifdef _WIN32
         const char* localappdata = std::getenv("LOCALAPPDATA");
-        fs::path base = localappdata ? fs::path(localappdata) / APP_NAME : getHome() / APP_NAME;
+        fs::path base = localappdata ? fs::path(localappdata) : getHome() / "AppData" / "Local";
+        return base / APP_NAME / "Cache";
+#elif defined(__APPLE__)
+        return getHome() / "Library" / "Caches" / APP_NAME;
 #else
         const char* xdg = std::getenv("XDG_CACHE_HOME");
-        fs::path base = xdg ? fs::path(xdg) / APP_NAME : getHome() / ".cache" / APP_NAME;
+        return xdg ? fs::path(xdg) / APP_NAME : getHome() / ".cache" / APP_NAME;
 #endif
-        return base / "thumbs";
+    }
+
+    fs::path PathHelper::getThumbCacheDir() { return getCacheDir() / "thumbs"; }
+
+    std::vector<fs::path> PathHelper::getRamWorkDirs() {
+        std::vector<fs::path> dirs;
+#if !defined(_WIN32) && !defined(__APPLE__)
+        // Solo basi esistenti e directory, nell'ordine di preferenza; nessuna
+        // directory viene creata qui (lo fa chi usa i workdir).
+        auto addIfBaseExists = [&dirs](const fs::path& base) {
+            std::error_code ec;
+            if (base.empty() || !fs::is_directory(base, ec) || ec)
+                return;
+            fs::path candidate = base / PathHelper::APP_NAME / "work";
+            for (const auto& existing : dirs) {
+                if (existing == candidate)
+                    return;
+            }
+            dirs.push_back(std::move(candidate));
+        };
+        if (const char* xdg = std::getenv("XDG_RUNTIME_DIR"))
+            addIfBaseExists(fs::path(xdg));
+        addIfBaseExists(fs::path("/dev/shm"));
+#endif
+        return dirs;
     }
 
     fs::path PathHelper::getSeriesJsonPath() { return getConfigDir() / "series_data.json"; }
