@@ -6,11 +6,28 @@
 #include "core/TaskProgress.hpp"
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace Core {
+
+    // Stima O(1) dello spazio temporaneo necessario per convertire un input:
+    // modalità chunk (split + encode + concat) ≈ 2.86×, passaggio singolo
+    // ≈ 1.56× (fattore di lavoro + 30% di margine). Usa solo file_size.
+    std::uint64_t estimateConversionBytes(std::uint64_t inputBytes, int chunksPerTask);
+
+    // Sceglie la radice del workdir con spazio sufficiente, in ordine:
+    // radici RAM → cartella della serie → cache. Le candidate devono esistere.
+    // nullopt = nessuna ha `neededBytes` liberi.
+    std::optional<std::filesystem::path>
+    chooseWorkRoot(const std::vector<std::filesystem::path>& ramRoots,
+                   const std::filesystem::path& seriesDir,
+                   const std::filesystem::path& cacheDir, std::uint64_t neededBytes);
 
     struct ProcessResult {
         bool success = false;
@@ -40,6 +57,11 @@ namespace Core {
                          const Config::ExecutionStrategy& strategy, double& outTime);
 
         static void notifyStop();
+
+        // Rimuove workdir/publish temp orfani (SIGKILL) sotto le cartelle serie,
+        // le radici RAM e la cache. Da chiamare solo quando nessuna conversione
+        // è attiva (inizio run).
+        static void cleanupOrphanWorkDirs(const std::vector<std::string>& seriesPaths);
 
       private:
         ProgressCallback m_progressCallback;

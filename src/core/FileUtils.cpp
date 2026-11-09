@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cerrno>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -1013,6 +1014,35 @@ namespace Core {
         if (outErrno)
             *outErrno = 0;
         return PublishStatus::NoAtomicSupport;
+#endif
+    }
+
+    PublishStatus publishReplace(const std::string& tempPath, const std::string& finalPath,
+                                 int* outErrno) {
+#if defined(_WIN32)
+        // Sostituisce la destinazione se esiste; WRITE_THROUGH non ritorna
+        // prima che il rename sia stato persistito sul volume.
+        if (::MoveFileExA(tempPath.c_str(), finalPath.c_str(),
+                          MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0) {
+            if (outErrno)
+                *outErrno = 0;
+            return PublishStatus::Success;
+        }
+        if (outErrno)
+            *outErrno = static_cast<int>(::GetLastError());
+        return PublishStatus::Error;
+#else
+        // POSIX: rename e' atomico sullo stesso filesystem e sostituisce la
+        // destinazione. EXDEV (workdir su un altro device) resta un errore:
+        // nessun fallback copia+rename non atomico.
+        if (::rename(tempPath.c_str(), finalPath.c_str()) == 0) {
+            if (outErrno)
+                *outErrno = 0;
+            return PublishStatus::Success;
+        }
+        if (outErrno)
+            *outErrno = errno;
+        return PublishStatus::Error;
 #endif
     }
 

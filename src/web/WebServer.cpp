@@ -681,12 +681,10 @@ namespace Web {
 
     // ---- SPAZIO ----
     void WebServer::setupStorageRoutes() {
-        // Fotografia su richiesta: spazio libero del disco di output, cache
+        // Fotografia su richiesta: spazio libero del disco delle serie, cache
         // miniature e occupazione per serie (con i residui .aria2/.part).
         // La scansione è volutamente on-demand: nessun polling in background.
         m_svr.Get("/api/storage", [this](const httplib::Request&, httplib::Response& res) {
-            const auto outDir = m_configManager.get<std::string>("output_dir", "");
-            const auto disco = Core::diskSpace(outDir);
             const auto cache = Core::thumbCacheInfo();
             const auto serie = m_seriesRepository.snapshotSeriesData();
 
@@ -708,6 +706,12 @@ namespace Web {
                 items.begin(), items.end(), [](const nlohmann::json& a, const nlohmann::json& b) {
                     return a.value("bytes", std::int64_t{0}) > b.value("bytes", std::int64_t{0});
                 });
+            // Il disco da misurare è quello della serie più pesante (items è
+            // ordinato per bytes): è dove vivono i file e dove arriveranno i
+            // prossimi download. Senza serie configurate si ripiega su "~".
+            const std::string discoPath =
+                items.empty() ? std::string("~") : items.front().value("path", std::string("~"));
+            const auto disco = Core::diskSpace(discoPath);
             sendJson(res,
                      successJson({{"freeBytes", disco.freeBytes},
                                   {"totalBytes", disco.totalBytes},
@@ -1432,6 +1436,10 @@ namespace Web {
                 auto existing = loadConfigJson();
                 for (auto& [key, val] : body.items())
                     existing[key] = val;
+                // Chiave morta: non governa più alcun download. Senza erase
+                // resterebbe nel file per sempre, perché il body della UI non
+                // la contiene e il merge conserva le chiavi preesistenti.
+                existing.erase("output_dir");
                 saveConfigJson(existing);
                 sendJson(res, successJson());
             } catch (const std::exception&) {

@@ -53,6 +53,7 @@ describe('StoragePanel', () => {
   it('mostra disco, cache, parziali e serie', async () => {
     render(StoragePanel);
     expect(await screen.findByText('Cache miniature')).toBeTruthy();
+    expect(screen.getByText('Disco serie')).toBeTruthy();
     expect(screen.getByText('2.0 MB')).toBeTruthy();      // cache
     expect(screen.getByText('3 residui (.aria2/.part)')).toBeTruthy();
     expect(screen.getByText('One Piece')).toBeTruthy();
@@ -96,6 +97,7 @@ describe('StoragePanel', () => {
     await screen.findByText('Cache miniature');
 
     expect(screen.getByText('Non disponibile')).toBeTruthy();
+    expect(screen.getByText('disco delle serie non rilevato')).toBeTruthy();
     expect(screen.queryByText(/liberi su/)).toBeNull();
     expect(screen.queryByRole('progressbar')).toBeNull();
   });

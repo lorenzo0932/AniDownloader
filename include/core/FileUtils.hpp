@@ -169,6 +169,15 @@ namespace Core {
     PublishStatus publishNoReplace(const std::string& tempPath, const std::string& finalPath,
                                    int* outErrno = nullptr);
 
+    // Publish atomico con sostituzione della destinazione.
+    // POSIX: ::rename (stesso filesystem, atomico, rimpiazza).
+    // Windows: MoveFileExA(temp, final, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH).
+    // Success = finale aggiornato e temp consumato. Error = outErrno valorizzato,
+    // temp intatto. Non ritorna mai Exists/NoAtomicSupport. EXDEV è un errore del
+    // chiamante (workdir non sullo stesso device): nessun fallback non atomico.
+    PublishStatus publishReplace(const std::string& tempPath, const std::string& finalPath,
+                                 int* outErrno = nullptr);
+
 #if defined(__linux__) || defined(__APPLE__)
     // Fallback del publish usato quando la primitiva no-replace è indisponibile
     // sul filesystem (EINVAL/ENOSYS/EOPNOTSUPP): link()+unlink() atomico e

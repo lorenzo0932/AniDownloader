@@ -1,5 +1,6 @@
 #include "core/ExecutionEngine.hpp"
 #include "core/Logger.hpp"
+#include "core/MediaProcessor.hpp"
 #include "core/PipelineCoordinator.hpp"
 #include "core/PipelineJobStore.hpp"
 #include "core/PlanningService.hpp"
@@ -87,6 +88,14 @@ namespace Core {
             Core::Logger::warn("Chiusura run orfani fallita: " + store.lastError());
         else if (runOrfani > 0)
             Core::Logger::info(std::format("Chiusi {} run orfani", runOrfani));
+
+        // Workdir/publish temp lasciati da un SIGKILL. Qui nessuna conversione
+        // è attiva (PipelineGate + InstanceLock), quindi sono tutti orfani.
+        std::vector<std::string> seriePaths;
+        seriePaths.reserve(seriesList.size());
+        for (const auto& s : seriesList)
+            seriePaths.push_back(s.path);
+        MediaProcessor::cleanupOrphanWorkDirs(seriePaths);
 
         const std::string runId = store.beginRun(m_origin);
         if (runId.empty())

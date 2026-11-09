@@ -1,6 +1,7 @@
 // Unit test per le funzioni pure del core (nessuna dipendenza da processi esterni).
 // Eseguire con: ctest --test-dir build  (oppure ./build/test_core)
 #include "config/AppConfigManager.hpp"
+#include "config/PathHelper.hpp"
 #include "core/CheckRunner.hpp"
 #include "core/Database.hpp"
 #include "core/DbImporter.hpp"
@@ -502,6 +503,98 @@ static void testPublishNoReplace() {
 #endif
 
     std::filesystem::remove_all(dir);
+}
+
+static void testPublishReplace() {
+    using Core::PublishStatus;
+
+    auto dir = std::filesystem::temp_directory_path() / "anidl_test_publish_replace";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    auto writeText = [](const std::filesystem::path& p, const std::string& content) {
+        std::ofstream f(p, std::ios::binary | std::ios::trunc);
+        f << content;
+    };
+    auto readText = [](const std::filesystem::path& p) {
+        std::ifstream f(p, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(f)), {});
+    };
+
+    // 1) Temp e finale esistono: il finale viene sostituito, il temp consumato.
+    {
+        auto tmp = dir / "ep.part";
+        auto fin = dir / "ep.mp4";
+        writeText(tmp, "nuovo contenuto");
+        writeText(fin, "vecchio contenuto");
+        int publishErrno = -1;
+        CHECK(Core::publishReplace(tmp.string(), fin.string(), &publishErrno) ==
+              PublishStatus::Success);
+        CHECK(publishErrno == 0);
+        CHECK(!std::filesystem::exists(tmp));
+        CHECK(std::filesystem::exists(fin));
+#if !defined(_WIN32)
+        CHECK(readText(fin) == "nuovo contenuto");
+#endif
+        std::filesystem::remove(fin);
+    }
+
+    // 2) Finale nuovo: publish senza sostituzione.
+    {
+        auto tmp = dir / "ep2.part";
+        auto fin = dir / "ep2.mp4";
+        writeText(tmp, "primo contenuto");
+        CHECK(Core::publishReplace(tmp.string(), fin.string()) == PublishStatus::Success);
+        CHECK(!std::filesystem::exists(tmp));
+        CHECK(std::filesystem::exists(fin));
+#if !defined(_WIN32)
+        CHECK(readText(fin) == "primo contenuto");
+#endif
+        std::filesystem::remove(fin);
+    }
+
+    // 3) Temp inesistente: Error con errno valorizzato, finale intatto.
+    {
+        auto tmp = dir / "ep3.part";
+        auto fin = dir / "ep3.mp4";
+        writeText(fin, "intatto");
+        int publishErrno = 0;
+        CHECK(Core::publishReplace(tmp.string(), fin.string(), &publishErrno) ==
+              PublishStatus::Error);
+        CHECK(publishErrno != 0);
+#if !defined(_WIN32)
+        CHECK(publishErrno == ENOENT);
+#endif
+        CHECK(std::filesystem::file_size(fin) == std::string("intatto").size());
+        std::filesystem::remove(fin);
+    }
+
+    std::filesystem::remove_all(dir);
+}
+
+static void testPathHelperCache() {
+    const auto cacheDir = Config::PathHelper::getCacheDir();
+    CHECK(cacheDir.is_absolute());
+#if defined(_WIN32)
+    // %LOCALAPPDATA%\AniDownloader\Cache
+    CHECK(cacheDir.filename() == "Cache");
+    CHECK(cacheDir.parent_path().filename() == "AniDownloader");
+#else
+    CHECK(cacheDir.filename() == "AniDownloader");
+#endif
+    CHECK(Config::PathHelper::getThumbCacheDir() == cacheDir / "thumbs");
+
+#if defined(_WIN32) || defined(__APPLE__)
+    // Nessun RAM disk standard su Windows/macOS.
+    CHECK(Config::PathHelper::getRamWorkDirs().empty());
+#else
+    // Linux/BSD: solo basi esistenti, sempre <base>/AniDownloader/work.
+    for (const auto& dir : Config::PathHelper::getRamWorkDirs()) {
+        CHECK(dir.is_absolute());
+        CHECK(dir.filename() == "work");
+        CHECK(dir.parent_path().filename() == "AniDownloader");
+    }
+#endif
 }
 
 // ---- File picker: mount, creazione, rimozione ----
@@ -2613,6 +2706,8 @@ int main(int argc, char** argv) {
     testBurstOnManualStartDefault();
     testInstanceLock(argv[0]);
     testPublishNoReplace();
+    testPublishReplace();
+    testPathHelperCache();
     testParseMountTable();
     testParseAllMountPoints();
     testParseUserDirsFile();
