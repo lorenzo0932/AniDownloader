@@ -52,7 +52,6 @@ namespace Config {
     nlohmann::json AppConfigManager::getDefaultConfig() {
         nlohmann::json cfg = {
             {"json_file_path", PathHelper::getSeriesJsonPath().string()},
-            {"output_dir", PathHelper::getVideosDir().string()},
             {"log_file_path", PathHelper::getLogFilePath().string()},
             {"is_json_path_customized", false},
             {"convert_to_h265", true},

@@ -9,10 +9,10 @@
   let esito = $state('');
   let conferma = $state(null);
 
-  // Percentuale usata del disco di output (0 quando il totale è ignoto).
+  // Percentuale usata del disco delle serie (0 quando il totale è ignoto).
   let usatoPct = $derived(percentualeUsata(dati));
-  // Con totalBytes 0 (output dir non montata) il disco non è misurabile:
-  // niente valori finti né barra.
+  // Con totalBytes 0 (disco delle serie non montato) lo spazio non è
+  // misurabile: niente valori finti né barra.
   let discoDisponibile = $derived((Number(dati?.totalBytes) || 0) > 0);
 
   function percentualeUsata(d) {
@@ -86,7 +86,7 @@
   {#if dati}
     <div class="spazio-cards">
       <div class="spazio-card">
-        <span class="label">Disco (output)</span>
+        <span class="label">Disco serie</span>
         {#if discoDisponibile}
           <strong>{fmt(dati.freeBytes)}</strong>
           <span class="hint">liberi su {fmt(dati.totalBytes)} ({usatoPct}% usato)</span>
@@ -97,7 +97,7 @@
           </div>
         {:else}
           <strong>Non disponibile</strong>
-          <span class="hint">disco di output non rilevato</span>
+          <span class="hint">disco delle serie non rilevato</span>
         {/if}
       </div>
       <div class="spazio-card">

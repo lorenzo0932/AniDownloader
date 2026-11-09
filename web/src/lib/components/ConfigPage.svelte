@@ -22,7 +22,6 @@
   let saved = $state(false);
   let busy = $state(true);
   let showBrowser = $state(false);
-  let browserTarget = $state('');
   let selectedTheme = $state(getTheme());
   let tab = $state('generali');
 
@@ -90,18 +89,11 @@
   }
 
   function pickJsonPath() {
-    browserTarget = 'json_file_path';
-    showBrowser = true;
-  }
-
-  function pickOutputDir() {
-    browserTarget = 'output_dir';
     showBrowser = true;
   }
 
   function onBrowserSelect(selectedPath) {
-    if (browserTarget === 'json_file_path') config.json_file_path = selectedPath;
-    else if (browserTarget === 'output_dir') config.output_dir = selectedPath;
+    config.json_file_path = selectedPath;
     showBrowser = false;
   }
 
@@ -158,8 +150,8 @@
             onsubmit={(e) => { e.preventDefault(); save(); }}>
         <DirectoryBrowser
           show={showBrowser}
-          currentPath={browserTarget === 'json_file_path' ? (config.json_file_path || '~/Video') : (config.output_dir || '~/Video')}
-          title={browserTarget === 'json_file_path' ? 'Scegli file JSON' : 'Scegli cartella di output'}
+          currentPath={config.json_file_path || '~/Video'}
+          title="Scegli file JSON"
           onselect={onBrowserSelect}
           oncancel={onBrowserCancel}
         />
@@ -217,13 +209,6 @@
                 <button type="button" class="btn-browse" onclick={pickJsonPath} title="Sfoglia">...</button>
               </div>
               <p class="field-hint">Percorso del file di configurazione JSON delle serie</p>
-
-              <label for="output_dir">Cartella di Destinazione (Output):</label>
-              <div class="input-row">
-                <input id="output_dir" type="text" bind:value={config.output_dir} placeholder="/path/to/downloads" />
-                <button type="button" class="btn-browse" onclick={pickOutputDir} title="Sfoglia">...</button>
-              </div>
-              <p class="field-hint">Cartella di destinazione per i file scaricati</p>
             </div>
 
             <div class="group-box">
