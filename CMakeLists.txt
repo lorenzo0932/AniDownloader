@@ -308,6 +308,27 @@ target_link_libraries(test_media PRIVATE
 )
 add_test(NAME test_media COMMAND test_media)
 
+# ─── TEST WORKDIR (stima spazio, scelta radice, cleanup orfani) ───
+add_executable(test_workdir
+    tests/test_workdir.cpp
+    src/core/MediaProcessor.cpp
+    src/core/MediaProbe.cpp
+    src/core/ProcessUtils.cpp
+    src/core/FileUtils.cpp
+    src/scrapers/ScraperUtils.cpp
+    src/core/Logger.cpp
+    src/config/AppConfigManager.cpp
+    src/config/PathHelper.cpp
+    src/core/Series.cpp
+)
+target_include_directories(test_workdir PRIVATE include)
+target_link_libraries(test_workdir PRIVATE
+    nlohmann_json::nlohmann_json
+    cpr::cpr
+    Threads::Threads
+)
+add_test(NAME test_workdir COMMAND test_workdir)
+
 # ─── TEST SCRAPER (parser offline: fixture HTML/JSON in tests/fixtures/) ───
 add_executable(test_scraper
     tests/test_scraper.cpp
@@ -334,12 +355,14 @@ add_test(NAME test_scraper COMMAND test_scraper)
 target_compile_options(AniDownloader PRIVATE ${PROJECT_WERROR_FLAGS})
 target_compile_options(test_core PRIVATE ${PROJECT_WERROR_FLAGS})
 target_compile_options(test_media PRIVATE ${PROJECT_WERROR_FLAGS})
+target_compile_options(test_workdir PRIVATE ${PROJECT_WERROR_FLAGS})
 target_compile_options(test_scraper PRIVATE ${PROJECT_WERROR_FLAGS})
 
 if(MSVC)
     target_compile_definitions(AniDownloader PRIVATE _CRT_SECURE_NO_WARNINGS)
     target_compile_definitions(test_core PRIVATE _CRT_SECURE_NO_WARNINGS)
     target_compile_definitions(test_media PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(test_workdir PRIVATE _CRT_SECURE_NO_WARNINGS)
     target_compile_definitions(test_scraper PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 

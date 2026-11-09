@@ -1,4 +1,5 @@
 #include "core/MediaProcessor.hpp"
+#include "config/PathHelper.hpp"
 #include "core/FileUtils.hpp"
 #include "core/Logger.hpp"
 #include "core/MediaProbe.hpp"
@@ -15,10 +16,57 @@
 #include <system_error>
 #include <thread>
 #include <utility>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 namespace fs = std::filesystem;
 
 namespace Core {
+
+    namespace {
+        // Stesso filesystem = rename atomico senza copia. Su Windows il
+        // confronto delle radici (C:, D:) evita che MoveFileEx faccia una
+        // copia cross-volume non atomica.
+        bool sameDevice(const fs::path& a, const fs::path& b) {
+#ifdef _WIN32
+            return a.root_name() == b.root_name();
+#else
+            struct stat sa {};
+            struct stat sb {};
+            if (::stat(a.c_str(), &sa) != 0 || ::stat(b.c_str(), &sb) != 0)
+                return false;
+            return sa.st_dev == sb.st_dev;
+#endif
+        }
+    } // namespace
+
+    std::uint64_t estimateConversionBytes(std::uint64_t inputBytes, int chunksPerTask) {
+        // 286/100 = 2.2 (lavoro) × 1.3 (margine); 156/100 = 1.2 × 1.3.
+        // Aritmetica intera: gli input sono file size, nessun overflow.
+        const std::uint64_t num = chunksPerTask > 1 ? 286 : 156;
+        return (inputBytes * num + 99) / 100;
+    }
+
+    std::optional<fs::path> chooseWorkRoot(const std::vector<fs::path>& ramRoots,
+                                           const fs::path& seriesDir, const fs::path& cacheDir,
+                                           std::uint64_t neededBytes) {
+        auto fits = [neededBytes](const fs::path& dir) {
+            std::error_code ec;
+            if (dir.empty() || !fs::is_directory(dir, ec) || ec)
+                return false;
+            const auto info = fs::space(dir, ec);
+            return !ec && info.available >= neededBytes;
+        };
+        for (const auto& root : ramRoots)
+            if (fits(root))
+                return root;
+        if (fits(seriesDir))
+            return seriesDir;
+        if (fits(cacheDir))
+            return cacheDir;
+        return std::nullopt;
+    }
 
     std::mutex MediaProcessor::s_convMutex;
     std::condition_variable MediaProcessor::s_convCv;
@@ -39,6 +87,46 @@ namespace Core {
         s_convCv.notify_all();
     }
 
+    void MediaProcessor::cleanupOrphanWorkDirs(const std::vector<std::string>& seriesPaths) {
+        int removed = 0;
+        auto cleanRoot = [&removed](const fs::path& root) {
+            if (root.empty())
+                return;
+            std::error_code ec;
+            if (!fs::is_directory(root, ec) || ec)
+                return;
+            for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+                const auto name = it->path().filename().string();
+                const bool isProc = name.rfind(".anidown_proc_", 0) == 0 ||
+                                    name.rfind("anidown_proc_", 0) == 0;
+                const bool isPublish = name.rfind(".anidown_publish_", 0) == 0;
+                if (!isProc && !isPublish)
+                    continue;
+                std::error_code rmEc;
+                const auto n = fs::remove_all(it->path(), rmEc);
+                if (!rmEc)
+                    removed += static_cast<int>(n);
+            }
+        };
+
+        for (const auto& p : seriesPaths)
+            if (!p.empty())
+                cleanRoot(fs::path(ScraperUtils::expandTilde(p)));
+        for (const auto& root : Config::PathHelper::getRamWorkDirs())
+            cleanRoot(root);
+        cleanRoot(Config::PathHelper::getCacheDir() / "work");
+
+        // Legacy pre-fix: workdir creati direttamente nella tmp di sistema.
+        std::error_code tmpEc;
+        cleanRoot(fs::temp_directory_path(tmpEc));
+#ifdef __linux__
+        cleanRoot("/dev/shm");
+#endif
+
+        if (removed > 0)
+            Logger::info(std::format("Rimossi {} residui temporanei di conversione", removed));
+    }
+
     ProcessResult MediaProcessor::processTask(const DownloadTask& task, const Series& series,
                                               const Config::ExecutionStrategy& strategy) {
         ProcessResult res;
@@ -53,6 +141,16 @@ namespace Core {
         std::string aria2File = fullFile + ".aria2";
         std::string partFile = fullFile + ".part";
         std::string partAria2 = partFile + ".aria2";
+
+        // La cartella serie può non esistere (serie nuova, path appena scelto,
+        // SSD non montato): aria2 --dir su una dir inesistente fallisce.
+        std::error_code dirEc;
+        fs::create_directories(expandedPath, dirEc);
+        if (dirEc) {
+            res.errorMessage = "Impossibile creare la cartella della serie: " + dirEc.message();
+            Logger::error(series.name + ": " + res.errorMessage + " (" + expandedPath + ")");
+            return res;
+        }
 
         bool needsDownload = true;
         bool needsConversion = strategy.convertToH265;
@@ -314,6 +412,38 @@ namespace Core {
             return false;
         }
 
+        // Workdir: RAM → cartella serie (rename atomico) → cache. La scelta
+        // usa solo fs::space (una syscall) e la stima O(1) del fabbisogno.
+        const auto inputSize = static_cast<std::uint64_t>(fs::file_size(inputPath));
+        const auto needed = estimateConversionBytes(inputSize, strategy.chunksPerTask);
+        const fs::path seriesDir = fs::path(inputPath).parent_path();
+        const fs::path cacheWork = Config::PathHelper::getCacheDir() / "work";
+        {
+            std::error_code ec;
+            fs::create_directories(cacheWork, ec); // se fallisce, chooseWorkRoot la scarta
+        }
+        std::vector<fs::path> ramRoots = Config::PathHelper::getRamWorkDirs();
+        for (const auto& root : ramRoots) {
+            std::error_code ec;
+            fs::create_directories(root, ec); // se fallisce, chooseWorkRoot la scarta
+        }
+        const auto workRoot = chooseWorkRoot(ramRoots, seriesDir, cacheWork, needed);
+        if (!workRoot) {
+            Logger::error(std::format("{}: spazio insufficiente per la conversione "
+                                      "(servono ~{} MiB liberi tra RAM, cartella serie e cache)",
+                                      seriesName, needed / (1024 * 1024)));
+            return false;
+        }
+        // Se il workdir non è sul device di destinazione, il publish copia il
+        // risultato in un temp accanto al finale: quello spazio serve subito.
+        const auto dstSpace = diskSpace(seriesDir.string());
+        if (dstSpace.freeBytes < inputSize + inputSize / 10) {
+            Logger::error(std::format("{}: spazio insufficiente nella destinazione per il "
+                                      "salvataggio (~{} MiB liberi richiesti)",
+                                      seriesName, inputSize / (1024 * 1024)));
+            return false;
+        }
+
         for (int attempt = 1; attempt <= MAX_RETRIES; ++attempt) {
             if (m_stopSignal)
                 return false;
@@ -321,15 +451,18 @@ namespace Core {
             m_progressCallback(seriesName, "Analisi...");
             activity(TaskPhase::Converting, -1, "Analisi del video");
 
-            bool isRamDisk = (ProcessUtils::getRamUsagePercent() < 55.0 && fs::exists("/dev/shm"));
-            fs::path baseWorkDir = isRamDisk ? fs::path("/dev/shm") : fs::temp_directory_path();
-
             std::string uniqueId = std::to_string(std::hash<std::string>{}(inputPath)) + "_" +
                                    std::to_string(dis(gen));
-            fs::path workDir = baseWorkDir / ("anidown_proc_" + uniqueId);
+            fs::path workDir = *workRoot / (".anidown_proc_" + uniqueId);
 
-            fs::remove_all(workDir);
-            fs::create_directories(workDir);
+            std::error_code workEc;
+            fs::remove_all(workDir, workEc);
+            fs::create_directories(workDir, workEc);
+            if (workEc) {
+                Logger::error(std::format("{}: impossibile creare il workdir {}: {}", seriesName,
+                                          workDir.string(), workEc.message()));
+                return false;
+            }
 
             try {
                 double duration = MediaProbe::getVideoDuration(inputPath, m_stopSignal);
@@ -485,14 +618,35 @@ namespace Core {
                     activity(TaskPhase::Finalizing, -1, "Salvataggio del video");
 
                     std::error_code ec;
-                    fs::rename(finalMergedInWork, inputPath, ec);
-
-                    if (ec) {
-                        fs::copy(finalMergedInWork, inputPath, fs::copy_options::overwrite_existing,
-                                 ec);
-                        if (ec)
-                            throw std::runtime_error("Impossibile copiare file sul disco finale: " +
-                                                     ec.message());
+                    int publishErrno = 0;
+                    bool published = false;
+                    if (sameDevice(finalMergedInWork, inputPath)) {
+                        published = publishReplace(finalMergedInWork.string(), inputPath,
+                                                   &publishErrno) == PublishStatus::Success;
+                    }
+                    if (!published) {
+                        // Workdir su un altro device (RAM/cache): copia in un
+                        // temp accanto al finale, poi rename atomico. Il file
+                        // vecchio resta intatto fino al rename: un crash non
+                        // può lasciare un finale troncato.
+                        const fs::path publishTmp = fs::path(inputPath).parent_path() /
+                                                    (".anidown_publish_" + uniqueId + ".tmp");
+                        fs::remove(publishTmp, ec);
+                        fs::copy_file(finalMergedInWork, publishTmp,
+                                      fs::copy_options::overwrite_existing, ec);
+                        if (ec) {
+                            std::error_code rmEc;
+                            fs::remove(publishTmp, rmEc);
+                            throw std::runtime_error(
+                                "Impossibile copiare file sul disco finale: " + ec.message());
+                        }
+                        if (publishReplace(publishTmp.string(), inputPath, &publishErrno) !=
+                            PublishStatus::Success) {
+                            std::error_code rmEc;
+                            fs::remove(publishTmp, rmEc);
+                            throw std::runtime_error("Publish atomico fallito (errno " +
+                                                     std::to_string(publishErrno) + ")");
+                        }
                     }
 
                     fs::remove_all(workDir);
