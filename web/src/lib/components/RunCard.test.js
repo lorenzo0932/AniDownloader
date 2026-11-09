@@ -58,6 +58,48 @@ describe('RunCard', () => {
     expect(onopen).toHaveBeenCalledTimes(1);
   });
 
+  it('task live: barra complessiva con percentuali reali e una riga per episodio', () => {
+    render(RunCard, {
+      run: baseRun({
+        totale: 2, completati: 0, in_corso: 2, percent: 0,
+        corrente: { serie: 'Witch', episodio: 6, fase: 'converting' },
+      }),
+      tasks: [
+        { key: 'Witch#6', seriesName: 'Witch', episode: 6, phase: 'converting', percent: 70 },
+        { key: 'Psyren#5', seriesName: 'Psyren', episode: 5, phase: 'converting', percent: 36 },
+      ],
+    });
+
+    const bars = screen.getAllByRole('progressbar');
+    expect(bars).toHaveLength(3); // complessiva + 2 episodi
+    expect(bars[0].getAttribute('aria-valuenow')).toBe('53');
+    expect(bars[1].getAttribute('aria-valuenow')).toBe('70');
+    expect(bars[2].getAttribute('aria-valuenow')).toBe('36');
+    expect(screen.getByText('Witch')).toBeTruthy();
+    expect(screen.getByText('Psyren')).toBeTruthy();
+    expect(screen.getByText('70%')).toBeTruthy();
+    expect(screen.getByText('36%')).toBeTruthy();
+    // Con i task live non serve la riga "corrente" sintetica.
+    expect(screen.queryByText('Witch · Ep. 6 · In conversione')).toBeNull();
+  });
+
+  it('task senza percent (in attesa): nessuna barra per-task, resta il fallback', () => {
+    render(RunCard, {
+      run: baseRun({
+        totale: 2, completati: 1, in_corso: 1, percent: 50,
+        corrente: { serie: 'Psyren', episodio: 5, fase: 'waiting_conversion' },
+      }),
+      tasks: [
+        { key: 'Psyren#5', seriesName: 'Psyren', episode: 5, phase: 'waiting_conversion', percent: -1 },
+      ],
+    });
+
+    expect(screen.getAllByRole('progressbar')).toHaveLength(1);
+    expect(screen.getByText('Psyren')).toBeTruthy();
+    expect(screen.getByText('In attesa di conversione')).toBeTruthy();
+    expect(screen.queryByText('50%')).toBeNull();
+  });
+
   it('run completato: ultimo avvio, conteggi, durata e CTA dettaglio', () => {
     render(RunCard, {
       run: baseRun({

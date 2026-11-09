@@ -31,6 +31,24 @@
   let problemiAperti = $derived(
     (overview?.problemi?.non_riusciti || 0) + (overview?.problemi?.interrotti || 0)
   );
+  // Task live del run (SSE): servono a mostrare percentuali reali e fase
+  // corrente, non solo il conteggio degli episodi completati.
+  let activeTasks = $derived(
+    (run.tasks || []).filter(t => Number(t.episode) > 0 &&
+      ['downloading', 'verifying_download', 'waiting_conversion', 'converting', 'finalizing']
+        .includes(t.phase))
+  );
+  let liveStatus = $derived.by(() => {
+    if (!downloadRunning) return '';
+    const conv = activeTasks.filter(t => ['converting', 'finalizing'].includes(t.phase)).length;
+    const dl = activeTasks.filter(t => ['downloading', 'verifying_download'].includes(t.phase)).length;
+    const waiting = activeTasks.filter(t => t.phase === 'waiting_conversion').length;
+    const parts = [];
+    if (dl > 0) parts.push(`${dl} in download`);
+    if (conv > 0) parts.push(`${conv} in conversione`);
+    if (waiting > 0) parts.push(`${waiting} in attesa`);
+    return parts.length ? parts.join(' · ') : overallStatus;
+  });
 
   async function loadOverview() {
     try {
@@ -219,7 +237,7 @@
 <div class="vetrina" in:pageEnter|global>
   <OverallHeader
     {downloadRunning}
-    overallStatus={downloadRunning ? overallStatus : ''}
+    overallStatus={downloadRunning ? liveStatus : ''}
     {sseConnected}
     {phase}
     {starting}
@@ -232,6 +250,7 @@
 
   <RunCard
     run={overview?.run ?? null}
+    tasks={activeTasks}
     onopen={apriAttivita}
   />
 
