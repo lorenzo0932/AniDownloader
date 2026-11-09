@@ -177,6 +177,30 @@ describe('StatusPage home', () => {
     expect(screen.queryByRole('link', { name: /problema/ })).toBeNull();
   });
 
+  it('run attivo: task live con percentuali e stato globale derivato', async () => {
+    statusMock.mockResolvedValue({
+      running: true,
+      tasks: [
+        { key: 'Witch#6', seriesName: 'Witch', episode: 6, phase: 'converting', percent: 70 },
+        { key: 'Psyren#5', seriesName: 'Psyren', episode: 5, phase: 'downloading', percent: 36 },
+      ],
+    });
+    overviewMock.mockResolvedValue(runningOverview({
+      totale: 2, completati: 0, in_corso: 2, percent: 0,
+      corrente: { serie: 'Witch', episodio: 6, fase: 'converting' },
+    }));
+    render(StatusPage);
+
+    expect(await screen.findByText('Avvio corrente')).toBeTruthy();
+    expect(await screen.findByText('1 in download · 1 in conversione')).toBeTruthy();
+    const bars = screen.getAllByRole('progressbar');
+    expect(bars[0].getAttribute('aria-valuenow')).toBe('53');
+    expect(screen.getByText('70%')).toBeTruthy();
+    expect(screen.getByText('36%')).toBeTruthy();
+    expect(screen.getByText('Witch')).toBeTruthy();
+    expect(screen.getByText('Psyren')).toBeTruthy();
+  });
+
   it('run completato: ultimo avvio e CTA dettaglio', async () => {
     overviewMock.mockResolvedValue(runningOverview({
       stato: 'completato', concluso_il: '2026-11-08T17:10:00.000Z',
