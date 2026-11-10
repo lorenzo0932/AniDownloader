@@ -61,9 +61,11 @@ namespace Core {
             // Il check è background: se un interattivo è in attesa, aspetta.
             PipelineGate::Guard turno;
             if (m_gate != nullptr) {
-                turno = m_gate->acquire(false, &m_attivo);
-                if (!turno.owns())
+                turno = m_gate->acquire(false, &m_abort);
+                if (!turno.owns()) {
+                    Logger::warn("Scheduler: check rimandato (arresto in corso)");
                     return EsitoTask::Riprova;
+                }
             }
             auto notifica = [this](const std::string& serie, int episodio) {
                 NotificationStore store(m_dbPath);
@@ -104,11 +106,13 @@ namespace Core {
     void Scheduler::start() {
         if (m_attivo.exchange(true))
             return;
+        m_abort.store(false);
         m_pool.start(); // reset orfani + worker
         m_thread = std::thread([this] { ciclo(); });
     }
 
     void Scheduler::stop() {
+        m_abort.store(true);
         if (!m_attivo.exchange(false))
             return;
         // Prima il tick (niente più enqueue), poi i worker (il giro in

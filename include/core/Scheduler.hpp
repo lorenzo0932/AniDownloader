@@ -83,6 +83,10 @@ namespace Core {
         NotificaCb m_onEpisodioPronto;
         std::thread m_thread;
         std::atomic<bool> m_attivo{false};
+        // Flag di ARRESTO (true = interrompi), passato a PipelineGate::acquire.
+        // NON usare m_attivo: quello è true mentre lo scheduler gira e la
+        // polarità del gate è opposta (era il bug dei check sempre rimandati).
+        std::atomic<bool> m_abort{false};
         std::atomic<bool> m_pausa{false};
     };
 

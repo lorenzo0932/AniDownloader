@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <ctime>
 #include <map>
@@ -46,8 +47,11 @@ namespace Core {
         std::filesystem::path execLockPath = Config::PathHelper::getConfigDir() / "exec.lock";
         Core::InstanceLock execLock(execLockPath.string());
         if (!execLock.acquired()) {
+            const int lockErrno = errno;
             esito.salto = CheckOutcome::Salto::Occupato;
             esito.nota = "giro già in corso (lock " + execLockPath.string() + ")";
+            Logger::warn("CheckRunner: " + esito.nota + ", giro rimandato (errno " +
+                         std::to_string(lockErrno) + ")");
             return esito;
         }
 

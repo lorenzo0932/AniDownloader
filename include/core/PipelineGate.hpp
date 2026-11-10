@@ -51,9 +51,11 @@ namespace Core {
         PipelineGate& operator=(const PipelineGate&) = delete;
 
         // Blocca finché il turno è disponibile. interactive=true ha precedenza
-        // sul background ancora da iniziare. stop (opzionale) interrompe
-        // l'attesa: in quel caso il Guard ritornato non possiede il turno.
-        [[nodiscard]] Guard acquire(bool interactive, std::atomic<bool>* stop = nullptr);
+        // sul background ancora da iniziare. abortFlag (opzionale) interrompe
+        // l'attesa quando vale true (polarità ABORT, non "running"): in quel
+        // caso il Guard ritornato non possiede il turno. Non passare flag che
+        // sono true durante il funzionamento normale.
+        [[nodiscard]] Guard acquire(bool interactive, std::atomic<bool>* abortFlag = nullptr);
 
         [[nodiscard]] bool inEsecuzione() const;
         [[nodiscard]] bool interattivoInAttesa() const;
