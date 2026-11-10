@@ -85,9 +85,10 @@ namespace Core {
                 esito = CheckRunner::runOnce(m_config, m_jsonPath, false, maiAbortito, {}, {},
                                              notifica);
             if (!esito.eseguito) {
-                // CLI manuale in corso: si rimanda (backoff del pool).
+                // CLI manuale in corso: contesa transitoria, si rimanda corto
+                // senza consumare i tentativi (il pool riprogramma a 90s).
                 if (esito.salto == CheckOutcome::Salto::Occupato)
-                    return EsitoTask::Riprova;
+                    return EsitoTask::Occupato;
                 Logger::error("Scheduler: giro fallito: " + esito.nota);
                 return EsitoTask::Fallito;
             }
@@ -165,10 +166,11 @@ namespace Core {
         const std::int64_t ultimo = leggiUltimoGiro(m_dbPath);
         if (ora - ultimo < static_cast<std::int64_t>(minuti) * 60)
             return false;
-        // Mai due check in coda: se il precedente deve ancora girare, il
-        // prossimo giro slitta (niente accumulo dopo sleep lunghi).
+        // Mai due check non terminali: "attesa" E "attivo". Con il solo
+        // pendingCount il giro successivo si accodava mentre il precedente
+        // era già in mano al worker (osservato: un task attivo + uno atteso).
         QueueStore coda(m_dbPath);
-        if (coda.pendingCount("check") > 0)
+        if (coda.nonTerminalCount("check") > 0)
             return false;
         if (coda.enqueue("check", "", 0, "{}", 0) == 0) {
             Logger::error("Scheduler: enqueue check fallito: " + coda.lastError());

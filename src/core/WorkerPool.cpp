@@ -85,6 +85,21 @@ namespace Core {
                                 else if (m_onEvento)
                                     m_onEvento("riprova", *task);
                             }
+                        } else if (esito == EsitoTask::Occupato) {
+                            // Contesa transitoria (lock di un altro processo):
+                            // riprogramma corto SENZA toccare i tentativi, così
+                            // una CLI in corso non brucia il budget errori.
+                            if (!coda.riprogramma(task->id, kOccupatoSecondi)) {
+                                Logger::error("WorkerPool: riprogramma fallito: " +
+                                              coda.lastError());
+                            } else {
+                                Logger::warn("WorkerPool: task " + std::to_string(task->id) +
+                                             " occupato, riprovo tra " +
+                                             std::to_string(kOccupatoSecondi) + "s (tentativi " +
+                                             std::to_string(task->tentativi) + ")");
+                                if (m_onEvento)
+                                    m_onEvento("riprova", *task);
+                            }
                         } else {
                             if (!coda.failDead(task->id))
                                 Logger::error("WorkerPool: failDead fallito: " + coda.lastError());

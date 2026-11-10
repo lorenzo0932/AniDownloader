@@ -1637,6 +1637,40 @@ static void testQueueStore() {
     CHECK(!t2.has_value());
     CHECK(q.failDead(idRetry));
     CHECK(q.pendingCount() == 0);
+    CHECK(q.nonTerminalCount() == 0); // fallito non conta
+
+    // Non terminali = attesa + attivo (pendingCount conta solo l'attesa).
+    // Riprogramma senza penalità: contesa transitoria, tentativi invariati.
+    const auto idOccupato = q.enqueue("check", "", 0, "{}", 0);
+    CHECK(idOccupato > 0);
+    CHECK(q.nonTerminalCount() == 1);
+    CHECK(q.nonTerminalCount("check") == 1);
+    CHECK(q.nonTerminalCount("download") == 0);
+    auto presoOccupato = q.claim();
+    CHECK(presoOccupato.has_value() && presoOccupato->id == idOccupato);
+    CHECK(q.pendingCount() == 0);     // attivo: non è "in attesa"
+    CHECK(q.nonTerminalCount() == 1); // ma resta non terminale
+    CHECK(q.riprogramma(idOccupato, 90));
+    CHECK(q.pendingCount() == 1);
+    CHECK(!q.claim().has_value()); // scadenza a ~90s: non ancora eseguibile
+    {
+        Core::Database d(dbPath);
+        auto sel = d.prepare("SELECT stato, tentativi, prossima_esecuzione FROM tasks "
+                             "WHERE id = ?;");
+        CHECK(sel.valid() && sel.bindInt(1, idOccupato) && sel.step());
+        CHECK(sel.columnText(0) == "attesa");
+        CHECK(sel.columnInt(1) == 0); // tentativi NON consumati
+        const auto ora = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+        CHECK(sel.columnInt(2) > ora + 70 && sel.columnInt(2) < ora + 120);
+    }
+    // Scadenza forzata: riparte con i tentativi ancora a zero.
+    CHECK(q.riprogramma(idOccupato, 0));
+    auto ripreso = q.claim();
+    CHECK(ripreso.has_value() && ripreso->id == idOccupato && ripreso->tentativi == 0);
+    CHECK(q.complete(idOccupato));
+    CHECK(q.nonTerminalCount() == 0); // fatto non conta
 
     // Crash recovery: task rimasto attivo torna in coda al reset.
     const auto idOrfano = q.enqueue("check", "Serie X", 3, "{}", 0);
@@ -1660,6 +1694,7 @@ static void testQueueStore() {
     const auto idFallito = qv.enqueue("check", "Serie Ko", 2, "{}", 0);
     CHECK(idVista > 0 && idFallito > 0);
     CHECK(qv.failDead(idFallito));
+    CHECK(qv.nonTerminalCount() == 1); // solo idVista in attesa
     auto viste = qv.list();
     CHECK(viste.size() == 2);
     CHECK(viste[0].id == idVista && viste[0].stato == "attesa");
@@ -2309,6 +2344,176 @@ static void testScheduler() {
     fs::remove_all(dir, ec);
 }
 
+// Accesso di test a Scheduler::checkMaturo (friend dichiarato in
+// Scheduler.hpp): il gate della coda si esercita senza avviare tick e worker.
+namespace Core {
+    struct SchedulerTestAccess {
+        static bool checkMaturo(Scheduler& sched, std::int64_t ora) {
+            return sched.checkMaturo(ora);
+        }
+    };
+} // namespace Core
+
+// Robustezza della coda schedulata (regressione produzione):
+// - un check ATTIVO blocca l'accodamento del successivo (il vecchio gate
+//   guardava solo 'attesa': doppione accodato mentre il giro era in corso);
+// - la contesa di exec.lock (Salto::Occupato) non consuma i tentativi: il
+//   check resta in coda e riparte quando il lock si libera.
+// Mai rete: il giro Occupato esce prima degli scraper; il giro di ripresa
+// trova la libreria svuotata e salta per Vuoto.
+static void testSchedulerCoda() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_sched_coda";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+
+    // XDG isolato: exec.lock vive in <xdg>/AniDownloader, mai la config reale.
+    const fs::path xdg = dir / "xdg";
+    fs::create_directories(xdg / "AniDownloader", ec);
+    CHECK(!ec);
+    const char* xdgPrecedente = std::getenv("XDG_CONFIG_HOME");
+    const std::string xdgPrecedenteStr = xdgPrecedente != nullptr ? xdgPrecedente : "";
+#ifdef _WIN32
+    _putenv_s("XDG_CONFIG_HOME", xdg.string().c_str());
+#else
+    setenv("XDG_CONFIG_HOME", xdg.string().c_str(), 1);
+#endif
+
+    auto ora = [] {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+                   std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    };
+
+    // --- A) check attivo: niente secondo check in coda ---
+    {
+        const fs::path dirGate = dir / "gate";
+        fs::create_directories(dirGate, ec);
+        CHECK(!ec);
+        Config::AppConfigManager config(dirGate / "config.json");
+        const std::string jsonPath = (dirGate / "series_data.json").string();
+        const auto dbPath = Core::SeriesRepository::dbPathFor(jsonPath);
+        config.set("scheduling", {{"abilitato", true}, {"intervalloMinuti", 15}});
+
+        Core::Scheduler sched(config, jsonPath);
+        Core::QueueStore coda(dbPath);
+        const auto id = coda.enqueue("check", "", 0, "{}", 0);
+        CHECK(id > 0);
+        auto preso = coda.claim();
+        CHECK(preso.has_value() && preso->id == id);
+        CHECK(coda.pendingCount("check") == 0);     // nessuno in attesa
+        CHECK(coda.nonTerminalCount("check") == 1); // ma uno è attivo
+        CHECK(!Core::SchedulerTestAccess::checkMaturo(sched, ora()));
+        CHECK(coda.nonTerminalCount("check") == 1); // nessun doppione accodato
+
+        // A giro finito il gate si riapre: esattamente un nuovo check.
+        CHECK(coda.complete(id));
+        const auto adesso = ora();
+        CHECK(Core::SchedulerTestAccess::checkMaturo(sched, adesso));
+        CHECK(coda.pendingCount("check") == 1);
+        CHECK(coda.nonTerminalCount("check") == 1);
+        // Ultimo giro aggiornato: niente secondo accodamento immediato.
+        CHECK(!Core::SchedulerTestAccess::checkMaturo(sched, adesso));
+    }
+
+    // --- B/C) exec.lock occupato: Occupato, zero tentativi, ripresa ---
+    const fs::path dirLock = dir / "lock";
+    fs::create_directories(dirLock, ec);
+    CHECK(!ec);
+    Config::AppConfigManager config(dirLock / "config.json");
+    const std::string jsonPath = (dirLock / "series_data.json").string();
+    const auto dbPath = Core::SeriesRepository::dbPathFor(jsonPath);
+    config.set("scheduling", {{"abilitato", true}, {"intervalloMinuti", 15}});
+    {
+        // Una serie serve per arrivare al lock: con libreria vuota il giro
+        // salta prima (Vuoto) e non toccherebbe mai exec.lock.
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        Core::Series s;
+        s.name = "Blocca";
+        s.service = "animew";
+        s.path = (dirLock / "blocca").string();
+        s.seriesPageUrl = "https://x/blocca";
+        repo.saveSeriesData({s});
+    }
+
+    struct RigaCheck {
+        std::int64_t id{0};
+        std::string stato;
+        int tentativi{0};
+        std::int64_t prossima{0};
+    };
+    auto leggiCheck = [&dbPath]() {
+        RigaCheck r;
+        Core::Database db(dbPath);
+        auto sel = db.prepare("SELECT id, stato, tentativi, prossima_esecuzione FROM tasks "
+                              "WHERE kind = 'check' ORDER BY id LIMIT 1;");
+        if (!sel.valid() || !sel.step() || sel.hasError())
+            return r;
+        r.id = sel.columnInt(0);
+        r.stato = sel.columnText(1);
+        r.tentativi = static_cast<int>(sel.columnInt(2));
+        r.prossima = sel.columnInt(3);
+        return r;
+    };
+
+    Core::PipelineGate gate;
+    Core::Scheduler sched(config, jsonPath);
+    sched.setGate(&gate);
+    RigaCheck rCheck;
+    {
+        Core::InstanceLock occupante((Config::PathHelper::getConfigDir() / "exec.lock").string());
+        CHECK(occupante.acquired());
+        sched.start(); // primo tick = catch-up immediato
+        for (int i = 0; i < 200; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            rCheck = leggiCheck();
+            if (rCheck.stato == "attesa" && rCheck.tentativi == 0 && rCheck.prossima > ora() + 70 &&
+                rCheck.prossima < ora() + 120)
+                break;
+        }
+        CHECK(rCheck.id > 0);
+        CHECK(rCheck.stato == "attesa");     // non è stato marcato fallito
+        CHECK(rCheck.tentativi == 0);        // budget errori intatto
+        CHECK(rCheck.prossima > ora() + 70); // ~90s, non backoff 5'/15'/1h
+        CHECK(rCheck.prossima < ora() + 120);
+        const auto conti = Core::QueueStore(dbPath).counts();
+        CHECK(conti.count("fallito") == 0);
+    } // lock rilasciato
+
+    // Libreria svuotata: la ripresa non deve toccare la rete (salta Vuoto).
+    {
+        Core::SeriesRepository repo(jsonPath, dbPath);
+        repo.saveSeriesData({});
+    }
+    // Scadenza forzata: la ripresa riparte subito, senza attendere i 90s.
+    CHECK(Core::QueueStore(dbPath).retryNow(rCheck.id));
+    bool ripartito = false;
+    for (int i = 0; i < 200; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        const auto r = leggiCheck();
+        if (r.id > 0 && r.stato != "attesa" && r.stato != "attivo") {
+            ripartito = true;
+            break;
+        }
+    }
+    CHECK(ripartito);
+    CHECK(leggiCheck().tentativi == 0); // la contesa non ha consumato nulla
+    sched.stop();
+    CHECK(!gate.inEsecuzione());
+
+#ifdef _WIN32
+    _putenv_s("XDG_CONFIG_HOME", xdgPrecedenteStr.c_str());
+#else
+    if (xdgPrecedente == nullptr)
+        unsetenv("XDG_CONFIG_HOME");
+    else
+        setenv("XDG_CONFIG_HOME", xdgPrecedenteStr.c_str(), 1);
+#endif
+    fs::remove_all(dir, ec);
+}
+
 // WorkerPool: backoff progressivo poi resa, pausa, eventi, stop che attende
 // il task in corso, niente doppio claim tra thread. Handler fake: mai rete.
 static void testWorkerPool() {
@@ -2377,6 +2582,47 @@ static void testWorkerPool() {
         CHECK(attendiStato(id, "fallito"));
         pool.stop();
         CHECK(statoTask(id).second == 3);
+    }
+
+    // Contesa transitoria (Occupato): riprogramma a ~90s senza consumare
+    // tentativi; al giro successivo, a risorsa libera, completa.
+    {
+        Core::QueueStore coda(dir / "p.db");
+        const auto id = coda.enqueue("occupato", "", 0, "{}", 0);
+        std::atomic<int> giri{0};
+        Core::WorkerPool pool(db, 1);
+        pool.onKind("occupato", [&](const Core::QueueTask&) {
+            if (giri.fetch_add(1) == 0)
+                return Core::EsitoTask::Occupato;
+            return Core::EsitoTask::Completato;
+        });
+        pool.start();
+        bool riprogrammato = false;
+        for (int i = 0; i < 100 && !riprogrammato; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            const auto st = statoTask(id);
+            riprogrammato = (st.first == "attesa" && st.second == 0);
+        }
+        CHECK(riprogrammato);
+        {
+            Core::Database d(dir / "p.db");
+            auto sel = d.prepare("SELECT prossima_esecuzione FROM tasks WHERE id = ?;");
+            CHECK(sel.valid() && sel.bindInt(1, id) && sel.step());
+            const auto ora = std::chrono::duration_cast<std::chrono::seconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
+            CHECK(sel.columnInt(0) > ora + 70 && sel.columnInt(0) < ora + 120);
+        }
+        // Scadenza forzata: il secondo giro completa (mai fallito per il lock).
+        {
+            Core::Database d(dir / "p.db");
+            CHECK(d.execute(
+                "UPDATE tasks SET prossima_esecuzione = 0 WHERE id = " + std::to_string(id) + ";"));
+        }
+        CHECK(attendiStato(id, "fatto"));
+        pool.stop();
+        CHECK(statoTask(id).second == 0); // tentativi ancora intatti
+        CHECK(giri.load() == 2);
     }
 
     // Pausa: niente claim da fermo; resume riprende. Eventi osservati.
@@ -2741,6 +2987,7 @@ int main(int argc, char** argv) {
     testPipelineRunsMigration();
     testPipelineCoordinator();
     testScheduler();
+    testSchedulerCoda();
     testWorkerPool();
 
     if (g_failures == 0) {
