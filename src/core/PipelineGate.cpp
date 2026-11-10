@@ -4,7 +4,7 @@
 
 namespace Core {
 
-    PipelineGate::Guard PipelineGate::acquire(bool interactive, std::atomic<bool>* stop) {
+    PipelineGate::Guard PipelineGate::acquire(bool interactive, std::atomic<bool>* abortFlag) {
         std::unique_lock<std::mutex> lock(m_mutex);
         if (interactive)
             m_interattivoInAttesa = true;
@@ -15,11 +15,11 @@ namespace Core {
             return interactive || !m_interattivoInAttesa;
         };
         while (!disponibile()) {
-            if (stop != nullptr && stop->load())
+            if (abortFlag != nullptr && abortFlag->load())
                 break;
             m_cv.wait_for(lock, std::chrono::milliseconds(200));
         }
-        if (stop != nullptr && stop->load()) {
+        if (abortFlag != nullptr && abortFlag->load()) {
             if (interactive)
                 m_interattivoInAttesa = false;
             return Guard{};

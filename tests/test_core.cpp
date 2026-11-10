@@ -2282,9 +2282,13 @@ static void testScheduler() {
 
     // Scheduler acceso su libreria vuota: accoda un check (catch-up),
     // il worker lo esegue senza rete, task fallito, niente accumulo.
+    // Il gate reale è agganciato: regressione del bug di polarità (m_attivo
+    // passato come flag di abort → check sempre rimandato e mai eseguito).
     {
         config.set("scheduling", {{"abilitato", true}, {"intervalloMinuti", 15}});
+        Core::PipelineGate gate;
         Core::Scheduler sched(config, jsonPath);
+        sched.setGate(&gate);
         sched.start();
         Core::QueueStore coda(Core::SeriesRepository::dbPathFor(jsonPath));
         bool visto = false;
@@ -2296,6 +2300,7 @@ static void testScheduler() {
         }
         sched.stop();
         CHECK(visto);
+        CHECK(!gate.inEsecuzione());
         CHECK(coda.pendingCount() == 0);
         // Secondo giro non riaccodato subito (ultimo_giro aggiornato).
         CHECK(coda.pendingCount("check") == 0);
