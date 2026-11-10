@@ -49,22 +49,66 @@
     min-width: 0; flex: 0 0 auto;
   }
   .dot {
+    position: relative;
     width: 6px; height: 6px; border-radius: 50%;
     background: var(--text-muted); flex: 0 0 auto;
   }
-  .step.current .dot { background: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
-  .step.done .dot { background: var(--success); }
   .label {
     font-size: 11px; line-height: 1; white-space: nowrap;
     color: var(--text-muted);
   }
-  .step.current .label { color: var(--accent-light); }
-  .step.done .label { color: var(--success); }
   .connector {
     width: 10px; min-width: 6px; height: 1px; margin-top: 3px;
+    border-radius: 1px;
     background: var(--text-muted); opacity: 0.5;
   }
-  .connector.done { background: var(--success); opacity: 0.7; }
+
+  /* Step in corso: il punto respira e un anello si espande dal centro.
+     Restano solo transform/box-shadow/opacity, quindi niente reflow. */
+  .step.current .dot {
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-bg);
+    animation: motion-glow calc(var(--motion-shimmer) * 2) var(--motion-ease-in-out) infinite;
+  }
+  .step.current .dot::after {
+    content: '';
+    position: absolute; inset: -2px; border-radius: 50%;
+    transform: scale(0.75);
+    animation: motion-ring calc(var(--motion-shimmer) * 2) var(--motion-ease-out) infinite;
+  }
+  .step.current .label {
+    color: var(--accent-light);
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
+  }
+
+  /* Step completato: pop breve e alone success, una sola volta al cambio
+     di fase; nessuna animazione infinita sui punti già fatti. */
+  .step.done .dot {
+    background: var(--success);
+    animation: motion-pop calc(var(--motion-enter) * 1.5) var(--motion-ease-out);
+  }
+  .step.done .dot::before {
+    content: '';
+    position: absolute; inset: -3px; border-radius: 50%;
+    background: var(--success); opacity: 0.16;
+  }
+  .step.done .label {
+    color: var(--success);
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
+  }
+
+  /* Connettore completato: riflesso che attraversa la linea una volta.
+     A fine corsa il gradiente torna fuori dall'elemento (200% 0), quindi
+     resta solo la linea verde: nessun bagliore statico. */
+  .connector.done {
+    background-color: var(--success);
+    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9), transparent);
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    background-position: 200% 0;
+    opacity: 0.8;
+    animation: motion-shimmer var(--motion-shimmer) var(--motion-ease-out) 1;
+  }
 
   @media (max-width: 480px) {
     .label { font-size: 10px; }
