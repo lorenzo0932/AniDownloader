@@ -67,6 +67,8 @@ namespace Core {
                     return EsitoTask::Riprova;
                 }
             }
+            if (m_onCheckStart)
+                m_onCheckStart();
             auto notifica = [this](const std::string& serie, int episodio) {
                 NotificationStore store(m_dbPath);
                 std::int64_t id = 0;
@@ -77,13 +79,25 @@ namespace Core {
                 if (m_onEpisodioPronto)
                     m_onEpisodioPronto(serie, episodio, id);
             };
+            auto taskFinished = [this](const std::string& n, int ep) {
+                if (m_onTaskFinished)
+                    m_onTaskFinished(n, ep);
+            };
+            auto taskSkipped = [this](const std::string& s, const std::string& motivo) {
+                if (m_onTaskSkipped)
+                    m_onTaskSkipped(s, motivo);
+            };
+            auto taskActivity = [this](const std::string& n, int ep, const TaskProgress& p) {
+                if (m_onTaskActivity)
+                    m_onTaskActivity(n, ep, p);
+            };
             CheckOutcome esito;
             if (m_repo != nullptr)
-                esito =
-                    CheckRunner::runOnce(m_config, *m_repo, false, maiAbortito, {}, {}, notifica);
+                esito = CheckRunner::runOnce(m_config, *m_repo, false, maiAbortito, {}, {}, notifica,
+                                             taskFinished, taskSkipped, taskActivity);
             else
                 esito = CheckRunner::runOnce(m_config, m_jsonPath, false, maiAbortito, {}, {},
-                                             notifica);
+                                             notifica, taskFinished, taskSkipped, taskActivity);
             if (!esito.eseguito) {
                 // CLI manuale in corso: contesa transitoria, si rimanda corto
                 // senza consumare i tentativi (il pool riprogramma a 90s).
@@ -136,6 +150,11 @@ namespace Core {
     }
 
     void Scheduler::onEpisodioPronto(NotificaCb cb) { m_onEpisodioPronto = std::move(cb); }
+
+    void Scheduler::onTaskActivity(TaskActivityCb cb) { m_onTaskActivity = std::move(cb); }
+    void Scheduler::onTaskFinished(TaskFinishedCb cb) { m_onTaskFinished = std::move(cb); }
+    void Scheduler::onTaskSkipped(TaskSkippedCb cb) { m_onTaskSkipped = std::move(cb); }
+    void Scheduler::onCheckStart(std::function<void()> cb) { m_onCheckStart = std::move(cb); }
 
     void Scheduler::setGate(PipelineGate* gate) noexcept { m_gate = gate; }
 

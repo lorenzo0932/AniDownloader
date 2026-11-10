@@ -1,11 +1,11 @@
 <script>
   // Toolbar avvio/stop, stato live e stato globale (coda/problemi).
-  let { downloadRunning = false, starting = false, overallStatus = '', sseConnected = false,
-        phase = 'idle', summary = null, codaTotale = 0, problemiAperti = 0,
+  let { downloadRunning = false, runAttivo = downloadRunning, starting = false, overallStatus = '',
+        sseConnected = false, phase = 'idle', summary = null, codaTotale = 0, problemiAperti = 0,
         oncoda, onstart, onstop } = $props();
 </script>
 
-<div class="toolbar" class:running={downloadRunning}>
+<div class="toolbar" class:running={runAttivo}>
   {#if downloadRunning}
     <button class="btn-danger" onclick={onstop}>Ferma Download</button>
   {:else}
@@ -13,7 +13,7 @@
       {starting ? 'Avvio…' : 'Avvia Download'}
     </button>
   {/if}
-  {#if phase === 'analysis' && !summary}
+  {#if runAttivo && phase === 'analysis' && !summary}
     <span class="loading-spinner"></span>
   {/if}
   {#if overallStatus}

@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <functional>
 #include <httplib.h>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -58,6 +59,11 @@ namespace Web {
         std::mutex m_downloadStateMutex;
         DownloadState m_downloadState;
 
+        // Progresso live dei task (run manuale e check automatico) per la Home.
+        // Chiave = [serie, episodio] come DownloadState::key.
+        mutable std::mutex m_liveTasksMutex;
+        std::map<std::string, nlohmann::json> m_liveTasks;
+
         // SSE event broadcast
         std::mutex m_sseMutex;
         std::unordered_map<uint64_t, std::queue<std::string>> m_sseQueues;
@@ -82,6 +88,12 @@ namespace Web {
         uint64_t registerSseClient();
         void unregisterSseClient(uint64_t id);
         void broadcastSseEvent(const std::string& eventJson);
+
+        void clearLiveTasks();
+        void setLiveTask(const std::string& series, int episode, const std::string& phase,
+                         int percent, const std::string& detail);
+        void eraseLiveTask(const std::string& series, int episode);
+        nlohmann::json liveTasksJson() const;
 
         nlohmann::json errorJson(const std::string& message, int code = 400);
         nlohmann::json successJson(const nlohmann::json& data = nullptr);
