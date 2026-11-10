@@ -10,15 +10,19 @@
 // Worker pool sulla coda persistente (B6, ADR-004): N thread reclamano task
 // con claim atomico ed eseguono l'handler registrato per kind. Nessun giro
 // viene mai interrotto: stop() segnala e attende i task in corso (join).
-// Retry con backoff progressivo 5'/15'/1h, poi fallito definitivo.
+// Retry con backoff progressivo 5'/15'/1h, poi fallito definitivo. La contesa
+// transitoria (Occupato) non consuma tentativi: si riprogramma a 90s.
 namespace Core {
     struct QueueTask;
 
-    enum class EsitoTask { Completato, Riprova, Fallito };
+    // Occupato = risorsa esterna momentaneamente in uso (es. exec.lock di una
+    // CLI manuale): non è un errore del task, quindi niente backoff né
+    // tentativi consumati. Il task resta non terminale e riparte da solo.
+    enum class EsitoTask { Completato, Riprova, Fallito, Occupato };
 
     // Eventi per osservabilità (il chiamante li inoltra a SSE/log):
-    // "avviato", "completato", "riprova" (con prossima esecuzione),
-    // "fallito" (definitivo).
+    // "avviato", "completato", "riprova" (con prossima esecuzione; vale anche
+    // per la contesa Occupato), "fallito" (definitivo).
     using TaskEventoCb = std::function<void(const std::string& tipo, const QueueTask& task)>;
 
     using TaskHandler = std::function<EsitoTask(const QueueTask& task)>;
@@ -26,6 +30,7 @@ namespace Core {
     class WorkerPool {
       public:
         static constexpr int kBackoffSecondi[] = {300, 900, 3600};
+        static constexpr int kOccupatoSecondi = 90;
         static constexpr int kPollSecondi = 5;
 
         WorkerPool(const std::string& dbPath, int numThread);

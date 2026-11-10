@@ -73,6 +73,10 @@ namespace Core {
         // Ritorna true se un check va accodato ora (e aggiorna ultimo giro).
         bool checkMaturo(std::int64_t ora);
 
+        // Solo test (tests/test_core.cpp): chiama checkMaturo senza avviare
+        // tick/worker, per esercitare il gate della coda in modo deterministico.
+        friend struct SchedulerTestAccess;
+
         Config::AppConfigManager& m_config;
         std::string m_jsonPath;
         std::string m_dbPath;

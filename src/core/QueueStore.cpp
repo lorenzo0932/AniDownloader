@@ -147,6 +147,23 @@ namespace Core {
         return true;
     }
 
+    bool QueueStore::riprogramma(std::int64_t id, std::int64_t ritardoSec) {
+        Database db(m_dbPath);
+        if (!db.isOpen()) {
+            m_lastError = db.lastError();
+            return false;
+        }
+        // Nessun tocco a tentativi: la contesa è transitoria, non un errore.
+        auto upd = db.prepare("UPDATE tasks SET stato = 'attesa', prossima_esecuzione = ? "
+                              "WHERE id = ?;");
+        if (!upd.valid() || !upd.bindInt(1, oraEpoch() + ritardoSec) || !upd.bindInt(2, id) ||
+            (upd.step(), upd.hasError())) {
+            m_lastError = upd.lastError();
+            return false;
+        }
+        return true;
+    }
+
     bool QueueStore::failDead(std::int64_t id) {
         Database db(m_dbPath);
         if (!db.isOpen()) {
@@ -171,6 +188,26 @@ namespace Core {
             kind.empty()
                 ? db.prepare("SELECT COUNT(*) FROM tasks WHERE stato = 'attesa';")
                 : db.prepare("SELECT COUNT(*) FROM tasks WHERE stato = 'attesa' AND kind = ?;");
+        if (!sel.valid() || (!kind.empty() && !sel.bindText(1, kind)) || !sel.step() ||
+            sel.hasError()) {
+            m_lastError = sel.lastError();
+            return -1;
+        }
+        return sel.columnInt(0);
+    }
+
+    std::int64_t QueueStore::nonTerminalCount(const std::string& kind) {
+        Database db(m_dbPath);
+        if (!db.isOpen()) {
+            m_lastError = db.lastError();
+            return -1;
+        }
+        auto sel =
+            kind.empty()
+                ? db.prepare("SELECT COUNT(*) FROM tasks "
+                             "WHERE stato IN ('attesa', 'attivo');")
+                : db.prepare("SELECT COUNT(*) FROM tasks WHERE stato IN ('attesa', 'attivo') "
+                             "AND kind = ?;");
         if (!sel.valid() || (!kind.empty() && !sel.bindText(1, kind)) || !sel.step() ||
             sel.hasError()) {
             m_lastError = sel.lastError();

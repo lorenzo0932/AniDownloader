@@ -50,10 +50,19 @@ namespace Core {
         bool complete(std::int64_t id);
         // Rimette in coda con backoff: tentativi+1, prossima = ora + attesa.
         bool failRetry(std::int64_t id, std::int64_t attesaSec);
+        // Riprogramma senza consumare tentativi (stato attesa, prossima =
+        // ora + ritardo): per la contesa transitoria, che non è un errore del
+        // task (es. exec.lock tenuto da una CLI manuale).
+        bool riprogramma(std::int64_t id, std::int64_t ritardoSec);
         // Terminale: niente più tentativi (il chiamante logga/notifica).
         bool failDead(std::int64_t id);
 
+        // Solo 'attesa': badge UI e storico. Per il gate "c'è già un giro in
+        // volo?" serve nonTerminalCount(), che include anche 'attivo'.
         std::int64_t pendingCount(const std::string& kind = "");
+        // Task non terminali (attesa + attivo) del kind dato (vuoto = tutti).
+        // Un check attivo blocca l'accodamento del successivo; -1 su errore.
+        std::int64_t nonTerminalCount(const std::string& kind = "");
 
         // Vista per la UI coda: righe con stato e scadenza. stato vuoto =
         // tutte tranne i completati (la coda attiva); "fatto" esplicito li
