@@ -191,7 +191,10 @@
     background: var(--bg-tertiary); color: var(--text-muted);
     white-space: nowrap;
   }
-  .run-stato.stato-in_corso { background: var(--accent-bg); color: var(--accent-light); }
+  .run-stato.stato-in_corso {
+    background: var(--accent-bg); color: var(--accent-light);
+    animation: motion-ring calc(var(--motion-shimmer) * 2.5) var(--motion-ease-out) infinite;
+  }
   .run-stato.stato-completato { color: var(--success); }
   .run-stato.stato-completato_con_errori,
   .run-stato.stato-interrotto { background: var(--danger-bg); color: var(--danger); }
@@ -209,11 +212,30 @@
 
   .run-progress {
     height: 4px; margin: 0 0.8rem 0.65rem;
-    background: var(--bg-tertiary); border-radius: 2px; overflow: hidden;
+    background: var(--bg-tertiary); border-radius: 2px;
   }
+  /* Barra in corso: riflesso che scorre + punta luminosa che avanza con la
+     width. Il glow esce dalla traccia (niente overflow hidden) senza
+     occupare spazio nel layout. */
   .run-bar {
-    height: 100%; background: var(--accent);
+    position: relative; height: 100%; border-radius: 2px;
+    background-color: var(--accent);
+    background-image: linear-gradient(90deg,
+      transparent 30%, rgba(255, 255, 255, 0.42) 50%, transparent 70%);
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    box-shadow: 0 0 6px -2px var(--accent-light);
+    animation: motion-shimmer calc(var(--motion-shimmer) * 2) linear infinite;
     transition: width var(--motion-fast) var(--motion-ease-out);
+  }
+  .run-bar::after {
+    content: '';
+    position: absolute; top: 50%; right: 0;
+    width: 4px; height: 4px; border-radius: 50%;
+    transform: translate(50%, -50%);
+    background: var(--accent-light);
+    box-shadow: 0 0 6px 1px var(--accent-light);
+    animation: motion-glow calc(var(--motion-shimmer) * 1.5) var(--motion-ease-in-out) infinite;
   }
 
   .run-jobs { border-top: 1px solid var(--border-color); padding: 0.5rem; }

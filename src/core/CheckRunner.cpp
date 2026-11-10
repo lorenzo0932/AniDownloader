@@ -23,9 +23,13 @@ namespace Core {
         std::atomic<bool>& stop,
         const std::function<void(const std::string&, int, const std::string&)>& onProgress,
         const std::function<void(const std::string&)>& onOverall,
-        const std::function<void(const std::string&, int)>& onEpisodeReady) {
+        const std::function<void(const std::string&, int)>& onEpisodeReady,
+        const std::function<void(const std::string&, int)>& onTaskFinished,
+        const std::function<void(const std::string&, const std::string&)>& onTaskSkipped,
+        const std::function<void(const std::string&, int, const TaskProgress&)>& onTaskActivity) {
         SeriesRepository repo(jsonPath, SeriesRepository::dbPathFor(jsonPath));
-        return runOnce(config, repo, burst, stop, onProgress, onOverall, onEpisodeReady);
+        return runOnce(config, repo, burst, stop, onProgress, onOverall, onEpisodeReady,
+                       onTaskFinished, onTaskSkipped, onTaskActivity);
     }
 
     CheckOutcome CheckRunner::runOnce(
@@ -33,7 +37,10 @@ namespace Core {
         std::atomic<bool>& stop,
         const std::function<void(const std::string&, int, const std::string&)>& onProgress,
         const std::function<void(const std::string&)>& onOverall,
-        const std::function<void(const std::string&, int)>& onEpisodeReady) {
+        const std::function<void(const std::string&, int)>& onEpisodeReady,
+        const std::function<void(const std::string&, int)>& onTaskFinished,
+        const std::function<void(const std::string&, const std::string&)>& onTaskSkipped,
+        const std::function<void(const std::string&, int, const TaskProgress&)>& onTaskActivity) {
         CheckOutcome esito;
         auto serie = repo.snapshotSeriesData();
         if (serie.empty()) {
@@ -77,8 +84,16 @@ namespace Core {
                 if (onOverall)
                     onOverall(s);
             },
-            [&](const TaskReport& r) { esito.reports.push_back(r); },
-            [&](const std::string&, const std::string&) {}, nullptr);
+            [&](const TaskReport& r) {
+                esito.reports.push_back(r);
+                if (onTaskFinished)
+                    onTaskFinished(r.name, r.episodeNumber);
+            },
+            [&](const std::string& serieSaltata, const std::string& motivo) {
+                if (onTaskSkipped)
+                    onTaskSkipped(serieSaltata, motivo);
+            },
+            nullptr, onTaskActivity);
 
         std::map<std::string, int> maxEpisodes;
         for (const auto& r : esito.reports) {

@@ -178,6 +178,14 @@ namespace Web {
                     {"type", "notification"}, {"id", id}, {"serie", serie}, {"episodio", episodio}};
                 broadcastSseEvent(ev.dump());
             });
+        // Progresso dei check automatici: la Home lo legge da /api/overview
+        // (il DownloadState resta la proiezione del solo run manuale).
+        m_scheduler.onCheckStart([this] { clearLiveTasks(); });
+        m_scheduler.onTaskActivity(
+            [this](const std::string& n, int ep, const Core::TaskProgress& p) {
+                setLiveTask(n, ep, Core::phaseName(p.phase), p.percent, p.detail);
+            });
+        m_scheduler.onTaskFinished([this](const std::string& n, int ep) { eraseLiveTask(n, ep); });
     }
 
     WebServer::~WebServer() { stop(); }
@@ -263,6 +271,35 @@ namespace Web {
                 queue.pop();
             queue.push(serialized);
         }
+    }
+
+    void WebServer::clearLiveTasks() {
+        std::lock_guard<std::mutex> lock(m_liveTasksMutex);
+        m_liveTasks.clear();
+    }
+
+    void WebServer::setLiveTask(const std::string& series, int episode, const std::string& phase,
+                                int percent, const std::string& detail) {
+        const auto key = nlohmann::json::array({series, episode}).dump();
+        std::lock_guard<std::mutex> lock(m_liveTasksMutex);
+        m_liveTasks[key] = {{"key", key},     {"seriesName", series}, {"episode", episode},
+                            {"phase", phase}, {"percent", percent},   {"detail", detail}};
+    }
+
+    void WebServer::eraseLiveTask(const std::string& series, int episode) {
+        const auto key = nlohmann::json::array({series, episode}).dump();
+        std::lock_guard<std::mutex> lock(m_liveTasksMutex);
+        m_liveTasks.erase(key);
+    }
+
+    nlohmann::json WebServer::liveTasksJson() const {
+        std::lock_guard<std::mutex> lock(m_liveTasksMutex);
+        auto out = nlohmann::json::array();
+        for (const auto& [key, task] : m_liveTasks) {
+            (void)key;
+            out.push_back(task);
+        }
+        return out;
     }
 
     // --- LAN IP detection ---
@@ -553,17 +590,26 @@ namespace Web {
                 }
             });
 
-        // Home: un solo run (l'ultimo) con conteggi coerenti. `coda` e
-        // `problemi` guardano la coda globale (i job non terminali sono solo
-        // del run corrente; i problemi aperti restano visibili tra i run).
+        // Home: mostrare il run più utile, non l'ultimo check vuoto. Priorità:
+        // run in corso, ultimo run con episodi, poi il più recente. `coda` e
+        // `problemi` restano globali.
         m_svr.Get("/api/overview", [this](const httplib::Request&, httplib::Response& res) {
             Core::PipelineJobStore store(m_dbPath);
-            const auto ultimi = store.listRuns("tutti", "tutte", "tutti", 1, 0);
+            const auto ultimi = store.listRuns("tutti", "tutte", "tutti", 20, 0);
+            const Core::PipelineRun* scelta = nullptr;
+            for (const auto& r : ultimi) {
+                if (r.stato == "in_corso" || r.totale > 0) {
+                    scelta = &r;
+                    break;
+                }
+            }
+            if (scelta == nullptr && !ultimi.empty())
+                scelta = &ultimi.front();
             nlohmann::json run = nullptr;
             nlohmann::json corrente = nullptr;
-            if (!ultimi.empty()) {
-                run = runToJson(ultimi.front());
-                const auto jobs = store.runJobs(ultimi.front().id);
+            if (scelta != nullptr) {
+                run = runToJson(*scelta);
+                const auto jobs = store.runJobs(scelta->id);
                 const Core::PipelineJob* attivo = nullptr;
                 for (const auto& j : jobs) {
                     if (j.fase == "downloading" || j.fase == "converting") {
@@ -584,6 +630,7 @@ namespace Web {
                                 {"episodio", attivo->episodio},
                                 {"fase", attivo->fase}};
                 run["corrente"] = corrente;
+                run["tasks"] = liveTasksJson();
             }
             const auto counts = store.counts();
             auto conta = [&counts](const char* chiave) {
@@ -1697,6 +1744,7 @@ namespace Web {
 
         m_stopSignal.store(false);
         m_downloadRunning.store(true);
+        clearLiveTasks();
         broadcastSseEvent(nlohmann::json({{"type", "started"}}).dump());
 
         m_downloadThread = std::thread([this, seriesList, burst]() {
@@ -1781,6 +1829,7 @@ namespace Web {
                         maxEpisodes[report.name] =
                             (std::max)(maxEpisodes[report.name], report.episodeNumber);
                     }
+                    eraseLiveTask(report.name, report.episodeNumber);
                     nlohmann::json ev = {{"type", "finished"},
                                          {"series", report.name},
                                          {"episode", report.episodeNumber},
@@ -1800,6 +1849,8 @@ namespace Web {
                     broadcastSseEvent(ev.dump());
                 },
                 [this](const std::string& name, int ep, const Core::TaskProgress& progress) {
+                    setLiveTask(name, ep, Core::phaseName(progress.phase), progress.percent,
+                                progress.detail);
                     broadcastSseEvent(nlohmann::json({{"type", "progress"},
                                                       {"series", name},
                                                       {"episode", ep},

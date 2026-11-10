@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "core/TaskProgress.hpp"
+
 // Un giro completo check → download → commit stato (B4, ADR-004): la stessa
 // pipeline che prima eseguiva solo il processo one-shot (main CLI / timer).
 // Usato dalla CLI manuale e dal worker dello Scheduler — un solo punto di
@@ -36,7 +38,11 @@ namespace Core {
             std::atomic<bool>& stop,
             const std::function<void(const std::string&, int, const std::string&)>& onProgress = {},
             const std::function<void(const std::string&)>& onOverall = {},
-            const std::function<void(const std::string&, int)>& onEpisodeReady = {});
+            const std::function<void(const std::string&, int)>& onEpisodeReady = {},
+            const std::function<void(const std::string&, int)>& onTaskFinished = {},
+            const std::function<void(const std::string&, const std::string&)>& onTaskSkipped = {},
+            const std::function<void(const std::string&, int, const TaskProgress&)>&
+                onTaskActivity = {});
         // Variante con repository condiviso (demone web+scheduler): evita due
         // istanze con mutex separati sullo stesso JSON. La CLI usa l'overload
         // con jsonPath (istanza propria + exec.lock interprocesso).
@@ -45,7 +51,11 @@ namespace Core {
             std::atomic<bool>& stop,
             const std::function<void(const std::string&, int, const std::string&)>& onProgress = {},
             const std::function<void(const std::string&)>& onOverall = {},
-            const std::function<void(const std::string&, int)>& onEpisodeReady = {});
+            const std::function<void(const std::string&, int)>& onEpisodeReady = {},
+            const std::function<void(const std::string&, int)>& onTaskFinished = {},
+            const std::function<void(const std::string&, const std::string&)>& onTaskSkipped = {},
+            const std::function<void(const std::string&, int, const TaskProgress&)>&
+                onTaskActivity = {});
 
       private:
         CheckRunner() = delete;

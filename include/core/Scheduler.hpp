@@ -6,6 +6,8 @@
 #include <string>
 #include <thread>
 
+#include "core/TaskProgress.hpp"
+
 // Scheduler interno (B4/B6, ADR-004 §2 + 2-bis): sostituisce i timer OS.
 // Il tick valuta la schedulazione e accoda check; l'esecuzione è del
 // WorkerPool (1 thread in B4, pool piena in B6). Stop cooperativo: niente
@@ -56,6 +58,17 @@ namespace Core {
             std::function<void(const std::string& serie, int episodio, std::int64_t id)>;
         void onEpisodioPronto(NotificaCb cb);
 
+        // Progresso strutturato dei task del check automatico: il WebServer lo
+        // usa per la Home (percentuali live), senza toccare il DownloadState
+        // del run manuale.
+        using TaskActivityCb = std::function<void(const std::string&, int, const TaskProgress&)>;
+        using TaskFinishedCb = std::function<void(const std::string&, int)>;
+        using TaskSkippedCb = std::function<void(const std::string&, const std::string&)>;
+        void onTaskActivity(TaskActivityCb cb);
+        void onTaskFinished(TaskFinishedCb cb);
+        void onTaskSkipped(TaskSkippedCb cb);
+        void onCheckStart(std::function<void()> cb);
+
         // Coordinatore del demone: se impostato, ogni check acquisisce il
         // turno in background (l'interattivo ha precedenza). Prima di start().
         void setGate(PipelineGate* gate) noexcept;
@@ -85,6 +98,10 @@ namespace Core {
         WorkerPool m_pool;
         std::function<void(const std::string& tipo, const QueueTask& task)> m_onEvento;
         NotificaCb m_onEpisodioPronto;
+        TaskActivityCb m_onTaskActivity;
+        TaskFinishedCb m_onTaskFinished;
+        TaskSkippedCb m_onTaskSkipped;
+        std::function<void()> m_onCheckStart;
         std::thread m_thread;
         std::atomic<bool> m_attivo{false};
         // Flag di ARRESTO (true = interrompi), passato a PipelineGate::acquire.

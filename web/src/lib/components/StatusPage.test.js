@@ -201,6 +201,30 @@ describe('StatusPage home', () => {
     expect(screen.getByText('Psyren')).toBeTruthy();
   });
 
+  it('run automatico: task live da overview senza run manuale', async () => {
+    statusMock.mockResolvedValue({ running: false });
+    overviewMock.mockResolvedValue(runningOverview({
+      origine: 'automatico', totale: 2, completati: 0, in_corso: 2, percent: 0,
+      corrente: { serie: 'Witch', episodio: 6, fase: 'converting' },
+      tasks: [
+        { key: '["Witch",6]', seriesName: 'Witch', episode: 6, phase: 'converting', percent: 60 },
+        { key: '["Psyren",5]', seriesName: 'Psyren', episode: 5, phase: 'downloading', percent: 30 },
+      ],
+    }));
+    render(StatusPage);
+
+    expect(await screen.findByText('Avvio corrente')).toBeTruthy();
+    expect(await screen.findByText('1 in download · 1 in conversione')).toBeTruthy();
+    const bars = screen.getAllByRole('progressbar');
+    expect(bars[0].getAttribute('aria-valuenow')).toBe('45');
+    expect(screen.getByText('60%')).toBeTruthy();
+    expect(screen.getByText('30%')).toBeTruthy();
+    expect(screen.getByText('Witch')).toBeTruthy();
+    expect(screen.getByText('Psyren')).toBeTruthy();
+    // Nessun pulsante Stop: il check automatico non è interrompibile da lì.
+    expect(screen.queryByRole('button', { name: 'Ferma Download' })).toBeNull();
+  });
+
   it('run completato: ultimo avvio e CTA dettaglio', async () => {
     overviewMock.mockResolvedValue(runningOverview({
       stato: 'completato', concluso_il: '2026-11-08T17:10:00.000Z',

@@ -31,15 +31,27 @@
   let problemiAperti = $derived(
     (overview?.problemi?.non_riusciti || 0) + (overview?.problemi?.interrotti || 0)
   );
-  // Task live del run (SSE): servono a mostrare percentuali reali e fase
-  // corrente, non solo il conteggio degli episodi completati.
-  let activeTasks = $derived(
-    (run.tasks || []).filter(t => Number(t.episode) > 0 &&
-      ['downloading', 'verifying_download', 'waiting_conversion', 'converting', 'finalizing']
-        .includes(t.phase))
-  );
+  // Task live del run (SSE + overview): percentuali reali e fase corrente,
+  // anche per i check automatici (che non passano dal DownloadState manuale).
+  const FASI_ATTIVE = [
+    'downloading', 'verifying_download', 'waiting_conversion', 'converting', 'finalizing',
+  ];
+  let activeTasks = $derived.by(() => {
+    const byKey = new Map();
+    for (const t of (overview?.run?.tasks || [])) {
+      if (Number(t.episode) > 0 && FASI_ATTIVE.includes(t.phase)) byKey.set(t.key, t);
+    }
+    // L'SSE del run manuale è più fresco: vince a parità di chiave.
+    for (const t of (run.tasks || [])) {
+      if (Number(t.episode) > 0 && FASI_ATTIVE.includes(t.phase)) byKey.set(t.key, t);
+    }
+    return [...byKey.values()];
+  });
+  // Attivo per stato (mostra il feedback), controllabile solo se manuale
+  // (il pulsante Stop non ferma un check automatico).
+  let runAttivo = $derived(downloadRunning || overview?.run?.stato === 'in_corso');
   let liveStatus = $derived.by(() => {
-    if (!downloadRunning) return '';
+    if (!runAttivo) return '';
     const conv = activeTasks.filter(t => ['converting', 'finalizing'].includes(t.phase)).length;
     const dl = activeTasks.filter(t => ['downloading', 'verifying_download'].includes(t.phase)).length;
     const waiting = activeTasks.filter(t => t.phase === 'waiting_conversion').length;
@@ -47,7 +59,8 @@
     if (dl > 0) parts.push(`${dl} in download`);
     if (conv > 0) parts.push(`${conv} in conversione`);
     if (waiting > 0) parts.push(`${waiting} in attesa`);
-    return parts.length ? parts.join(' · ') : overallStatus;
+    if (parts.length) return parts.join(' · ');
+    return overview?.run?.stato === 'in_corso' ? 'Elaborazione in corso' : overallStatus;
   });
 
   async function loadOverview() {
@@ -237,7 +250,8 @@
 <div class="vetrina" in:pageEnter|global>
   <OverallHeader
     {downloadRunning}
-    overallStatus={downloadRunning ? liveStatus : ''}
+    {runAttivo}
+    overallStatus={runAttivo ? liveStatus : ''}
     {sseConnected}
     {phase}
     {starting}

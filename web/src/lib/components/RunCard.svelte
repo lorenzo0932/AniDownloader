@@ -234,7 +234,17 @@
     background: var(--bg-tertiary); color: var(--text-muted);
     white-space: nowrap;
   }
-  .run-state.state-in_corso { background: var(--accent-bg); color: var(--accent-light); }
+  .run-state.state-in_corso {
+    background: var(--accent-bg); color: var(--accent-light);
+    display: inline-flex; align-items: center; gap: 0.35em;
+  }
+  /* Puntino "live": pulsa di luce, misura fissa per non spostare il badge. */
+  .run-state.state-in_corso::before {
+    content: ''; flex: none; width: 0.42em; height: 0.42em;
+    border-radius: 50%; background: var(--accent-light);
+    box-shadow: 0 0 4px var(--accent-light);
+    animation: motion-glow calc(var(--motion-shimmer) * 1.6) var(--motion-ease-in-out) infinite;
+  }
   .run-state.state-completato { color: var(--success); }
   .run-state.state-completato_con_errori,
   .run-state.state-interrotto { background: var(--danger-bg); color: var(--danger); }
@@ -249,8 +259,23 @@
     overflow: hidden; margin: 0.15rem 0;
   }
   .run-progress-fill {
-    display: block; height: 100%; background: var(--accent);
+    position: relative; display: block; height: 100%; background: var(--accent);
+    border-radius: inherit;
     transition: width 220ms var(--motion-ease-out);
+  }
+  /* Scintilla che scorre: solo background-position, nessun layout shift. */
+  .run-progress-fill::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background-image: linear-gradient(90deg, transparent, var(--accent-light), transparent);
+    background-size: 200% 100%;
+    opacity: 0.4;
+    animation: motion-shimmer calc(var(--motion-shimmer) * 2) linear infinite;
+  }
+  /* Punta luminosa sul bordo destro del riempimento, con respiro discreto. */
+  .run-progress-fill::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(circle at 100% 50%, var(--accent-light), transparent 6px);
+    animation: motion-glow calc(var(--motion-shimmer) * 2.2) var(--motion-ease-in-out) infinite;
   }
 
   .run-current { margin: 0; font-size: 0.85rem; font-weight: 500; color: var(--text-primary); }
@@ -271,11 +296,26 @@
   .task-pct {
     margin-left: auto; font-size: 0.75rem; font-weight: 600;
     color: var(--accent-light); font-variant-numeric: tabular-nums;
+    animation: motion-glow calc(var(--motion-shimmer) * 2) var(--motion-ease-in-out) infinite;
   }
   .task-bar { height: 4px; border-radius: 2px; background: var(--bg-tertiary); overflow: hidden; }
   .task-bar-fill {
-    display: block; height: 100%; background: var(--accent);
+    position: relative; display: block; height: 100%; background: var(--accent);
+    border-radius: inherit;
     transition: width 220ms var(--motion-ease-out);
+  }
+  /* Stessa famiglia della barra complessiva, scala ridotta. */
+  .task-bar-fill::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background-image: linear-gradient(90deg, transparent, var(--accent-light), transparent);
+    background-size: 200% 100%;
+    opacity: 0.3;
+    animation: motion-shimmer calc(var(--motion-shimmer) * 2.6) linear infinite;
+  }
+  .task-bar-fill::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(circle at 100% 50%, var(--accent-light), transparent 4px);
+    animation: motion-glow calc(var(--motion-shimmer) * 2.4) var(--motion-ease-in-out) infinite;
   }
 
   .run-outcome {
