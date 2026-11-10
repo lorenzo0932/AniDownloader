@@ -93,8 +93,8 @@ namespace Core {
             };
             CheckOutcome esito;
             if (m_repo != nullptr)
-                esito = CheckRunner::runOnce(m_config, *m_repo, false, maiAbortito, {}, {}, notifica,
-                                             taskFinished, taskSkipped, taskActivity);
+                esito = CheckRunner::runOnce(m_config, *m_repo, false, maiAbortito, {}, {},
+                                             notifica, taskFinished, taskSkipped, taskActivity);
             else
                 esito = CheckRunner::runOnce(m_config, m_jsonPath, false, maiAbortito, {}, {},
                                              notifica, taskFinished, taskSkipped, taskActivity);

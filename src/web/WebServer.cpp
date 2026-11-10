@@ -185,8 +185,7 @@ namespace Web {
             [this](const std::string& n, int ep, const Core::TaskProgress& p) {
                 setLiveTask(n, ep, Core::phaseName(p.phase), p.percent, p.detail);
             });
-        m_scheduler.onTaskFinished(
-            [this](const std::string& n, int ep) { eraseLiveTask(n, ep); });
+        m_scheduler.onTaskFinished([this](const std::string& n, int ep) { eraseLiveTask(n, ep); });
     }
 
     WebServer::~WebServer() { stop(); }
@@ -283,9 +282,8 @@ namespace Web {
                                 int percent, const std::string& detail) {
         const auto key = nlohmann::json::array({series, episode}).dump();
         std::lock_guard<std::mutex> lock(m_liveTasksMutex);
-        m_liveTasks[key] = {{"key", key},           {"seriesName", series},
-                            {"episode", episode},   {"phase", phase},
-                            {"percent", percent},   {"detail", detail}};
+        m_liveTasks[key] = {{"key", key},     {"seriesName", series}, {"episode", episode},
+                            {"phase", phase}, {"percent", percent},   {"detail", detail}};
     }
 
     void WebServer::eraseLiveTask(const std::string& series, int episode) {

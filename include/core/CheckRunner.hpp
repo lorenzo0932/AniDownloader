@@ -41,8 +41,8 @@ namespace Core {
             const std::function<void(const std::string&, int)>& onEpisodeReady = {},
             const std::function<void(const std::string&, int)>& onTaskFinished = {},
             const std::function<void(const std::string&, const std::string&)>& onTaskSkipped = {},
-            const std::function<void(const std::string&, int, const TaskProgress&)>& onTaskActivity =
-                {});
+            const std::function<void(const std::string&, int, const TaskProgress&)>&
+                onTaskActivity = {});
         // Variante con repository condiviso (demone web+scheduler): evita due
         // istanze con mutex separati sullo stesso JSON. La CLI usa l'overload
         // con jsonPath (istanza propria + exec.lock interprocesso).
@@ -54,8 +54,8 @@ namespace Core {
             const std::function<void(const std::string&, int)>& onEpisodeReady = {},
             const std::function<void(const std::string&, int)>& onTaskFinished = {},
             const std::function<void(const std::string&, const std::string&)>& onTaskSkipped = {},
-            const std::function<void(const std::string&, int, const TaskProgress&)>& onTaskActivity =
-                {});
+            const std::function<void(const std::string&, int, const TaskProgress&)>&
+                onTaskActivity = {});
 
       private:
         CheckRunner() = delete;
