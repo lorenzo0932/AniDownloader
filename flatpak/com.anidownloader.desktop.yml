@@ -106,6 +106,7 @@ modules:
       - type: archive
         url: https://codeload.github.com/yhirose/cpp-httplib/tar.gz/refs/tags/v0.18.1
         sha256: 405abd8170f2a446fc8612ac635d0db5947c0d2e156e32603403a4496255ff00
+        archive-type: tar-gzip
         dest: deps/httplib-src
     build-commands:
       # ── 1. Frontend Svelte (npm offline dalla cache _cacache generata) ──
