@@ -90,7 +90,9 @@ namespace Core {
         EsitoEnqueue enqueue(const std::string& jobKey, const std::string& serie, int episodio,
                              const std::string& origine, int priorita = 0,
                              const std::string& payload = "{}", const std::string& seriePath = "",
-                             const std::string& runId = "");
+                             const std::string& runId = "",
+                             const std::string& faseIniziale = "queued_download",
+                             const std::string& filePath = "");
 
         // Claim atomico: prende il job eseguibile più prioritario nella fase
         // di partenza e lo porta a quella di arrivo. nullopt = niente pronto.

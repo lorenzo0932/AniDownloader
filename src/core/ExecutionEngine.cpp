@@ -165,9 +165,20 @@ namespace Core {
                                                   {"fileName", t.fileName}};
                         const auto key = seriesIdentity(s.service, s.seriesPageUrl) + "#" +
                                          std::to_string(t.episodeNumber);
-                        store.enqueue(key, s.name, t.episodeNumber, m_origin,
-                                      m_origin == "interactive" ? 100 : 0, payload.dump(), sc.path,
-                                      runId);
+                        // Conversione locale (videoUrl vuoto): il file è già
+                        // su disco. Va direttamente alla fase conversione,
+                        // saltando il pool download (che con convert=false
+                        // vedrebbe il file esistente e lo darebbe completato).
+                        const bool conversioneLocale = t.videoUrl.empty();
+                        const std::string sourcePath =
+                            conversioneLocale
+                                ? (std::filesystem::path(sc.path) / t.fileName).string()
+                                : "";
+                        store.enqueue(
+                            key, s.name, t.episodeNumber, m_origin,
+                            m_origin == "interactive" ? 100 : 0, payload.dump(), sc.path, runId,
+                            conversioneLocale ? "downloaded_waiting_conversion" : "queued_download",
+                            sourcePath);
                         hasWork = true;
                     } else if (!t.errorMessage.empty()) {
                         anyError = true;
@@ -189,12 +200,12 @@ namespace Core {
         while (*pending > 0 && !stopSignal)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        for (auto& t : analysis) {
-            if (stopSignal)
-                t.detach();
-            else
-                t.join();
-        }
+        // I thread di analisi usano riferimenti allo stack di runPipeline
+        // (onProgress, onActivity, store, ...): su stop vanno comunque
+        // joinati. Un detach lascerebbe use-after-free quando il chiamante
+        // distrugge il PipelineJobStore e i callback.
+        for (auto& t : analysis)
+            t.join();
         if (onAnalysisDone && !stopSignal)
             onAnalysisDone();
 
