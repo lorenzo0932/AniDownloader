@@ -15,7 +15,8 @@ HEADLESS_DIR="$PREFIX/share/anidownloader-headless"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST="$PLIST_DIR/$LABEL.plist"
 LOG_DIR="$HOME/Library/Logs/$APP_NAME"
-CONFIG_DIR="$HOME/.config/$APP_NAME"
+CONFIG_DIR="$HOME/Library/Application Support/$APP_NAME"
+CACHE_DIR="$HOME/Library/Caches/$APP_NAME"
 
 MODE="install"
 VERSION=""
@@ -62,11 +63,11 @@ AniDownloader — installazione headless macOS
 Uso:
   ./install-mac.sh                 installa l'ultima release stabile
   ./install-mac.sh --dev           installa l'ultima prerelease (fallback stabile)
-  ./install-mac.sh v3.0.0-dev.5    installa una versione specifica
+  ./install-mac.sh vX.Y.Z          installa una versione specifica
   ./install-mac.sh --local         build locale dal checkout corrente
   ./install-mac.sh --status        stato del LaunchAgent e del demone
   ./install-mac.sh --uninstall     rimuove LaunchAgent e binario
-  ./install-mac.sh --uninstall --purge   rimuove anche config e dati
+  ./install-mac.sh --uninstall --purge   rimuove anche config, cache e dati
 
 File installati:
   $HEADLESS_DIR/anidownloaderd
@@ -248,10 +249,10 @@ do_uninstall() {
     rm -rf "$HEADLESS_DIR"
     echo "LaunchAgent e binario rimossi."
     if $PURGE; then
-        rm -rf "$CONFIG_DIR" "$LOG_DIR"
-        echo "Rimossi anche config e log ($CONFIG_DIR, $LOG_DIR)."
+        rm -rf "$CONFIG_DIR" "$CACHE_DIR" "$LOG_DIR"
+        echo "Rimossi anche config, cache e log ($CONFIG_DIR, $CACHE_DIR, $LOG_DIR)."
     else
-        echo "Config e log conservati; usa --purge per rimuoverli."
+        echo "Config, cache e log conservati; usa --purge per rimuoverli."
     fi
 }
 
