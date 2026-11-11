@@ -9,8 +9,19 @@
 | `series_data.json` | `~/.config/AniDownloader/series_data.json` | Export del DB, usato come fallback di rollback (NON committare) |
 | `series_data.json.bak.<timestamp>` | accanto al JSON | Backup creato prima di un import JSON→DB |
 
-I path seguono lo standard XDG su Linux (`~/.config/`) e APPDATA su Windows
-(`%APPDATA%/AniDownloader/`).
+I path seguono lo standard XDG su Linux (`$XDG_CONFIG_HOME`, default
+`~/.config/`) e APPDATA su Windows (`%APPDATA%/AniDownloader/`). Su macOS:
+
+| Cosa | Percorso |
+|------|----------|
+| Config e dati | `~/Library/Application Support/AniDownloader` |
+| Cache (`thumbs/`, `work/`) | `~/Library/Caches/AniDownloader` |
+| Log | `~/Library/Logs/AniDownloader` |
+
+Su Linux cache e log stanno in `$XDG_CACHE_HOME/AniDownloader` (default
+`~/.cache/AniDownloader`); i workdir RAM in `$XDG_RUNTIME_DIR/AniDownloader/work`
+con fallback a `/dev/shm/AniDownloader/work`. Su Windows cache e log usano
+`%LOCALAPPDATA%\AniDownloader`.
 
 ---
 
@@ -21,7 +32,6 @@ Auto-generato al primo avvio. Supporta i seguenti campi:
 | Campo | Tipo | Default | Descrizione |
 |-------|------|---------|-------------|
 | `json_file_path` | string | percorso XDG | File JSON delle serie (export/fallback) |
-| `output_dir` | string | cartella Video | Destinazione predefinita dei download |
 | `log_file_path` | string | percorso XDG | File di log |
 | `is_json_path_customized` | bool | `false` | Indica un path JSON scelto dall'utente |
 | `max_network_retries` | int | `3` | Tentativi massimi per HTTP/aria2c |
@@ -38,6 +48,11 @@ Auto-generato al primo avvio. Supporta i seguenti campi:
 | `pinned_paths` | array | assente (UI) | Preferiti del file picker (max 20, scritti dalla UI) |
 | `show_stop_warning` | bool | `true` (UI) | Conferma prima di interrompere un download |
 | `show_close_warning` | bool | `true` (UI) | Conferma alla chiusura con download attivi |
+
+Non esiste più `output_dir`: ogni download usa la cartella `path` della serie.
+`GET /api/storage` misura il disco della serie più pesante (items ordinati per
+byte) e, senza serie configurate, ripiega su `~`. Un'eventuale chiave
+`output_dir` residua viene rimossa al primo `PUT /api/config`.
 
 ### Scheduling
 

@@ -7,7 +7,7 @@ Script bash interattivo che supporta tre modalità.
 ### Modalità
 
 1. **Solo Desktop** — installa il **Flatpak** `com.anidownloader.desktop`
-2. **Solo Headless** — binary CLI + servizio systemd + timer
+2. **Solo Headless** — binary CLI + servizio systemd (scheduler interno)
 3. **Entrambi** (default)
 
 ### Flusso
@@ -36,7 +36,7 @@ install.sh
   │   │   ├── cmake build
   │   │   └── [Desktop] flatpak-builder (build dal checkout corrente)
   │   └── Oppure download da GitHub Releases
-  │       ├── Flatpak desktop (.flatpak) → flatpak --user install
+  │       ├── Flatpak desktop (.flatpak) → flatpak --user install --reinstall
   │       └── tar.gz headless
   │
   ├── 6. Icona (resources/logo.png → ~/.local/share/icons/)
@@ -60,6 +60,14 @@ install.sh
 |------|------|----------|
 | `AniDownloader-CLI.desktop` | `anidownloaderd --burst` | Sì |
 | `AniDownloader-Web.desktop` | Script helper → browser | No |
+
+Per **aggiornare** un bundle Flatpak già installato:
+
+```bash
+flatpak --user install --reinstall -y ./AniDownloader-<versione>-linux-x86_64.flatpak
+```
+
+`install.sh` usa già `--reinstall` sia per il download sia per la build locale.
 
 > La GUI nativa su Linux è distribuita come **Flatpak** (canale Linux unico,
 > AppImage deprecata): il manifest installa già la desktop-entry + icona in
@@ -143,11 +151,11 @@ Il demone (web + scheduler interno, senza timer OS) si installa come
 ```bash
 ./install-mac.sh                  # ultima release stabile
 ./install-mac.sh --dev            # ultima prerelease (fallback stabile)
-./install-mac.sh v3.0.0-dev.5     # versione specifica
+./install-mac.sh vX.Y.Z          # versione specifica
 ./install-mac.sh --local          # build dal checkout corrente
 ./install-mac.sh --status         # stato LaunchAgent + /api/status
 ./install-mac.sh --uninstall      # rimuove agente e binario (config conservata)
-./install-mac.sh --uninstall --purge   # rimuove anche config e log
+./install-mac.sh --uninstall --purge   # rimuove anche config, cache e log
 ```
 
 Dove finisce tutto:
@@ -158,7 +166,7 @@ Dove finisce tutto:
 | Symlink | `~/.local/bin/anidownloaderd` |
 | LaunchAgent | `~/Library/LaunchAgents/com.anidownloader.daemon.plist` |
 | Log | `~/Library/Logs/AniDownloader/daemon.out.log` / `daemon.err.log` |
-| Config e dati | `~/.config/AniDownloader/` |
+| Config e dati | `~/Library/Application Support/AniDownloader/` |
 
 Il plist generato usa percorsi assoluti (launchd non espande `~`) e mette
 `/opt/homebrew/bin` nel `PATH`. Riavvio: `launchctl kickstart -k
@@ -233,10 +241,10 @@ File di versione aggiornati automaticamente: `CMakeLists.txt`
 ### Naming convention
 
 ```
-AniDownloader-v3.0.0-dev.5-linux-x86_64.flatpak
-anidownloaderd-v3.0.0-dev.5-linux-x86_64.tar.gz
-AniDownloader_3.0.0-dev.5_x64-setup.exe      (NSIS)
-AniDownloader_3.0.0-dev.5_aarch64.dmg
+AniDownloader-vX.Y.Z-linux-x86_64.flatpak
+anidownloaderd-vX.Y.Z-linux-x86_64.tar.gz
+AniDownloader_X.Y.Z_x64-setup.exe      (NSIS)
+AniDownloader_X.Y.Z_aarch64.dmg
 ```
 
 Pattern reali (vedi `.github/workflows/`):
@@ -275,7 +283,7 @@ bash ci/verify.sh   # vedi ci/Dockerfile
 
 ```bash
 # Download da GitHub Releases (sostituire TAG con la release desiderata)
-TAG=v3.0.0-dev.5
+TAG=vX.Y.Z
 curl -fsSL "https://github.com/lorenzo0932/AniDownloader/releases/download/$TAG/anidownloaderd-$TAG-linux-x86_64.tar.gz" \
   | tar xzf - -C ~/.local/share/anidownloader-headless/
 
@@ -291,7 +299,7 @@ curl -fsSL "https://github.com/lorenzo0932/AniDownloader/releases/download/$TAG/
 | Bundle desktop | `~/.local/bin/AniDownloader.flatpak` | — |
 | Binary headless | `~/.local/share/anidownloader-headless/anidownloaderd` | — |
 | Config | `~/.config/AniDownloader/` | `%APPDATA%\AniDownloader\` |
-| Log | `~/.config/AniDownloader/logs/` | `%APPDATA%\AniDownloader\logs\` |
+| Log | `~/.cache/AniDownloader/` | `%LOCALAPPDATA%\AniDownloader\` |
 | Desktop entry (headless) | `~/.local/share/applications/` | Start Menu |
 | Systemd | `~/.config/systemd/user/` | — |
 | Icon | `~/.local/share/icons/` | — |

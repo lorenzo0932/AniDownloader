@@ -58,7 +58,7 @@ Artefatti generati da GitHub Actions su tag `v*` e caricati su Releases.
 ```bash
 ./install.sh              # Menu interattivo, last release STABILE
 ./install.sh --dev        # Canale pre-release (tag vX.Y.Z-dev.N, fallback a stabile)
-./install.sh v2.0.0       # Versione specifica
+./install.sh vX.Y.Z       # Versione specifica
 ```
 
 Opzioni: 1) Solo Desktop (Flatpak)  2) Solo Headless (daemon + systemd)  3) Entrambi (default)
@@ -67,8 +67,8 @@ Se GitHub non é raggiungibile, fa build locale (`--local`; Flatpak solo x86_64)
 ## Architettura
 
 - **Dual delivery**: stessa UI Svelte 5 via browser (`--web`) o app nativa
-  (Tauri v2 wrapper). Frontend embedded nel binario: un solo file
-  `.service`/daemon, zero dipendenze runtime.
+  (Tauri v2 wrapper). Frontend embedded nel binario: un solo demone
+  `.service`; il runtime richiede comunque `aria2c` e `ffmpeg`.
 - **Backend C++20** single-target: `AniDownloader` (httplib, cpr,
   nlohmann-json, OpenSSL).
 - **Modalitá silent** (nessun flag): pipeline sequenziale, niente dashboard.
@@ -87,7 +87,8 @@ Se GitHub non é raggiungibile, fa build locale (`--local`; Flatpak solo x86_64)
 
 ## Test
 
-- `test_core`, `test_media`, `test_scraper` (CTest) + `smoke_e2e` (bash).
+- `test_core`, `test_media`, `test_scraper`, `test_workdir` (CTest) +
+  `smoke_e2e` (bash).
 - Verifica mirata durante lo sviluppo (`ctest -R <target>`, `bash -n`); suite
   completa solo a fine feature.
 
@@ -136,7 +137,12 @@ come commit locali, il push resta su richiesta dell'utente.
 ## Configurazione
 
 - `~/.config/AniDownloader/config.json` (auto-generato all'avvio).
-- `~/.config/AniDownloader/series_data.json` (dati utente, **gitignorato**).
+- `~/.config/AniDownloader/series_data.db` (fonte autorevole, SQLite).
+- `~/.config/AniDownloader/series_data.json` (export e fallback di rollback, **gitignorato**).
+- Cache/workdir: `$XDG_CACHE_HOME/AniDownloader` (`thumbs/`, `work/`); RAM in
+  `$XDG_RUNTIME_DIR/AniDownloader/work`, fallback `/dev/shm/AniDownloader/work`.
+- macOS: config/dati in `~/Library/Application Support/AniDownloader`, cache in
+  `~/Library/Caches/AniDownloader`, log in `~/Library/Logs/AniDownloader`.
 - `PathHelper` calcola percorsi cross-platform (XDG su Linux, APPDATA su Windows).
 
 ## Sessioni opencode — economia di contesto

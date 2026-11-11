@@ -82,10 +82,10 @@ if (it != files.end()) {
 | Componente | Route | Descrizione |
 |------------|-------|-------------|
 | `App.svelte` | — | Shell con sidebar, routing lato client |
-| `StatusPage.svelte` | `/` | Home: download live, fasi, riepilogo attività, ultime aggiunte/scaricate |
+| `StatusPage.svelte` | `/` | Home: `OverallHeader` + `RunCard` (run rilevante, task live), righe recenti, event log manuale |
 | `DashboardPage.svelte` | `/gestione` | CRUD serie con griglia card / tabella densa, poster |
 | `DiscoverPage.svelte` | `/scopri` | Ricerca/filtri AnimeWorld, griglia, tooltip, Aggiungi |
-| `AttivitaPage.svelte` | `/attivita` | Attività per episodio: tab In corso/Storico, filtri, dettagli, "Riprova" |
+| `AttivitaPage.svelte` | `/attivita` | Viste Avvii/Episodi, tab Recenti/Problemi/Storico, filtro origine, espansione run/job |
 | `ConfigPage.svelte` | `/config` | Configurazione app + sezione Avanzate (coda dei controlli, sola lettura) |
 | `LogsPage.svelte` | `/logs` | Log viewer |
 
@@ -109,7 +109,12 @@ Le vecchie route `/coda` e `/pipeline` reindirizzano a `/attivita`
 | `RecentSeriesRow.svelte` | Riga delle sezioni “Ultime” in Home |
 | `ProgressList.svelte` / `TaskItem.svelte` | Avanzamento download per episodio |
 | `DownloadEventLog.svelte` | Cronologia eventi del run manuale |
-| `OverallHeader.svelte` | Stato globale del run |
+| `OverallHeader.svelte` | Stato globale del run, SSE, Avvia/Ferma, coda e problemi |
+| `RunCard.svelte` | Card dell'avvio rilevante in Home: barra complessiva, task live con percentuali, CTA Attività |
+| `RunRow.svelte` | Riga di un avvio in Attività: origine, conteggi, barra, espansione nei job, "Riprova tutti" |
+| `JobRow.svelte` | Riga episodio in Attività: locandina, `StateChip`, `JobStepper`, dettagli, "Riprova" |
+| `JobStepper.svelte` | Stepper delle fasi del job (in coda → download → attesa → conversione → completato) |
+| `StateChip.svelte` | Etichetta e colore unici dello stato episodio (con orario di retry) |
 | `DirectoryBrowser.svelte` | File picker: ricerca, dischi, preferiti, creazione, rimozione |
 | `ConfirmModal.svelte` | Modale conferma |
 | `Dropdown.svelte` | Dropdown riutilizzabile |
@@ -165,19 +170,20 @@ X in info e Annulla/Salva nel form. Su mobile la locandina ha sfondo ambient
 
 `/attivita` unifica le ex pagine Coda e Pipeline in linguaggio utente.
 
-- **Tab**: "In corso" (job per episodio in `queued_download`, `downloading`,
-  `downloaded_waiting_conversion`, `converting`, `retry_wait`, `failed`,
-  `interrupted`) e "Storico" (`completed`).
-- **Filtri**: Tutti / In corso / Errori / Completati. I filtri di esito
-  portano alla tab coerente (Errori/In corso → In corso, Completati →
-  Storico), così non si ottengono liste vuote per costruzione.
-- **Riga**: "Serie · Ep. N" + stato in italiano (In attesa, In download, In
-  conversione, In attesa conversione, Errore, Completato, Interrotto) + tempo
-  relativo da `aggiornato_il`. Dettagli espandibili (bottone con
-  `aria-expanded`) con JobKey, origine (background/interattivo), tentativi ed
-  errore.
-- **Riprova**: sui job `failed` chiama `POST /api/pipeline/retry` e ricarica
-  la lista; i tentativi non vengono azzerati. Polling leggero ogni 5 s.
+- **Viste**: "Avvii" (default) elenca i run con origine, ora, conteggi e barra;
+  "Episodi" elenca i job per episodio. La prima legge `GET /api/runs`, la
+  seconda `GET /api/pipeline`.
+- **Tab**: "Recenti" (in corso o conclusi nelle ultime 24h), "Problemi"
+  (errori/interruzioni, anche oltre 24h; sui run mostra il contatore) e
+  "Storico" (conclusi da più di 24h).
+- **Filtro origine** (solo vista Avvii): Tutte / Manuale / Automatico.
+- **Espansione**: un avvio carica i suoi job da `GET /api/runs/:id` e offre
+  "Riprova tutti" sui falliti (`POST /api/runs/:id/retry-failed`); un episodio
+  mostra dettagli (origine, tentativi, errore) e "Riprova"
+  (`POST /api/pipeline/retry`). I tentativi non vengono azzerati.
+- **Deep link**: `?run=<id>` apre l'avvio, `?vista=episodi` la vista episodi.
+- **Polling** ogni 5 s (sospeso a pagina nascosta); i run aperti espansi vengono
+  ricaricati a ogni giro.
 - **Accessibilità**: tablist/tab con `aria-selected`, filtri con
   `aria-pressed`, focus visibile, messaggi di errore in `role="alert"`.
 
@@ -185,13 +191,21 @@ La coda dei controlli (`tasks`) non è più una pagina: vive in Impostazioni →
 **Avanzate** (`QueuePage` con `readonly` e `embedded`), sola lettura e
 "Aggiorna".
 
-### Home: riepilogo attività
+### Home: avvio rilevante e attività live
 
-Sotto l'header della Home una riga mostra "In coda: N · download: M ·
-conversione: K" (in coda = `queued_download` + `retry_wait`; conversione =
-`converting` + `downloaded_waiting_conversion`) con link a `/attivita`. I dati
-arrivano da `GET /api/pipeline` al mount, ogni 10 s e sugli eventi SSE `done`/
-`queue`; il resto del layout della Home non cambia.
+- **OverallHeader**: stato globale, connessione SSE, Avvia/Ferma, coda totale
+  e problemi aperti, con link ad Attività.
+- **RunCard**: legge `GET /api/overview`, che sceglie il run più utile (in
+  corso; altrimenti il più recente con episodi; altrimenti il più recente).
+  Mostra origine, stato, durata, barra complessiva (completati + frazione live
+  dei task attivi sul totale) e i task live con serie, episodio, fase e
+  percentuale.
+- **Aggiornamento**: `overview` al mount, polling ogni 3 s quando la pagina è
+  visibile e refresh con debounce (600 ms) sugli eventi SSE `progress`/
+  `finished`/`done`/`queue`. I task live arrivano anche dai check automatici,
+  non solo dal run manuale.
+- **Sotto la card**: righe Ultime aggiunte/scaricate e `DownloadEventLog` del
+  run manuale.
 
 ### Home: righe recenti cliccabili
 
@@ -224,6 +238,7 @@ export const api = {
     notifications: { list, read },
     queue: { list, retry },
     pipeline: { list, retry },
+    runs: { overview, list, get, retryFailed },
     storage: { info, cleanup },
     sse: () => new EventSource('/api/download/events'),
 };

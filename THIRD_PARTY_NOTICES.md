@@ -2,8 +2,9 @@
 
 AniDownloader is licensed under the MIT License — see the `LICENSE` file.
 This document lists the third-party components used to build AniDownloader,
-together with their licenses and copyright holders. The full license texts
-are in the `licenses/` directory.
+together with their licenses and copyright holders. The license texts
+currently available are in the `licenses/` directory; known gaps are noted
+below.
 
 ## Components linked or embedded (built into the application)
 
@@ -23,18 +24,30 @@ are in the `licenses/` directory.
 | Vite (build tool) | 6.x | https://github.com/vitejs/vite | MIT | Vite contributors |
 | @sveltejs/vite-plugin-svelte | 5.x | https://github.com/sveltejs/vite-plugin-svelte | MIT | Svelte contributors |
 
-## Runtime tools (not bundled, installed separately by the user)
+## Runtime tools (external; bundled only in the Linux Flatpak)
 
-These programs are invoked as external processes; they are NOT
-distributed with AniDownloader.
+These programs are invoked as external processes and are not shipped in the
+native packages: the user installs them separately. The Linux Flatpak bundle is
+the exception and compiles aria2 from source (see below).
 
 | Component | Source | License | Copyright |
 |---|---|---|---|
 | aria2 (multi-thread download) | https://github.com/aria2/aria2 | GPL-2.0-or-later | aria2 project |
 | FFmpeg / ffprobe (conversion and verification) | https://ffmpeg.org | LGPL-2.1-or-later (or GPL builds) | FFmpeg developers |
 
-License texts for all components above are available in the `licenses/`
-directory:
+The `com.anidownloader.desktop` Flatpak bundle also includes components built
+from the manifest: **aria2 1.37.0** (`flatpak/aria2.json`) and
+**libayatana-appindicator** with the module dependencies
+(`flatpak/libayatana-appindicator-gtk3.json`: libdbusmenu, ayatana-ido,
+libayatana-indicator). The applicable licenses are those declared by the
+respective manifests and flatpak-builder modules.
+
+**NOT VERIFIED (NON VERIFICATO)**: the full license texts for
+libayatana-appindicator/libdbusmenu/ayatana-ido/libayatana-indicator are not
+present in `licenses/`; they must be collected upstream before the Flatpak
+bundle notice can be considered complete.
+
+License texts currently available in `licenses/`:
 
 - `licenses/mit.txt`
 - `licenses/apache-2.0.txt`

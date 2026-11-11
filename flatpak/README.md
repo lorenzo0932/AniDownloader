@@ -67,7 +67,7 @@ flatpak build-bundle build-repo AniDownloader.flatpak com.anidownloader.desktop
 ## Installazione e lancio
 
 ```bash
-flatpak --user install ./AniDownloader.flatpak
+flatpak --user install --reinstall ./AniDownloader.flatpak
 flatpak run com.anidownloader.desktop
 ```
 

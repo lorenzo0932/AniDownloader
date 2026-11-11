@@ -30,7 +30,7 @@ Stato dell'applicazione.
 
 ```json
 {
-    "version": "3.0.0-dev.4",
+    "version": "<versione>",
     "port": 8989,
     "downloadRunning": false,
     "sseClients": 0
@@ -38,7 +38,8 @@ Stato dell'applicazione.
 ```
 
 Questa risposta non ha il campo `success`: è l'unico endpoint informativo
-storico che restituisce l'oggetto nudo.
+storico che restituisce l'oggetto nudo. `version` è la versione compilata
+(`ANIDOWNLOADER_VERSION` in `CMakeLists.txt`).
 
 ### `GET /api/scheduler/status` (dal 3.0)
 
@@ -147,10 +148,11 @@ leggibile.
 
 ### `GET /api/storage` (dal 3.0)
 
-Fotografia on-demand dello spazio: disco di output, cache miniature, residui
-`.aria2`/`.part` e occupazione per serie (ordinate per byte decrescenti).
-La scansione legge le cartelle delle serie del repository: nessun path
-arbitrario dal client.
+Fotografia on-demand dello spazio: disco della serie più pesante, cache
+miniature, residui `.aria2`/`.part` e occupazione per serie (ordinate per byte
+decrescenti). La scansione legge le cartelle delle serie del repository: nessun
+path arbitrario dal client. `freeBytes`/`totalBytes` sono misurati sulla serie
+con più byte; senza serie configurate si usa `~`.
 
 ```json
 {
@@ -245,10 +247,12 @@ Campi del run nelle risposte: `id`, `origine` (`manuale`/`automatico`),
 
 ### `GET /api/overview` (dal 3.0)
 
-Per la Home: l'ultimo run, la coda globale e i problemi aperti.
-`run` è `null` se non esiste alcun run; `corrente` è il job attivo
-(`downloading`/`converting`) o il primo in `queued_download`/`retry_wait`
-del run.
+Per la Home: il **run più utile** — in corso; altrimenti il più recente con
+episodi (`totale > 0`); altrimenti il più recente — la coda globale e i
+problemi aperti. `run` è `null` se non esiste alcun run; `corrente` è il job
+attivo (`downloading`/`converting`) o il primo in
+`queued_download`/`retry_wait` del run. `tasks` è presente quando `run` non è
+`null` ed elenca i task live (anche dei check automatici).
 
 ```json
 {
@@ -257,11 +261,21 @@ del run.
             "avviato_il": "2026-11-08T17:03:00.000Z", "concluso_il": null,
             "stato": "in_corso", "totale": 7, "completati": 3,
             "non_riusciti": 1, "saltati": 0, "in_corso": 3, "percent": 57,
-            "corrente": {"serie": "Psyren", "episodio": 4, "fase": "converting"}},
+            "corrente": {"serie": "Psyren", "episodio": 4, "fase": "converting"},
+            "tasks": [
+                {"key": "[\"Psyren\",4]", "seriesName": "Psyren", "episode": 4,
+                 "phase": "converting", "percent": 42, "detail": "Conversione 42%"}
+            ]},
     "coda": {"queued": 2, "downloading": 1, "converting": 1, "retry": 0, "totale": 4},
     "problemi": {"non_riusciti": 1, "interrotti": 0}
 }
 ```
+
+Campi di `tasks[]`: `key` (opaco, coppia serie/episodio), `seriesName`,
+`episode`, `phase` (fase osservativa, es. `downloading`, `converting`),
+`percent` (`-1` se non misurabile) e `detail` (testo per la UI). La mappa è
+popolata sia dal run manuale sia dai check automatici; viene svuotata all'avvio
+di un nuovo run/check e ogni voce è rimossa al termine dell'episodio.
 
 Nota: `coda.queued` include anche `downloaded_waiting_conversion`; la somma
 dei campi è `coda.totale`. `coda` e `problemi` sono globali (i job non
@@ -743,8 +757,7 @@ Legge la configurazione corrente.
     "success": true,
     "config": {
         "json_file_path": "/home/user/.config/AniDownloader/series_data.json",
-        "output_dir": "/home/user/Video",
-        "log_file_path": "/home/user/.config/AniDownloader/logs/app.log",
+        "log_file_path": "/home/user/.cache/AniDownloader/serie_critical_errors.log",
         "is_json_path_customized": false,
         "max_network_retries": 3,
         "retry_delay_ms": 2000,
@@ -788,6 +801,8 @@ Risposta:
 
 Le chiavi di primo livello sono sostituite in blocco: per aggiornare
 `scheduling` o `notifiche` inviare l'oggetto completo, non solo un campo.
+Il PUT cancella un'eventuale chiave `output_dir` residua: non governa più
+alcun download (la destinazione è `series.path`).
 
 ---
 
