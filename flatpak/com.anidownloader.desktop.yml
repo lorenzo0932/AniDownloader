@@ -104,7 +104,7 @@ modules:
         tag: 1.10.5
         dest: deps/cpr-src
       - type: archive
-        url: https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.18.1.tar.gz
+        url: https://codeload.github.com/yhirose/cpp-httplib/tar.gz/refs/tags/v0.18.1
         sha256: 405abd8170f2a446fc8612ac635d0db5947c0d2e156e32603403a4496255ff00
         dest: deps/httplib-src
     build-commands:
