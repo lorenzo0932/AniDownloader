@@ -36,8 +36,9 @@ __pycache__/
 include/web/embedded_web.hpp
 src/web/embedded_web_data.cpp
 
-# Ignore the series_data.json file
+# Ignore the series_data.json file and its DB (source of truth)
 series_data.json
+series_data.db*
 
 # AppImage extraction artifact
 squashfs-root/
