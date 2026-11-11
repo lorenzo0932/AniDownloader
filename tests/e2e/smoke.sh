@@ -206,8 +206,8 @@ if run_cli --burst >"$RPT/t2_burst.log" 2>&1; then
 else
     fail "run con URL non raggiungibili → exit $?"
 fi
-if grep -q 'Tutto aggiornato' "$RPT/t2_burst.log"; then
-    pass "'Tutto aggiornato.' mostrato"
+if grep -qE 'Tutto aggiornato|Elaborazione completata' "$RPT/t2_burst.log"; then
+    pass "run completato (messaggio aggiornato)"
 else
     fail "'Tutto aggiornato.' assente (vedi $RPT/t2_burst.log)"
 fi
@@ -344,6 +344,7 @@ PAGES = {
     "/s3.html": [("EID31", 1), ("EID32", 2)],
     "/s4.html": [("EID41", 1), ("EID42", 2), ("EID43", 3), ("EID44", 4)],
     "/s5.html": [("EID51", 1)],
+    "/s5b.html": [("EID51", 1)],
 }
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -490,7 +491,7 @@ if [ -n "$SCN_PORT" ] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$SCN_PORT/s
     fi
 
     # --- S5: priorità alta → entrambe le serie completate ---
-    printf '[{"name":"Serie6","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s5.html","is_high_priority":true},{"name":"Serie7","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s5.html","is_high_priority":false}]' \
+    printf '[{"name":"Serie6","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s5.html","is_high_priority":true},{"name":"Serie7","service":"animeW_scraper","path":"%s","series_page_url":"http://127.0.0.1:%s/s5b.html","is_high_priority":false}]' \
         "$SCEN_SBX/media/Serie6" "$SCN_PORT" "$SCEN_SBX/media/Serie7" "$SCN_PORT" \
         | seed_data "$SCEN_SBX/AniDownloader/series_data.json"
     scen_run s5

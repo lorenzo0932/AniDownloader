@@ -118,7 +118,8 @@ namespace Core {
     PipelineJobStore::EsitoEnqueue
     PipelineJobStore::enqueue(const std::string& jobKey, const std::string& serie, int episodio,
                               const std::string& origine, int priorita, const std::string& payload,
-                              const std::string& seriePath, const std::string& runId) {
+                              const std::string& seriePath, const std::string& runId,
+                              const std::string& faseIniziale, const std::string& filePath) {
         EsitoEnqueue esito;
         Database db(m_dbPath);
         if (!db.isOpen()) {
@@ -165,6 +166,23 @@ namespace Core {
             } else if (interattivo) {
                 esito.promosso = true;
             }
+            // Conversione locale pianificata su un job già presente (es. in
+            // retry da un run precedente): portalo direttamente alla fase di
+            // conversione e registra il file sorgente. Mai toccare un job
+            // download/conversione già attivo.
+            if (faseIniziale != "queued_download") {
+                auto conv =
+                    db.prepare("UPDATE pipeline_jobs SET fase = ?, file_path = ?, errore = '', "
+                               "aggiornato_il = strftime('%Y-%m-%dT%H:%M:%fZ','now') "
+                               "WHERE id = ? AND fase IN ('queued_download', 'retry_wait', "
+                               "'downloaded_waiting_conversion');");
+                if (!conv.valid() || !conv.bindText(1, faseIniziale) ||
+                    !conv.bindText(2, filePath) || !conv.bindInt(3, esito.id) ||
+                    (conv.step(), conv.hasError())) {
+                    m_lastError = conv.lastError();
+                    return esito;
+                }
+            }
             if (!tx.commit()) {
                 m_lastError = db.lastError();
                 return esito;
@@ -172,11 +190,12 @@ namespace Core {
             return esito;
         }
         auto ins = db.prepare("INSERT INTO pipeline_jobs(job_key, serie, episodio, origine, "
-                              "priorita, payload, serie_path, run_id) "
-                              "VALUES (?, ?, ?, ?, ?, ?, ?, ?);");
+                              "priorita, payload, serie_path, run_id, fase, file_path) "
+                              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
         if (!ins.valid() || !ins.bindText(1, jobKey) || !ins.bindText(2, serie) ||
             !ins.bindInt(3, episodio) || !ins.bindText(4, origine) || !ins.bindInt(5, priorita) ||
             !ins.bindText(6, payload) || !ins.bindText(7, seriePath) || !ins.bindText(8, runId) ||
+            !ins.bindText(9, faseIniziale) || !ins.bindText(10, filePath) ||
             (ins.step(), ins.hasError())) {
             m_lastError = ins.lastError();
             return esito;
