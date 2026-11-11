@@ -41,12 +41,15 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         # 2. Ottimizzazioni GCC/Clang
         # -O3: Massima ottimizzazione
         # -pipe: Usa i pipe invece dei file temporanei (compilazione più veloce)
-        # -fno-plt: Riduce l'overhead delle chiamate a librerie esterne
+        # -fno-plt: solo GCC; Apple Clang lo rifiuta (-Werror su cpr).
         # MAI -march=native di default: i binari distribuiti (CI/release)
         # devono girare su CPU generiche. Con native, il runner compila per
         # la SUA cpu (es. AVX-512) e il binario muore di SIGILL altrove
         # (caso reale: artefatti v3.0.0-dev.3 avvelenati, ritirati).
-        add_compile_options(-O3 -pipe -fno-plt)
+        add_compile_options(-O3 -pipe)
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            add_compile_options(-fno-plt)
+        endif()
         # Solo build personali non distribuite:
         # cmake -DANIDOWNLOADER_NATIVE_MARCH=ON ...
         option(ANIDOWNLOADER_NATIVE_MARCH "Ottimizza per la CPU locale (binario NON distribuibile)" OFF)
