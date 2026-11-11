@@ -41,14 +41,14 @@ AniDownloader nasce per risolvere questi problemi:
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🎯**Scrapers nativi**          | AnimeWorld (`AnimeWScraper`), AnimeUnity (`AnimeUScraper`). C++ puro, leggero, senza dipendenze esterne.                              |
 | ⚡**Download parallelo**       | Fino a 16 connessioni per file con aria2c. Concorrenza multi-serie configurabile automaticamente in base alla CPU.                           |
-| 🎞️**HEVC automatico**        | Conversione post-download con FFmpeg. Uso intelligente di`/dev/shm` se la RAM è sufficiente. Chunking parallelo per encoding più veloce. |
+| 🎞️**HEVC automatico**        | Conversione post-download con FFmpeg. Workdir scelto tra RAM, cartella serie e cache in base allo spazio stimato; publish atomico del file finale. Chunking parallelo per encoding più veloce. |
 | 🌐**Web UI moderna**           | Svelte 5 SPA con dashboard live in tempo reale (SSE), gestione serie CRUD, tema dark/light, log viewer.                                      |
 | 🖥️**App nativa**             | Tauri v2: tray icon, notifiche desktop, finestra dedicata. Packaging **Flatpak** (Linux) / NSIS (.exe, Windows) / .dmg (macOS). AppImage deprecata.                 |
 | 🔄**Aggiornamenti automatici** | Check versioni via GitHub API con confronto semver.                                                                                          |
 | 🔔**Notifiche desktop**        | Completamento, errori e skip segnalati nativamente dal sistema.                                                                              |
-| 🕐**Automazione systemd**      | Timer per controllo periodico (default ogni 15 minuti). Servizio web permanente.                                                             |
+| 🕐**Automazione integrata**    | Scheduler interno al demone (default ogni 15 minuti, configurabile). Il servizio systemd resta per l'avvio automatico.                        |
 | 💾**Ripresa crash**            | Rilevamento file parziali (.aria2 residui), verifica integrità con ffprobe, cleanup automatico.                                             |
-| 📦**Singolo binario**          | Frontend embedded nel C++: un solo file`.service` o `.AppImage`, zero dipendenze runtime.                                                |
+| 📦**Frontend embedded**        | La SPA Svelte è compilata dentro il binario C++: niente server statico separato. Runtime richiesto: **aria2c** e **ffmpeg**. Desktop Linux = Flatpak, headless = tar.gz. |
 
 ---
 
@@ -86,9 +86,12 @@ In alternativa, installa il Flatpak manualmente (doppio click sul `.flatpak`
 scaricato dalla release, oppure):
 
 ```bash
-flatpak --user install ./AniDownloader-<versione>-linux-x86_64.flatpak
+flatpak --user install --reinstall ./AniDownloader-<versione>-linux-x86_64.flatpak
 flatpak run com.anidownloader.desktop
 ```
+
+`--reinstall` serve anche per **aggiornare** un bundle già installato: senza
+questa opzione Flatpak rifiuta un bundle locale con un commit diverso.
 
 **Windows** — scarica `AniDownloader_<versione>_x64-setup.exe` dalle Releases ed
 eseguilo con doppio click (installer NSIS, senza privilegi di amministratore).
@@ -290,7 +293,7 @@ Approfondimenti: [docs/ARCHITETTURA.md](docs/ARCHITETTURA.md).
 
 ## Sviluppo
 
-- **Branch**: `main` (release), `dev` (integrazione pre-release, base dei branch di feature/fix). Convenzione: ogni funzionalità/fix in `feat/<num>-<slug>` / `fix/<slug>` creato da `dev`, merge squash in `dev`, branch eliminato dopo il merge; niente branch per housekeeping/CI/docs (commit diretti su dev). I piani e gli artefatti AI vivono solo in locale (`local/reference`, mai pushato).
+- **Branch**: `main` (release), `dev` (integrazione pre-release, base dei branch di feature/fix). Convenzione: ogni funzionalità/fix in `feat/<num>-<slug>` / `fix/<slug>` creato da `dev`, merge squash in `dev`, branch eliminato dopo il merge; niente branch per housekeeping/CI/docs (commit diretti su dev). I piani e gli artefatti AI vivono solo in `plan/` e `.opencode/` (gitignored, mai pushati). Il merge avviene in locale su `dev`; push, PR e operazioni remote solo su richiesta esplicita.
 - **Commit**: `tipo(area): messaggio` — es. `feat(core): parallel planning`, `fix(web): sse reconnect`
 - **Aree**: `core` (C++ engine), `web` (Svelte), `tauri` (desktop), `config`, `scrapers`
 
@@ -303,6 +306,16 @@ revisionata e approvata manualmente.
 ---
 
 ## Roadmap
+
+### Fatto in 3.0
+
+- [X] SQLite come fonte autorevole (serie, coda, notifiche) con export JSON di rollback
+- [X] Scheduler interno + coda persistente (ADR-004), niente timer OS
+- [X] Modello Run e API `/api/overview` / `/api/runs`
+- [X] Workdir a tre livelli, publish atomico e cleanup dei residui
+- [X] Home e Attività live: run rilevante, episodi, percentuali via SSE
+- [X] Notifiche "pronto da guardare" con badge persistente
+- [X] Flatpak come canale desktop Linux (AppImage deprecata)
 
 ### Fatto in 2.0
 
@@ -321,7 +334,7 @@ revisionata e approvata manualmente.
 
 ### In arrivo
 
-- [ ] Fallback automatico su fonti alternative
+- [ ] Fallback automatico su fonti alternative (`alternate_sources` è già persistito, la selezione non è ancora attiva)
 - [ ] Editor UI per fonti alternative
 - [ ] Supporto più servizi di streaming
 

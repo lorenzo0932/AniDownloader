@@ -67,8 +67,13 @@ Le classi scraper (`BaseScraper`, `AnimeWScraper`, `AnimeUScraper`) vivono in
             ├── MediaProbe → check esistente
             ├── aria2c → download
             ├── MediaProbe → verifica
-            └── [se H265] ffmpeg → conversione
+            ├── scelta workdir: RAM → cartella serie → cache (stima O(1))
+            ├── [se H265] ffmpeg → conversione (chunk o passaggio singolo)
+            └── publish atomico (rename, o temp accanto al finale)
 ```
+
+All'avvio del run `cleanupOrphanWorkDirs()` rimuove i residui
+`.anidown_proc_*` / `.anidown_publish_*` da serie, RAM e cache.
 
 ## Flusso dati (Web mode)
 
@@ -80,7 +85,8 @@ Le classi scraper (`BaseScraper`, `AnimeWScraper`, `AnimeUScraper`) vivono in
      └── handler "check" → CheckRunner (giro di controllo serie)
 5. POST /api/download/start → run manuale (ExecutionEngine) con callback SSE
 6. Ogni progress/result/evento coda → broadcastSseEvent()
-7. Frontend aggiorna Home, Gestione e log in tempo reale
+7. GET /api/overview → run rilevante + task live (anche dai check automatici)
+8. Frontend aggiorna Home, Gestione, Attività e log in tempo reale
 ```
 
 Run manuale e scheduler sono **due percorsi d'ingresso distinti**, ma nel
@@ -110,7 +116,8 @@ automatico (`background`) — ed è l'unità che Home e Attività leggono.
 - I job preesistenti alla v6 finiscono nel run sintetico `legacy` (etichetta
   UI "Avvio precedente"), con stato `completato_con_errori` se avevano
   fallimenti, altrimenti `completato`.
-- API: `GET /api/overview` (ultimo run + coda + problemi),
+- API: `GET /api/overview` (run più utile — in corso, altrimenti ultimo con
+  episodi, altrimenti più recente — con i task live, coda e problemi),
   `GET /api/runs` (finestra/origine/stato, paginato), `GET /api/runs/{id}`
   (dettaglio job), `POST /api/runs/{id}/retry-failed`. `/api/pipeline` accetta
   `run_id`, `offset`, `fase=problemi` e `window=recenti|storico|tutti`.
@@ -150,6 +157,8 @@ frontend esterne.
 
 ## Cross-platform
 
-- `Config::PathHelper` astrae i path (XDG su Linux, APPDATA su Windows)- `ScraperUtils::Q()` quoting shell differente per POSIX/Windows
+- `Config::PathHelper` astrae i path (XDG su Linux, APPDATA su Windows,
+  `~/Library` su macOS)
+- `ScraperUtils::Q()` quoting shell differente per POSIX/Windows
 - `ScraperUtils::DEVNULL()` redirezione output nulla cross-platform
 - Autostart: systemd (Linux), Task Scheduler (Windows), LaunchAgent (macOS)

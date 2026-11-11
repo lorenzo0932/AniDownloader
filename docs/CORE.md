@@ -101,7 +101,23 @@ ffmpeg -i input -c:v libx265 -crf 25 -preset veryfast -threads N output
 4. Verifica: ffprobe durata vs. originale
 ```
 
-Il work directory usa `/dev/shm` (RAM disk) se RAM disponibile > 55%.
+### Workdir e publish atomico
+
+Il workdir di conversione è scelto con `chooseWorkRoot()` in quest'ordine:
+`$XDG_RUNTIME_DIR/AniDownloader/work` → `/dev/shm/AniDownloader/work` →
+cartella della serie → `$XDG_CACHE_HOME/AniDownloader/work`. Ogni candidata
+deve esistere e avere spazio libero sufficiente; la scelta usa `fs::space`
+(O(1), nessuna scansione) e una stima O(1) dai byte dell'input:
+`estimateConversionBytes()` = **2.86×** in modalità chunk, **1.56×** a
+passaggio singolo (fattore di lavoro + 30% di margine).
+
+Il risultato viene pubblicato in modo atomico: se il workdir è sullo stesso
+device del file finale si usa `rename`; altrimenti si copia in un temp
+`.anidown_publish_<id>.tmp` accanto al finale e poi si rinomina. Il file
+precedente resta intatto fino al rename, quindi un crash non può lasciare un
+finale troncato. All'avvio del run `cleanupOrphanWorkDirs()` rimuove i residui
+`.anidown_proc_*` e `.anidown_publish_*` dalle cartelle serie, dalle radici RAM
+e dalla cache.
 
 ### Semaforo conversioni
 
@@ -246,6 +262,10 @@ con `cpr` per HTTP GET. Confronto semver rigoroso.
 Sostituisce i timer OS. Un thread di tick valuta ogni 30 s se il controllo
 periodico è maturo e accoda un task `check`; l'esecuzione è del `WorkerPool`.
 Intervallo da config `scheduling.intervalloMinuti` (default 15, range 5–1440).
+Prima dell'accodamento `checkMaturo()` verifica che non esistano già check non
+terminali (`nonTerminalCount("check")`, attesa **e** attivo): mai due giri
+contemporanei. Al primo tick dopo avvio o risveglio c'è un catch-up immediato,
+senza arretrati.
 
 ```cpp
 Scheduler scheduler(config, jsonPath);
@@ -262,7 +282,9 @@ Stop cooperativo: niente nuovi giri, attesa di quello in corso, mai kill.
 
 N thread che reclamano task dalla coda ed eseguono l'handler registrato per
 `kind`. Retry con backoff progressivo 5'/15'/1h, poi `fallito` definitivo.
-Eventi per SSE: `avviato`, `completato`, `riprova`, `fallito`.
+`Occupato` è una **contesa transitoria** (es. `exec.lock` di una CLI manuale):
+non consuma tentativi e il task viene riprogrammato a 90 s. Eventi per SSE:
+`avviato`, `completato`, `riprova`, `fallito`.
 
 ### QueueStore
 
@@ -283,7 +305,10 @@ dall'handler `check` dello scheduler: un solo punto di verità. Con repository
 condiviso evita due istanze con mutex separati sullo stesso file. Dopo il
 commit dello stato emette `onEpisodeReady(serie, episodio)` per ogni report
 riuscito con episodio > 0: è l'unico punto in cui nasce una notifica (la CLI
-passa un callback vuoto: è interattiva).
+passa un callback vuoto: è interattiva). Espone anche `onTaskActivity`
+(`TaskProgress`) e `onTaskFinished` per la Home live: la Web UI li usa per
+mostrare fase, percentuale e dettaglio senza toccare il `DownloadState` del
+run manuale.
 
 ### PipelineJobStore e PipelineCoordinator
 
@@ -318,6 +343,11 @@ concorrenti. L'interattivo ha precedenza per il turno successivo; il
 background aspetta se c'è un interattivo in attesa. Nessuna preemption: chi
 sta girando finisce il turno. `Guard` è RAII (rilascio anche su eccezione) e
 lo stato è esposto in `GET /api/scheduler/status` sotto `pipeline`.
+L'attesa del turno è interrompibile da un flag di abort **dedicato**, con
+polarità ABORT (nello Scheduler è `m_abort`, non `m_attivo`): se vale true
+`acquire()` ritorna un Guard che non possiede il turno e il check viene
+rimandato senza avviare nulla. Non passare flag che sono true durante il
+funzionamento normale.
 
 ### NotificationStore
 `include/core/NotificationStore.hpp` — `src/core/NotificationStore.cpp`

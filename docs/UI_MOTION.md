@@ -18,6 +18,23 @@ Non aggiungere durate numeriche o copie dei keyframe nei componenti.
 | `exit` | Chiusura overlay/pannelli (150ms) |
 | `stagger`, `staggerMax` | Sequenza delle liste, massimo 144ms di ritardo |
 
+## Indicatori live (progresso)
+
+`motion.css` definisce anche i keyframe del progresso "vivo": usano solo
+`transform`, `box-shadow` e `opacity`, quindi non provocano reflow.
+
+| Keyframe | Uso |
+|---|---|
+| `motion-ring` | Anello che si espande dal punto corrente dello stepper |
+| `motion-pop` | Pop breve del punto appena completato (una volta, non in loop) |
+| `motion-glow` | Respiro luminoso di punto/badge/barra in corso |
+| `motion-shimmer` | Riflesso su barre e connettori quando il valore avanza |
+
+`JobStepper` li applica a `current` (glow + ring) e `done` (pop + shimmer sul
+connettore); `RunCard`/`RunRow` a barre e badge "In corso". Sono **indicatori
+di stato live**: il loop è ammesso solo se legato a un elemento realmente
+attivo, mai su elementi a riposo o come decorazione.
+
 ## Regole
 
 - Pagine: `in:pageEnter|global`, per attivare l'ingresso anche dal router,
@@ -46,6 +63,8 @@ Non aggiungere durate numeriche o copie dei keyframe nei componenti.
   testo scorrevole e chiusura/azioni non comprimibili. Safe-area al posto di
   padding inferiori fissi. Verificare anche il resize con il dialogo già aperto.
 - Progressi: interpolare solo il valore della barra, senza rilanciare ingressi.
+  Shimmer e punta luminosa seguono lo stato attivo; spinner e badge "In corso"
+  restano spenti quando non c'è lavorazione.
 - Home in elaborazione: sezioni Conversione/Download affiancate, una colonna
   fino a 768px; Scaricati in attesa sotto. Percentuali separate; nessuna barra
   nell'attesa. Completati, Saltati e Da elaborare chiusi di default; Errori aperti.
@@ -63,13 +82,16 @@ Non aggiungere durate numeriche o copie dei keyframe nei componenti.
   nessuno scroll automatico per inseguire una card, nessuna durata fuori dai token.
 - Cronologia Home: orari e soli passaggi significativi; percentuali nei pannelli,
   non nel log. Autoscroll solo finché l'utente resta in fondo alla cronologia.
-- Evitare `transition: all`, ritardi proporzionali illimitati, rimbalzi e
-  animazioni continue diverse dagli indicatori di caricamento.
+- Evitare `transition: all`, ritardi proporzionali illimitati e rimbalzi.
+  Le animazioni continue sono ammesse solo come indicatori live di un elemento
+  attivo (barre, stepper, badge In corso), mai come decorazione o su elementi
+  a riposo.
 
 ## Accessibilità e verifica
 
-`prefers-reduced-motion` disabilita le animazioni CSS e azzera la durata delle
-primitive Svelte. La preferenza viene riletta quando parte una transizione.
+`prefers-reduced-motion` disabilita le animazioni CSS (incluse quelle di
+progresso: `animation: none !important`) e azzera la durata delle primitive
+Svelte. La preferenza viene riletta quando parte una transizione.
 Focus visibile, tastiera e azioni touch non dipendono dall'hover.
 
 Verificare nel browser anche i frame intermedi: cambi rapidi di vista,
