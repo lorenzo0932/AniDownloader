@@ -26,8 +26,8 @@ namespace Core {
     // nullopt = nessuna ha `neededBytes` liberi.
     std::optional<std::filesystem::path>
     chooseWorkRoot(const std::vector<std::filesystem::path>& ramRoots,
-                   const std::filesystem::path& seriesDir,
-                   const std::filesystem::path& cacheDir, std::uint64_t neededBytes);
+                   const std::filesystem::path& seriesDir, const std::filesystem::path& cacheDir,
+                   std::uint64_t neededBytes);
 
     struct ProcessResult {
         bool success = false;

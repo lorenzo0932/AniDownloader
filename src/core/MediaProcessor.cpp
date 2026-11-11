@@ -32,8 +32,8 @@ namespace Core {
 #ifdef _WIN32
             return a.root_name() == b.root_name();
 #else
-            struct stat sa {};
-            struct stat sb {};
+            struct stat sa{};
+            struct stat sb{};
             if (::stat(a.c_str(), &sa) != 0 || ::stat(b.c_str(), &sb) != 0)
                 return false;
             return sa.st_dev == sb.st_dev;
@@ -97,8 +97,8 @@ namespace Core {
                 return;
             for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
                 const auto name = it->path().filename().string();
-                const bool isProc = name.rfind(".anidown_proc_", 0) == 0 ||
-                                    name.rfind("anidown_proc_", 0) == 0;
+                const bool isProc =
+                    name.rfind(".anidown_proc_", 0) == 0 || name.rfind("anidown_proc_", 0) == 0;
                 const bool isPublish = name.rfind(".anidown_publish_", 0) == 0;
                 if (!isProc && !isPublish)
                     continue;
@@ -637,8 +637,8 @@ namespace Core {
                         if (ec) {
                             std::error_code rmEc;
                             fs::remove(publishTmp, rmEc);
-                            throw std::runtime_error(
-                                "Impossibile copiare file sul disco finale: " + ec.message());
+                            throw std::runtime_error("Impossibile copiare file sul disco finale: " +
+                                                     ec.message());
                         }
                         if (publishReplace(publishTmp.string(), inputPath, &publishErrno) !=
                             PublishStatus::Success) {
