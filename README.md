@@ -293,7 +293,7 @@ Approfondimenti: [docs/ARCHITETTURA.md](docs/ARCHITETTURA.md).
 
 ## Sviluppo
 
-- **Branch**: `main` (release), `dev` (integrazione pre-release, base dei branch di feature/fix). Convenzione: ogni funzionalità/fix in `feat/<num>-<slug>` / `fix/<slug>` creato da `dev`, merge squash in `dev`, branch eliminato dopo il merge; niente branch per housekeeping/CI/docs (commit diretti su dev). I piani e gli artefatti AI vivono solo in `plan/` e `.opencode/` (gitignored, mai pushati). Il merge avviene in locale su `dev`; push, PR e operazioni remote solo su richiesta esplicita.
+- **Branch**: `main` (release), `dev` (integrazione pre-release, base dei branch di feature/fix). Convenzione: ogni funzionalità/fix in `feat/<num>-<slug>` / `fix/<slug>` creato da `dev`, merge locale in `dev` (merge commit), branch eliminato dopo il merge; niente branch per housekeeping/CI/docs (commit diretti su dev). I piani e gli artefatti AI vivono solo in `plan/` e `.opencode/` (gitignored, mai pushati). Il merge avviene in locale su `dev`; push, PR e operazioni remote solo su richiesta esplicita.
 - **Commit**: `tipo(area): messaggio` — es. `feat(core): parallel planning`, `fix(web): sse reconnect`
 - **Aree**: `core` (C++ engine), `web` (Svelte), `tauri` (desktop), `config`, `scrapers`
 
