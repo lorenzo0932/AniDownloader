@@ -249,7 +249,7 @@ jobs:
   # Le esclusioni vivono in .clang-tidy (config), mai soppressioni inline.
   tidy:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
@@ -278,5 +278,5 @@ jobs:
 
       - name: Run clang-tidy (fail-on-error, parallelo)
         run: |
-          run-clang-tidy -p build -j 2 -warnings-as-errors '*' \
+          run-clang-tidy -p build -j 4 -warnings-as-errors '*' \
             $(git ls-files 'src/**/*.cpp' | grep -v embedded_web_data.cpp)

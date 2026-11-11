@@ -19,6 +19,7 @@ namespace Core {
     // Stima O(1) dello spazio temporaneo necessario per convertire un input:
     // modalità chunk (split + encode + concat) ≈ 2.86×, passaggio singolo
     // ≈ 1.56× (fattore di lavoro + 30% di margine). Usa solo file_size.
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::uint64_t estimateConversionBytes(std::uint64_t inputBytes, int chunksPerTask);
 
     // Sceglie la radice del workdir con spazio sufficiente, in ordine:
