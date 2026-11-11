@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-14]
+        os: [ubuntu-24.04, windows-2022, macos-26]
         include:
           - os: windows-2022
             cmake_args: -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
@@ -34,9 +34,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Xcode 15 (default macos-14) = libc++ 15: manca std::jthread e
-      # std::format è incompleto. L'immagine monta anche Xcode 16.x
-      # (libc++ 16+): selezioniamo l'ultimo disponibile.
+      # macOS 26 (arm64) monta Xcode 26.x; selezioniamo comunque l'ultimo
+      # disponibile: serve libc++ 16+ per std::jthread/std::format.
       - name: Use latest Xcode (macOS)
         if: runner.os == 'macOS'
         run: |

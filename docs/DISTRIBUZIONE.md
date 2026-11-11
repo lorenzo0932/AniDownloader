@@ -258,7 +258,7 @@ Pattern reali (vedi `.github/workflows/`):
 
 `.github/workflows/release.yml` (Windows/macOS + headless Linux):
 - Trigger: `tags: v*`
-- Matrix: `ubuntu-24.04`, `windows-2022`, `macos-14`
+- Matrix: `ubuntu-24.04`, `windows-2022`, `macos-26`
 - Toolchain **pinnata**: Rust `1.96.0` (`rust-toolchain.toml`), tauri-cli
   `2.11.4` (`package.json`), Node LTS — build riproducibile tra CI e locale.
 - Linux: build C++ → **CTest** → headless tar.gz (NON più AppImage).
