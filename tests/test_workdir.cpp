@@ -32,8 +32,7 @@ static void testEstimateConversionBytes() {
     CHECK(Core::estimateConversionBytes(100, 4) == 286);
     CHECK(Core::estimateConversionBytes(1000, 0) == 1560);
     CHECK(Core::estimateConversionBytes(1000, 2) == 2860);
-    CHECK(Core::estimateConversionBytes(1000, 2) >
-          Core::estimateConversionBytes(1000, 1));
+    CHECK(Core::estimateConversionBytes(1000, 2) > Core::estimateConversionBytes(1000, 1));
 }
 
 static void testChooseWorkRoot() {
