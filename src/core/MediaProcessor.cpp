@@ -41,6 +41,7 @@ namespace Core {
         }
     } // namespace
 
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     std::uint64_t estimateConversionBytes(std::uint64_t inputBytes, int chunksPerTask) {
         // 286/100 = 2.2 (lavoro) × 1.3 (margine); 156/100 = 1.2 × 1.3.
         // Aritmetica intera: gli input sono file size, nessun overflow.
@@ -431,7 +432,7 @@ namespace Core {
         if (!workRoot) {
             Logger::error(std::format("{}: spazio insufficiente per la conversione "
                                       "(servono ~{} MiB liberi tra RAM, cartella serie e cache)",
-                                      seriesName, needed / (1024 * 1024)));
+                                      seriesName, needed / (1024ULL * 1024ULL)));
             return false;
         }
         // Se il workdir non è sul device di destinazione, il publish copia il
@@ -440,7 +441,7 @@ namespace Core {
         if (dstSpace.freeBytes < inputSize + inputSize / 10) {
             Logger::error(std::format("{}: spazio insufficiente nella destinazione per il "
                                       "salvataggio (~{} MiB liberi richiesti)",
-                                      seriesName, inputSize / (1024 * 1024)));
+                                      seriesName, inputSize / (1024ULL * 1024ULL)));
             return false;
         }
 

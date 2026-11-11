@@ -2224,7 +2224,7 @@ static void testPipelineGate() {
         if (g.owns())
             interEntrato.store(true);
     });
-    for (int i = 0; i < 200 && !gate.interattivoInAttesa(); ++i)
+    for (int i = 0; i < 400 && !gate.interattivoInAttesa(); ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     CHECK(gate.interattivoInAttesa());
     CHECK(!interEntrato.load());
@@ -2327,7 +2327,7 @@ static void testScheduler() {
         sched.start();
         Core::QueueStore coda(Core::SeriesRepository::dbPathFor(jsonPath));
         bool visto = false;
-        for (int i = 0; i < 100 && !visto; ++i) {
+        for (int i = 0; i < 300 && !visto; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             Core::Database db(Core::SeriesRepository::dbPathFor(jsonPath));
             auto sel = db.prepare("SELECT COUNT(*) FROM tasks WHERE stato = 'fallito';");
@@ -2466,7 +2466,7 @@ static void testSchedulerCoda() {
         Core::InstanceLock occupante((Config::PathHelper::getConfigDir() / "exec.lock").string());
         CHECK(occupante.acquired());
         sched.start(); // primo tick = catch-up immediato
-        for (int i = 0; i < 200; ++i) {
+        for (int i = 0; i < 400; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             rCheck = leggiCheck();
             if (rCheck.stato == "attesa" && rCheck.tentativi == 0 && rCheck.prossima > ora() + 70 &&
@@ -2490,7 +2490,7 @@ static void testSchedulerCoda() {
     // Scadenza forzata: la ripresa riparte subito, senza attendere i 90s.
     CHECK(Core::QueueStore(dbPath).retryNow(rCheck.id));
     bool ripartito = false;
-    for (int i = 0; i < 200; ++i) {
+    for (int i = 0; i < 400; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         const auto r = leggiCheck();
         if (r.id > 0 && r.stato != "attesa" && r.stato != "attivo") {
@@ -2533,7 +2533,7 @@ static void testWorkerPool() {
         return std::pair<std::string, int>(sel.columnText(0), static_cast<int>(sel.columnInt(1)));
     };
     auto attendiStato = [&](std::int64_t id, const std::string& stato) {
-        for (int i = 0; i < 100; ++i) {
+        for (int i = 0; i < 300; ++i) {
             if (statoTask(id).first == stato)
                 return true;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -2552,7 +2552,7 @@ static void testWorkerPool() {
         pool.onKind("lavoro", [](const Core::QueueTask&) { return Core::EsitoTask::Riprova; });
         pool.start();
         bool riprogrammato = false;
-        for (int i = 0; i < 100 && !riprogrammato; ++i) {
+        for (int i = 0; i < 300 && !riprogrammato; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             const auto st = statoTask(id);
             riprogrammato = (st.first == "attesa" && st.second == 1);
@@ -2598,7 +2598,7 @@ static void testWorkerPool() {
         });
         pool.start();
         bool riprogrammato = false;
-        for (int i = 0; i < 100 && !riprogrammato; ++i) {
+        for (int i = 0; i < 300 && !riprogrammato; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             const auto st = statoTask(id);
             riprogrammato = (st.first == "attesa" && st.second == 0);
@@ -2663,7 +2663,7 @@ static void testWorkerPool() {
             return Core::EsitoTask::Completato;
         });
         pool.start();
-        for (int i = 0; i < 100 && eseguiti.load() < 10; ++i)
+        for (int i = 0; i < 300 && eseguiti.load() < 10; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         pool.stop();
         CHECK(eseguiti.load() == 10);

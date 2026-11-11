@@ -54,6 +54,7 @@ namespace Core {
             return leggiRiga(sel);
         }
 
+        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
         int percentuale(int completati, int nonRiusciti, int totale) {
             if (totale <= 0)
                 return 0;
@@ -392,8 +393,8 @@ namespace Core {
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::system_clock::now().time_since_epoch())
                             .count();
-        const std::string id = "run-" + std::to_string(ms) + "-" +
-                               std::to_string(contatore.fetch_add(1, std::memory_order_relaxed));
+        std::string id = "run-" + std::to_string(ms) + "-" +
+                         std::to_string(contatore.fetch_add(1, std::memory_order_relaxed));
         const std::string org = origine == "interactive" ? "interactive" : "background";
         auto ins =
             db.prepare("INSERT INTO pipeline_runs(id, origine, stato) VALUES (?, ?, 'in_corso');");
@@ -405,6 +406,7 @@ namespace Core {
         return id;
     }
 
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): id/stato hanno nomi espliciti.
     bool PipelineJobStore::finishRun(const std::string& id, const std::string& stato) {
         const auto valido = statoRunValido(stato);
         if (valido.empty()) {
@@ -457,11 +459,13 @@ namespace Core {
         return leggiRun(sel);
     }
 
+    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
     std::vector<PipelineRun> PipelineJobStore::listRuns(const std::string& window,
                                                         const std::string& origine,
                                                         const std::string& stato, int limit,
                                                         int offset, int* total,
                                                         RunCounts* counts) const {
+        // NOLINTEND(bugprone-easily-swappable-parameters)
         std::vector<PipelineRun> out;
         Database db(m_dbPath);
         if (!db.isOpen()) {
@@ -549,11 +553,12 @@ namespace Core {
                               "LIMIT ? OFFSET ?;");
         bool ok = sel.valid();
         int indice = 1;
-        for (std::size_t i = 0; ok && i < params.size(); ++i)
-            ok = sel.bindText(indice++, params[i]);
-        if (ok) {
-            ok = sel.bindInt(indice++, cap) && sel.bindInt(indice, salto);
+        for (std::size_t i = 0; ok && i < params.size(); ++i) {
+            ok = sel.bindText(indice, params[i]);
+            ++indice;
         }
+        if (ok)
+            ok = sel.bindInt(indice, cap) && sel.bindInt(indice + 1, salto);
         if (!ok) {
             m_lastError = sel.lastError();
             return out;
@@ -669,10 +674,12 @@ namespace Core {
         auto sel = db.prepare(sql);
         bool ok = sel.valid();
         int indice = 1;
-        for (std::size_t i = 0; ok && i < params.size(); ++i)
-            ok = sel.bindText(indice++, params[i]);
+        for (std::size_t i = 0; ok && i < params.size(); ++i) {
+            ok = sel.bindText(indice, params[i]);
+            ++indice;
+        }
         if (ok)
-            ok = sel.bindInt(indice++, cap) && sel.bindInt(indice, salto);
+            ok = sel.bindInt(indice, cap) && sel.bindInt(indice + 1, salto);
         if (!ok) {
             m_lastError = sel.lastError();
             return out;
