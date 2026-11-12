@@ -11,7 +11,6 @@
   let ultimo = $derived(runs[0] || null);
   let primo = $derived(runs[count - 1] || null);
   let serieControllate = $derived(ultimo?.saltati ?? 0);
-  let timeline = $derived(runs.slice(0, 14).slice().reverse());
 
   function ora(iso) {
     if (!iso) return '';
@@ -55,7 +54,6 @@
     <span class="group-copy">
       <span class="group-top">
         <span class="group-title">Controlli automatici</span>
-        <span class="group-badge">Nessuna novità</span>
         <span class="chevron" aria-hidden="true" class:aperto={expanded}>▾</span>
       </span>
       <span class="group-meta">
@@ -64,37 +62,25 @@
           <span class="sep" aria-hidden="true">·</span>
           <span>{ora(primo.avviato_il)}–{ora(ultimo.avviato_il)}</span>
         {/if}
-        {#if serieControllate > 0}
-          <span class="sep" aria-hidden="true">·</span>
-          <span>{serieControllate} serie già aggiornate</span>
-        {/if}
         {#if ultimo}
           <span class="sep" aria-hidden="true">·</span>
           <span>ultima {tempoRelativo(ultimo.avviato_il)}</span>
         {/if}
       </span>
     </span>
+    <span class="group-count" aria-hidden="true">{count}</span>
   </button>
-
-  {#if timeline.length > 1}
-    <div class="timeline" aria-hidden="true">
-      {#each timeline as run, i (run.id)}
-        <span class="dot" class:ultima={i === timeline.length - 1}
-              title={`${ora(run.avviato_il)} · nessuna novità`}></span>
-      {/each}
-    </div>
-  {/if}
 
   {#if expanded}
     <div class="group-detail" id={detailId}>
+      {#if serieControllate > 0}
+        <p class="group-note">{serieControllate} serie controllate a ogni esecuzione.</p>
+      {/if}
       <ul class="check-list">
         {#each runs as run (run.id)}
           <li class="check-row">
             <span class="check-time">{ora(run.avviato_il)}</span>
             <span class="check-esito">Nessun nuovo episodio</span>
-            {#if serieControllate > 0}
-              <span class="check-serie">{run.saltati || 0} serie</span>
-            {/if}
             {#if durata(run)}
               <span class="check-durata">{durata(run)}</span>
             {/if}
@@ -107,7 +93,7 @@
 
 <style>
   .check-group {
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     border: 1px solid var(--border-color);
     border-radius: 10px;
     overflow: hidden;
@@ -116,46 +102,38 @@
   .group-main {
     width: 100%; display: flex; align-items: center; gap: 0.65rem;
     background: none; border: none; color: var(--text-primary);
-    padding: 0.6rem 0.8rem; text-align: left; cursor: pointer; font-family: inherit;
+    padding: 0.7rem 0.85rem; text-align: left; cursor: pointer; font-family: inherit;
   }
   .group-main:hover { background: var(--bg-hover); }
   .group-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .group-icon {
-    width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%;
+    width: 28px; height: 28px; flex: 0 0 auto; border-radius: 50%;
     display: grid; place-items: center;
-    background: var(--bg-tertiary); color: var(--text-muted);
+    background: var(--bg-secondary); color: var(--text-muted);
   }
-  .group-icon svg { width: 15px; height: 15px; }
-  .group-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 0.2rem; }
+  .group-icon svg { width: 14px; height: 14px; }
+  .group-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 0.18rem; }
   .group-top { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
   .group-title {
-    font-weight: 600; font-size: 0.9rem;
+    font-weight: 500; font-size: 0.88rem; color: var(--text-secondary);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .group-badge {
-    font-size: 11px; font-weight: 600; padding: 0.1rem 0.45rem;
-    border-radius: 999px; background: var(--bg-tertiary); color: var(--text-muted);
-    border: 1px solid var(--border-color); white-space: nowrap;
   }
   .chevron { color: var(--text-muted); font-size: 12px; margin-left: auto; }
   .chevron.aperto { transform: rotate(180deg); }
+  .group-count {
+    min-width: 22px; height: 20px; padding: 0 0.4rem; border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--bg-secondary); border: 1px solid var(--border-color);
+    color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums;
+  }
   .group-meta {
     display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.4rem;
-    color: var(--text-muted); font-size: 12px;
+    color: var(--text-muted); font-size: 11px;
   }
-  .sep { color: var(--text-muted); }
+  .sep { color: var(--text-muted-more); }
 
-  .timeline {
-    display: flex; align-items: center; gap: 4px;
-    padding: 0 0.8rem 0.55rem 3.2rem;
-  }
-  .dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--bg-tertiary); border: 1px solid var(--border-color);
-  }
-  .dot.ultima { background: var(--accent); border-color: var(--accent); }
-
-  .group-detail { border-top: 1px solid var(--border-color); padding: 0.35rem 0.8rem 0.5rem; }
+  .group-detail { border-top: 1px solid var(--border-color); padding: 0.35rem 0.85rem 0.5rem; }
+  .group-note { color: var(--text-muted); font-size: 11px; margin: 0.2rem 0 0.35rem; }
   .check-list { list-style: none; margin: 0; padding: 0; }
   .check-row {
     display: flex; align-items: center; gap: 0.6rem;
@@ -165,6 +143,5 @@
   .check-row:last-child { border-bottom: none; }
   .check-time { font-variant-numeric: tabular-nums; color: var(--text-secondary); min-width: 44px; }
   .check-esito { flex: 1; }
-  .check-serie, .check-durata { font-variant-numeric: tabular-nums; }
-  .check-durata { color: var(--text-muted-more); }
+  .check-durata { font-variant-numeric: tabular-nums; color: var(--text-muted-more); }
 </style>
