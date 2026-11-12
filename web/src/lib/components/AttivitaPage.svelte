@@ -2,12 +2,14 @@
   import { onMount } from 'svelte';
   import { pageEnter } from '../motion.js';
   import { api } from '../api.js';
+  import Dropdown from '../Dropdown.svelte';
   import RunRow from './RunRow.svelte';
   import RunGroup from './RunGroup.svelte';
   import JobRow from './JobRow.svelte';
 
   const TABS = [['recenti', 'Recenti'], ['problemi', 'Problemi'], ['storico', 'Storico']];
   const ORIGINI = [['tutte', 'Tutte'], ['manuale', 'Manuale'], ['automatico', 'Automatico']];
+  const ORIGINI_OPTIONS = ORIGINI.map(([value, label]) => ({ value, label }));
 
   const LIMITE_AVVII = 20;
   const LIMITE_EPISODI = 50;
@@ -95,21 +97,6 @@
       }
     }
     return ordine;
-  });
-
-  let riepilogo = $derived.by(() => {
-    let episodi = 0;
-    let controlli = 0;
-    let problemi = 0;
-    for (const run of items) {
-      if (isCheckVuoto(run)) {
-        controlli += 1;
-      } else {
-        episodi += run.completati ?? 0;
-        problemi += run.non_riusciti ?? 0;
-      }
-    }
-    return { episodi, controlli, problemi };
   });
 
   function toggleGruppo(key) {
@@ -346,17 +333,25 @@
   });
 </script>
 
-<div class="attivita" in:pageEnter|global>
+<div class="attivita" class:episodi={vista === 'episodi'} in:pageEnter|global>
   <div class="attivita-main">
   <header class="head">
-    <h1>Attività</h1>
+    <div class="head-copy">
+      <h1>Attività</h1>
+      <p class="head-sub">{testoFinestra}</p>
+    </div>
     <button class="btn-refresh" onclick={() => load()} disabled={loading}
             aria-label="Aggiorna attività">
-      {loading ? 'Aggiorno…' : 'Aggiorna'}
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           aria-hidden="true">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+        <polyline points="21 3 21 9 15 9"/>
+      </svg>
+      <span>{loading ? 'Aggiorno…' : 'Aggiorna'}</span>
     </button>
   </header>
 
-  <div class="toolbar">
+  <div class="controls">
     <div class="viste" role="group" aria-label="Vista attività">
       <button class="vista-btn" aria-pressed={vista === 'avvii'}
               class:attivo={vista === 'avvii'}
@@ -367,49 +362,44 @@
     </div>
 
     {#if vista === 'avvii'}
-      <div class="origini" role="group" aria-label="Filtra per origine">
-        {#each ORIGINI as [valore, label] (valore)}
-          <button class="chip" aria-pressed={origine === valore}
-                  class:attivo={origine === valore}
-                  onclick={() => scegliOrigine(valore)}>{label}</button>
-        {/each}
+      <div class="origin-filter">
+        <span class="filter-label">Origine</span>
+        <Dropdown value={origine} options={ORIGINI_OPTIONS}
+                  onchange={scegliOrigine} label="Filtra per origine"
+                  id="attivita-origine" />
       </div>
     {/if}
   </div>
 
-  <div class="tabs" role="tablist" aria-label="Attività">
-    {#each TABS as [valore, label] (valore)}
-      <button role="tab" id={`tab-${valore}`}
-              aria-selected={tab === valore}
-              aria-controls="panel-attivita"
-              class:active={tab === valore}
-              onclick={() => scegliTab(valore)}>
-        {label}{#if vista === 'avvii' && valore === 'problemi' && counts.problemi > 0}{' '}({counts.problemi}){/if}
-      </button>
-    {/each}
+  <div class="tabs-row">
+    <div class="tabs" role="tablist" aria-label="Attività">
+      {#each TABS as [valore, label] (valore)}
+        <button role="tab" id={`tab-${valore}`}
+                aria-selected={tab === valore}
+                aria-controls="panel-attivita"
+                class:active={tab === valore}
+                aria-label={`${label}${vista === 'avvii' && valore === 'problemi' && counts.problemi > 0
+                  ? ` (${counts.problemi})` : ''}`}
+                onclick={() => scegliTab(valore)}>
+          {label}{#if vista === 'avvii' && valore === 'problemi' && counts.problemi > 0}
+            <span class="tab-count" aria-hidden="true">{counts.problemi}</span>
+          {/if}
+        </button>
+      {/each}
+    </div>
+
+    {#if vista === 'avvii'}
+      <p class="period-summary">
+        <strong>{counts.recenti ?? 0}</strong> avvii
+        {#if (counts.problemi ?? 0) > 0}
+          <span class="summary-sep" aria-hidden="true">·</span>
+          <span class="ko"><strong>{counts.problemi}</strong> con problemi</span>
+        {/if}
+      </p>
+    {/if}
   </div>
 
-  {#if vista === 'avvii' && items.length > 0}
-    <div class="summary-chips" aria-label="Riepilogo attività">
-      <span class="summary-chip" title="Avvii caricati sul totale della finestra">
-        <strong>{items.length}</strong> di <strong>{total}</strong> avvii
-      </span>
-      <span class="summary-chip">
-        <strong>{riepilogo.episodi}</strong> {riepilogo.episodi === 1 ? 'episodio' : 'episodi'} completati
-      </span>
-      <span class="summary-chip">
-        <strong>{riepilogo.controlli}</strong> {riepilogo.controlli === 1 ? 'controllo' : 'controlli'} senza novità
-      </span>
-      {#if riepilogo.problemi > 0}
-        <span class="summary-chip ko">
-          <strong>{riepilogo.problemi}</strong> non riusciti
-        </span>
-      {/if}
-    </div>
-  {/if}
-
   <div id="panel-attivita" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-    <p class="finestra">{testoFinestra}</p>
 
     {#if error && items.length === 0}
       <div class="errore-stato" role="alert">
@@ -429,7 +419,9 @@
         {#each gruppi as gruppo (gruppo.key)}
           <section class="day-group" aria-label={gruppo.label}>
             <header class="day-head">
+              <span class="day-dot" aria-hidden="true"></span>
               <h3>{gruppo.label}</h3>
+              <span class="day-line" aria-hidden="true"></span>
               <span class="day-meta">
                 {#if gruppo.items.length > 0}
                   {gruppo.items.length} {gruppo.items.length === 1 ? 'avvio' : 'avvii'}
@@ -507,16 +499,19 @@
       <h2>Riepilogo</h2>
       <div class="aside-stats">
         <div class="aside-stat">
+          <span class="aside-dot in-corso" aria-hidden="true"></span>
+          <span class="aside-label">In corso</span>
           <strong>{counts.in_corso ?? 0}</strong>
-          <span>In corso</span>
         </div>
         <div class="aside-stat">
-          <strong>{counts.problemi ?? 0}</strong>
-          <span>Con problemi</span>
+          <span class="aside-dot ko" aria-hidden="true"></span>
+          <span class="aside-label">Con problemi</span>
+          <strong class:ko={(counts.problemi ?? 0) > 0}>{counts.problemi ?? 0}</strong>
         </div>
         <div class="aside-stat">
+          <span class="aside-dot" aria-hidden="true"></span>
+          <span class="aside-label">Recenti</span>
           <strong>{counts.recenti ?? 0}</strong>
-          <span>Recenti</span>
         </div>
       </div>
       {#if counts.problemi > 0}
@@ -525,18 +520,8 @@
         </button>
       {/if}
       <p class="aside-hint">
-        I controlli automatici senza novità sono raggruppati per giorno: non serve aprirli uno per uno.
+        I controlli senza novità sono raggruppati per giorno: non serve aprirli uno per uno.
       </p>
-    </div>
-
-    <div class="aside-card">
-      <h3>Legenda</h3>
-      <ul class="legend">
-        <li><span class="legend-icon in-corso" aria-hidden="true">◷</span> In corso</li>
-        <li><span class="legend-icon ok" aria-hidden="true">✓</span> Completato</li>
-        <li><span class="legend-icon ko" aria-hidden="true">!</span> Con errori</li>
-        <li><span class="legend-icon check" aria-hidden="true">↻</span> Controllo senza novità</li>
-      </ul>
     </div>
   </aside>
 </div>
@@ -553,89 +538,86 @@
   }
   .attivita-main { min-width: 0; }
   .attivita-aside { display: none; min-width: 0; }
-  .head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-  .head h1 { font-size: 1.4rem; }
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+  .head-copy { min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+  .head h1 { font-size: 1.4rem; line-height: 1.1; }
+  .head-sub { color: var(--text-muted); font-size: 12px; }
   .btn-refresh {
-    background: var(--bg-tertiary); color: var(--text-primary);
-    border: 1px solid var(--border-color); border-radius: 8px;
-    padding: 0.45rem 0.8rem; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: none; border: 1px solid transparent; border-radius: 8px;
+    color: var(--text-secondary); padding: 0.35rem 0.55rem;
+    cursor: pointer; font-size: 12px; font-family: inherit; flex-shrink: 0;
   }
-  .btn-refresh:hover:not(:disabled) { background: var(--bg-hover); }
+  .btn-refresh svg { width: 15px; height: 15px; }
+  .btn-refresh:hover:not(:disabled) { background: var(--bg-tertiary); color: var(--text-primary); }
   .btn-refresh:disabled { color: var(--text-muted); cursor: default; }
 
-  .toolbar {
-    display: flex; flex-wrap: wrap; align-items: center;
-    justify-content: space-between; gap: 0.5rem; margin: 1rem 0 0.5rem;
+  .controls {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 0.75rem; margin: 1rem 0 0.25rem;
   }
-  .viste { display: inline-flex; gap: 0.25rem; }
+  .viste {
+    display: inline-flex; gap: 0.15rem; padding: 0.15rem;
+    background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: 9px;
+  }
   .vista-btn {
-    background: var(--bg-tertiary); color: var(--text-secondary);
-    border: 1px solid var(--border-color); border-radius: 8px;
-    padding: 0.35rem 0.8rem; cursor: pointer; font-size: 0.85rem;
+    background: none; border: none; color: var(--text-muted); border-radius: 7px;
+    padding: 0.35rem 0.8rem; cursor: pointer; font-size: 0.82rem; font-family: inherit;
   }
-  .vista-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
-  .vista-btn.attivo {
-    background: var(--accent-bg); color: var(--accent-light);
-    border-color: var(--accent);
-  }
-  .origini { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .vista-btn:hover { color: var(--text-primary); }
+  .vista-btn.attivo { background: var(--accent-bg); color: var(--accent-light); }
 
-  .tabs {
-    display: flex; gap: 0.25rem; margin: 0.5rem 0 0.75rem;
-    border-bottom: 1px solid var(--border-color);
+  .origin-filter { display: flex; align-items: center; gap: 0.5rem; }
+  .filter-label {
+    font-size: 10px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
+  .origin-filter :global(.dropdown-trigger) { min-height: 32px; font-size: 12px; }
+
+  .tabs-row {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem;
+    border-bottom: 1px solid var(--border-color); margin-bottom: 0.9rem;
+  }
+  .tabs { display: flex; gap: 0.25rem; }
   .tabs button {
+    display: inline-flex; align-items: center; gap: 0.35rem;
     background: none; border: none; border-bottom: 2px solid transparent;
-    color: var(--text-secondary); padding: 0.5rem 0.9rem; cursor: pointer;
-    font-size: 0.9rem; border-radius: 6px 6px 0 0;
+    color: var(--text-muted); padding: 0.55rem 0.8rem; cursor: pointer;
+    font-size: 0.88rem; border-radius: 6px 6px 0 0; margin-bottom: -1px;
+    font-family: inherit;
   }
   .tabs button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
   .tabs button.active { color: var(--accent-light); border-bottom-color: var(--accent); }
+  .tab-count {
+    min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px;
+    background: var(--danger-bg); color: var(--danger); font-size: 10px;
+    font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .period-summary {
+    color: var(--text-muted); font-size: 11px; padding-bottom: 0.65rem;
+    white-space: nowrap;
+  }
+  .period-summary strong { color: var(--text-secondary); font-weight: 600; }
+  .period-summary .ko { color: var(--danger); }
+  .summary-sep { margin: 0 0.3rem; color: var(--text-muted-more); }
 
-  .chip {
-    padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 12px;
-    cursor: pointer; background: var(--bg-tertiary); color: var(--text-secondary);
-    border: 1px solid var(--border-color);
-  }
-  .chip:hover { background: var(--bg-hover); color: var(--text-primary); }
-  .chip.attivo {
-    background: var(--accent-bg); color: var(--accent-light);
-    border-color: var(--accent);
-  }
-
-  .tabs button:focus-visible, .chip:focus-visible, .vista-btn:focus-visible,
-  .btn-refresh:focus-visible, .btn-retry:focus-visible, .btn-altri:focus-visible {
-    outline: 2px solid var(--accent); outline-offset: 2px;
-  }
-
-  .summary-chips {
-    display: flex; flex-wrap: wrap; gap: 0.4rem;
-    margin: 0 0 0.75rem;
-  }
-  .summary-chip {
-    display: inline-flex; align-items: baseline; gap: 0.3rem;
-    padding: 0.3rem 0.65rem; border-radius: 999px;
-    background: var(--bg-secondary); border: 1px solid var(--border-color);
-    color: var(--text-muted); font-size: 12px;
-  }
-  .summary-chip strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
-  .summary-chip.ko strong { color: var(--danger); }
-
-  .day-group { margin-bottom: 1rem; }
+  .day-group { margin-bottom: 1.1rem; }
   .day-group:last-child { margin-bottom: 0; }
-  .day-head {
-    display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.2rem 0.5rem;
-    margin: 0 0 0.4rem; padding: 0 0.15rem;
+  .day-head { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.45rem; }
+  .day-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); flex: 0 0 auto;
   }
   .day-head h3 {
-    font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
-    text-transform: uppercase; color: var(--accent-light);
+    font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--text-secondary); white-space: nowrap;
   }
-  .day-meta { color: var(--text-muted); font-size: 11px; }
+  .day-line { flex: 1; height: 1px; background: var(--border-color); min-width: 1rem; }
+  .day-meta { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
   .day-meta .sep { color: var(--text-muted-more); }
   .day-meta .ko { color: var(--danger); }
 
-  .finestra { color: var(--text-muted); font-size: 12px; margin: 0 0 0.75rem; }
   .err { color: var(--danger); margin: 0.75rem 0; }
   .empty { color: var(--text-muted); margin-top: 1rem; }
   .errore-stato {
@@ -644,40 +626,57 @@
   }
 
   .run-list, .job-list {
-    list-style: none; display: flex; flex-direction: column; gap: 0.35rem;
+    list-style: none; display: flex; flex-direction: column; gap: 0.45rem;
   }
   .run-item, .job-item {
     animation: motion-rise var(--motion-enter) var(--motion-ease-out) backwards;
     animation-delay: calc(var(--i, 0) * var(--motion-stagger));
   }
 
-  .btn-retry, .btn-altri {
+  .btn-retry {
     background: none; border: 1px solid var(--border-color);
     color: var(--accent-light); border-radius: 6px;
     padding: 0.45rem 0.8rem; cursor: pointer; font-size: 12px;
   }
-  .btn-retry:hover, .btn-altri:hover:not(:disabled) { background: var(--bg-hover); }
+  .btn-retry:hover { background: var(--bg-hover); }
   .btn-altri {
-    display: block; margin: 0.8rem auto 0;
-    background: var(--bg-tertiary); color: var(--text-primary);
+    display: flex; width: fit-content; align-items: center; justify-content: center;
+    margin: 1rem auto 0; padding: 0.5rem 0.9rem;
+    background: none; border: none; border-radius: 7px;
+    color: var(--accent-light); cursor: pointer; font-size: 12px;
+    font-family: inherit;
   }
+  .btn-altri:hover:not(:disabled) { background: var(--bg-tertiary); }
   .btn-altri:disabled { color: var(--text-muted); cursor: default; }
+
+  .tabs button:focus-visible, .vista-btn:focus-visible,
+  .btn-refresh:focus-visible, .btn-retry:focus-visible, .btn-altri:focus-visible,
+  .aside-link:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
 
   .aside-card {
     background: var(--bg-secondary); border: 1px solid var(--border-color);
-    border-radius: 12px; padding: 1rem; margin-bottom: 0.75rem;
+    border-radius: 12px; padding: 0.9rem;
   }
-  .aside-card h2, .aside-card h3 {
-    font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.04em; color: var(--accent-light); margin-bottom: 0.75rem;
+  .aside-card h2 {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.75rem;
   }
-  .aside-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
-  .aside-stat { display: flex; flex-direction: column; gap: 0.15rem; }
+  .aside-stats { display: flex; flex-direction: column; gap: 0.55rem; }
+  .aside-stat { display: flex; align-items: center; gap: 0.5rem; }
+  .aside-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto;
+    background: var(--text-muted-more);
+  }
+  .aside-dot.in-corso { background: var(--accent); }
+  .aside-dot.ko { background: var(--danger); }
+  .aside-label { color: var(--text-muted); font-size: 12px; }
   .aside-stat strong {
-    font-size: 1.35rem; line-height: 1; color: var(--text-primary);
+    margin-left: auto; font-size: 13px; color: var(--text-primary);
     font-variant-numeric: tabular-nums;
   }
-  .aside-stat span { font-size: 11px; color: var(--text-muted); }
+  .aside-stat strong.ko { color: var(--danger); }
   .aside-link {
     margin-top: 0.9rem; background: none; border: 1px solid var(--border-color);
     border-radius: 7px; color: var(--accent-light); font-size: 12px;
@@ -685,24 +684,22 @@
   }
   .aside-link:hover { background: var(--bg-hover); }
   .aside-hint { margin-top: 0.8rem; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
-  .legend { list-style: none; display: flex; flex-direction: column; gap: 0.45rem; }
-  .legend li { display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); font-size: 12px; }
-  .legend-icon {
-    width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
-    background: var(--bg-tertiary); font-size: 11px; font-weight: 700;
-  }
-  .legend-icon.in-corso { color: var(--accent-light); }
-  .legend-icon.ok { color: var(--success); }
-  .legend-icon.ko { color: var(--danger); }
-  .legend-icon.check { color: var(--text-muted); }
 
-  @media (min-width: 1500px) {
-    .attivita { grid-template-columns: minmax(0, 1fr) 300px; }
+  @media (min-width: 1280px) {
+    .attivita { grid-template-columns: minmax(0, 1fr) 260px; gap: 1.25rem; }
     .attivita-aside { display: block; position: sticky; top: 1.5rem; }
+    .period-summary { display: none; }
+    /* In Episodi il riepilogo degli avvii non è pertinente: lista a tutta
+       larghezza, senza rail laterale. */
+    .attivita.episodi { grid-template-columns: minmax(0, 1fr); }
+    .attivita.episodi .attivita-aside { display: none; }
   }
 
   @media (max-width: 768px) {
     .attivita { padding: 1rem; }
-    .toolbar { align-items: flex-start; flex-direction: column; }
+    .controls { align-items: flex-start; flex-direction: column; }
+    .tabs-row { flex-direction: column; align-items: stretch; gap: 0.25rem; }
+    .period-summary { padding-bottom: 0.5rem; }
+    .day-meta { display: none; }
   }
 </style>

@@ -47,9 +47,8 @@
   // dato è rumore. Dicono invece che non c'erano novità e quante serie sono
   // già state controllate.
   let checkVuoto = $derived(origine === 'automatico' && vuoto && (run.non_riusciti ?? 0) === 0);
-  let hasCounts = $derived(
-    (run.totale ?? 0) > 0 || (run.non_riusciti ?? 0) > 0 ||
-    (!checkVuoto && (run.saltati ?? 0) > 0)
+  let inCorsoEffettivo = $derived(
+    statoEffettivo === 'in_corso' || statoEffettivo === 'in_sospeso'
   );
   let iconaStato = $derived(
     statoEffettivo === 'in_corso' || statoEffettivo === 'in_sospeso' ? '◷'
@@ -93,7 +92,6 @@
           aria-controls={`run-jobs-${run.id}`}>
     <span class="run-top">
       <span class="run-icon stato-{statoEffettivo}" aria-hidden="true">{iconaStato}</span>
-      <span class="run-badge origine-{origine}">{origine}</span>
       <span class="run-title">{titolo}</span>
       <span class="run-stato stato-{statoEffettivo}">{stato}</span>
       <span class="chevron" aria-hidden="true" class:aperto={expanded}>▾</span>
@@ -103,28 +101,22 @@
       <span class="run-sep" aria-hidden="true">·</span>
       {#if checkVuoto}
         <span>Nessuna novità</span>
-        {#if (run.saltati ?? 0) > 0}
-          <span class="run-sep" aria-hidden="true">·</span>
-          <span>{run.saltati} serie già aggiornate</span>
-        {/if}
       {:else}
         <span>{vuoto
-          ? (run.stato === 'in_corso' ? 'Analisi in corso' : 'Nessun episodio')
+          ? (inCorsoEffettivo ? 'Analisi in corso' : 'Nessun episodio')
           : `${run.totale} episodi`}</span>
-        {#if hasCounts}
+        {#if inCorsoEffettivo}
           <span class="run-sep" aria-hidden="true">·</span>
           <span class="run-counts">
-            {#if (run.totale ?? 0) > 0}
-              <span class="ok">✓ {run.completati ?? 0}</span>
-              <span class="corso">◷ {run.in_corso ?? 0}</span>
-            {/if}
+            <span class="ok">✓ {run.completati ?? 0}</span>
+            <span class="corso">◷ {run.in_corso ?? 0}</span>
             {#if (run.non_riusciti ?? 0) > 0}
               <span class="ko">! {run.non_riusciti}</span>
             {/if}
-            {#if (run.saltati ?? 0) > 0}
-              <span class="skip">{run.saltati} {run.saltati === 1 ? 'saltato' : 'saltati'}</span>
-            {/if}
           </span>
+        {:else if (run.non_riusciti ?? 0) > 0}
+          <span class="run-sep" aria-hidden="true">·</span>
+          <span class="ko">{run.non_riusciti} non riusciti</span>
         {/if}
       {/if}
       {#if durata}
@@ -144,6 +136,11 @@
 
   {#if expanded}
     <div class="run-jobs" id={`run-jobs-${run.id}`}>
+      {#if (run.saltati ?? 0) > 0}
+        <p class="run-skip-note">
+          {run.saltati} {run.saltati === 1 ? 'serie già aggiornata' : 'serie già aggiornate'}
+        </p>
+      {/if}
       {#if (run.non_riusciti ?? 0) > 0}
         <div class="run-actions">
           <button class="btn-retry-all" onclick={() => onRetryFailed?.(run)}
@@ -185,9 +182,9 @@
     border-radius: 10px; overflow: hidden;
   }
   .run-main {
-    width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 0.3rem;
+    width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 0.18rem;
     background: none; border: none; color: var(--text-primary);
-    padding: 0.65rem 0.8rem; text-align: left; cursor: pointer; font-size: 0.9rem;
+    padding: 0.7rem 0.85rem; text-align: left; cursor: pointer; font-size: 0.9rem;
   }
   .run-main:hover { background: var(--bg-hover); }
   .run-main:focus-visible, .btn-retry-all:focus-visible, .btn-retry:focus-visible {
@@ -195,8 +192,8 @@
   }
   .run-top { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
   .run-icon {
-    width: 24px; height: 24px; flex: 0 0 auto; border-radius: 50%;
-    display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    width: 28px; height: 28px; flex: 0 0 auto; border-radius: 50%;
+    display: grid; place-items: center; font-size: 12px; font-weight: 700;
     background: var(--bg-tertiary); color: var(--text-muted);
   }
   .run-icon.stato-in_corso { color: var(--accent-light); }
@@ -204,14 +201,8 @@
   .run-icon.stato-completato_con_errori,
   .run-icon.stato-interrotto { color: var(--danger); }
   .run-icon.stato-in_sospeso { color: var(--warning); }
-  .run-badge {
-    font-size: 11px; padding: 0.1rem 0.45rem; border-radius: 999px;
-    background: var(--bg-tertiary); color: var(--text-secondary);
-    border: 1px solid var(--border-color); white-space: nowrap;
-  }
-  .run-badge.origine-manuale { color: var(--accent-light); border-color: var(--accent); }
   .run-title {
-    flex: 1; min-width: 0; font-weight: 600;
+    flex: 1; min-width: 0; font-weight: 600; font-size: 0.92rem;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .run-meta {
@@ -226,7 +217,6 @@
   .run-counts .ok { color: var(--success); }
   .run-counts .corso { color: var(--accent-light); }
   .run-counts .ko { color: var(--danger); }
-  .run-counts .skip { color: var(--warning); }
   .run-stato {
     margin-left: auto; font-size: 11px; font-weight: 600;
     padding: 0.1rem 0.45rem; border-radius: 999px;
@@ -237,13 +227,20 @@
     background: var(--accent-bg); color: var(--accent-light);
     animation: motion-ring calc(var(--motion-shimmer) * 2.5) var(--motion-ease-out) infinite;
   }
-  .run-stato.stato-completato { color: var(--success); }
+  .run-stato.stato-completato {
+    background: transparent; color: var(--success); padding: 0;
+    opacity: 0.9;
+  }
   .run-stato.stato-completato_con_errori,
   .run-stato.stato-interrotto { background: var(--danger-bg); color: var(--danger); }
   .run-stato.stato-in_sospeso { background: var(--warning-bg); color: var(--warning-text); }
   .chevron { color: var(--text-muted); font-size: 12px; }
   .chevron.aperto { transform: rotate(180deg); }
 
+  .run-skip-note {
+    margin: 0; padding: 0.45rem 0.8rem 0;
+    color: var(--text-muted); font-size: 11px;
+  }
   .run-actions { display: flex; justify-content: flex-end; padding: 0.5rem 0.5rem 0; }
   .btn-retry-all {
     background: none; border: 1px solid var(--border-color);

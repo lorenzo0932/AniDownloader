@@ -215,15 +215,17 @@ describe('AttivitaPage', () => {
     }));
   });
 
-  it('filtro origine: chiama api.runs.list con manuale e resetta offset', async () => {
+  it('filtro origine: combobox chiama api.runs.list con manuale e resetta offset', async () => {
     render(AttivitaPage);
     await screen.findByText('Avvio manuale');
-    await fireEvent.click(screen.getByRole('button', { name: 'Manuale' }));
+    const origine = screen.getByRole('combobox', { name: 'Filtra per origine' });
+    expect(origine.textContent).toContain('Tutte');
+    await fireEvent.click(origine);
+    await fireEvent.click(screen.getByRole('option', { name: 'Manuale' }));
     await waitFor(() => expect(runsListMock).toHaveBeenLastCalledWith({
       window: 'recenti', origine: 'manuale', stato: 'tutti', limit: 20, offset: 0,
     }));
-    const manuale = screen.getByRole('button', { name: 'Manuale' });
-    expect(manuale.getAttribute('aria-pressed')).toBe('true');
+    expect(origine.textContent).toContain('Manuale');
   });
 
   it('vista Episodi: usa api.pipeline.list con limit 50 e senza filtro origine', async () => {
@@ -233,7 +235,7 @@ describe('AttivitaPage', () => {
     await waitFor(() => expect(pipelineListMock).toHaveBeenLastCalledWith({
       window: 'recenti', limit: 50, offset: 0,
     }));
-    expect(screen.queryByRole('button', { name: 'Manuale' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Filtra per origine' })).toBeNull();
     expect(await screen.findByText('Serie X · Ep. 1')).toBeTruthy();
     expect(screen.getByText('In coda')).toBeTruthy();
   });

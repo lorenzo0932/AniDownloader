@@ -42,7 +42,6 @@ describe('RunRow', () => {
   it('header: titolo, origine, totale, conteggi compatti e stato', () => {
     render(RunRow, { run: run(), jobs: [] });
     expect(screen.getByText('Avvio manuale')).toBeTruthy();
-    expect(screen.getByText('manuale')).toBeTruthy();
     expect(screen.getByText('7 episodi')).toBeTruthy();
     expect(screen.getByText('✓ 3')).toBeTruthy();
     expect(screen.getByText('◷ 2')).toBeTruthy();
@@ -50,9 +49,10 @@ describe('RunRow', () => {
     expect(screen.getByText('In corso')).toBeTruthy();
   });
 
-  it('mostra i saltati accanto ai conteggi', () => {
-    render(RunRow, { run: run({ saltati: 2 }), jobs: [] });
-    expect(screen.getByText('2 saltati')).toBeTruthy();
+  it('i saltati non sporcano il riepilogo: compaiono nel dettaglio espanso', () => {
+    render(RunRow, { run: run({ saltati: 2 }), jobs: [], expanded: true });
+    expect(screen.queryByText('2 saltati')).toBeNull();
+    expect(screen.getByText('2 serie già aggiornate')).toBeTruthy();
   });
 
   it('run chiuso con job in retry: mostra In sospeso, non un falso Completato', () => {
