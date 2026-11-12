@@ -9,8 +9,14 @@
   import DetailModal from './DetailModal.svelte';
   import AddSeriesForm from './AddSeriesForm.svelte';
 
+  // Apertura mirata da una notifica: il filtro parte già sulla serie.
+  let { focusSeries = '' } = $props();
+
   let series = $state([]);
   let searchQuery = $state('');
+  $effect(() => {
+    if (focusSeries) searchQuery = focusSeries;
+  });
   let error = $state('');
   let busy = $state(true);
   let showForm = $state(false);
@@ -291,7 +297,7 @@
 
 </script>
 
-<div in:pageEnter|global>
+<div class="dashboard" in:pageEnter|global>
 <div class="header-row">
   <h2>Gestione Serie</h2>
 </div>
@@ -308,7 +314,7 @@
     { value: 'added', label: 'Data inserimento' },
     { value: 'local_episode_count', label: 'Episodi' },
     { value: 'continue', label: 'Continua' },
-  ]} />
+  ]} label="Ordina" id="sort-field" />
   <button class="btn-icon-only sort-dir-btn" onclick={() => sortDir = sortDir === 'asc' ? 'desc' : 'asc'} title={sortDir === 'asc' ? 'Crescente' : 'Decrescente'}>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
       {#if sortDir === 'asc'}
@@ -464,6 +470,7 @@
 </div>
 
 <style>
+  .dashboard { max-width: var(--content-wide, 1680px); margin: 0 auto; }
   .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
   h2 { font-size: 1.5rem; font-weight: 700; }
   .btn-icon-only {

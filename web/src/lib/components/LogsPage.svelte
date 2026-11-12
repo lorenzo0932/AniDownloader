@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { pageEnter } from '../motion.js';
   import { api } from '../api.js';
+  import Dropdown from '../Dropdown.svelte';
   import QueuePage from './QueuePage.svelte';
   import LogRow from './LogRow.svelte';
 
@@ -10,6 +11,7 @@
   const MAX_RENDER = 1500;
   const POLL_MS = 2000;
   const RIGHE = [100, 500, 1000, 2000, 5000];
+  const RIGHE_OPTIONS = RIGHE.map((n) => ({ value: n, label: `${n} righe` }));
   const CHIPS = [
     ['tutti', 'Tutti'],
     ['error', 'Errori'],
@@ -186,8 +188,8 @@
     load({ silent: true });
   }
 
-  function cambiaCount(e) {
-    const n = Number(e.currentTarget.value);
+  function cambiaCount(valore) {
+    const n = Number(valore);
     if (!Number.isFinite(n) || n === count) return;
     count = n;
     nuovi = 0;
@@ -291,7 +293,7 @@
       tabindex={tab === 'diagnostica' ? 0 : -1}
       class:active={tab === 'diagnostica'}
       onclick={() => cambiaTab('diagnostica')}
-      onkeydown={gestisciTastiTab}>Diagnostica</button
+      onkeydown={gestisciTastiTab}>Controlli</button
     >
   </div>
 
@@ -331,11 +333,8 @@
           <span class="dot" class:on={follow} aria-hidden="true"></span> Segui
         </button>
 
-        <select value={count} onchange={cambiaCount} aria-label="Righe da mostrare">
-          {#each RIGHE as n (n)}
-            <option value={n}>{n} righe</option>
-          {/each}
-        </select>
+        <Dropdown value={count} options={RIGHE_OPTIONS} onchange={cambiaCount}
+                  label="Righe da mostrare" id="log-righe" />
 
         <button type="button" class="btn-ghost" aria-pressed={wrap} onclick={() => (wrap = !wrap)}>
           A capo
@@ -404,8 +403,8 @@
   {:else}
     <div id="panel-diagnostica" role="tabpanel" aria-labelledby="tab-diagnostica" class="panel">
       <p class="hint">
-        Dettaglio tecnico dei controlli periodici. Lo stato di download e conversioni vive in
-        <b>Attività</b>.
+        Riepilogo dei controlli periodici. I controlli senza novità non richiedono azione;
+        download e conversioni vivono in <b>Attività</b>.
       </p>
       <QueuePage readonly embedded />
     </div>
@@ -413,7 +412,10 @@
 </div>
 
 <style>
-  .logs-page { animation: motion-fade var(--motion-enter) var(--motion-ease-out); }
+  .logs-page {
+    animation: motion-fade var(--motion-enter) var(--motion-ease-out);
+    max-width: var(--content-wide, 1680px); margin: 0 auto;
+  }
   h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; }
 
   .tabs {
@@ -493,20 +495,13 @@
   .chip.active .chip-count { color: var(--accent-light); background: transparent; }
 
   .toolbar button,
-  .toolbar select {
+  .toolbar :global(.dropdown-trigger) {
     min-height: 44px;
-    font-family: inherit;
     font-size: 0.8rem;
-    border-radius: 8px;
-    cursor: pointer;
-  }
-  .toolbar select {
     padding: 0 0.6rem;
     background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
+    border-radius: 8px;
   }
-  .toolbar select:focus-visible,
   .toolbar button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;

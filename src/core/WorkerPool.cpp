@@ -59,11 +59,13 @@ namespace Core {
                                            [&](const auto& h) { return h.first == task->kind; });
                     if (it == m_handlers.end()) {
                         Logger::error("WorkerPool: nessun handler per kind '" + task->kind + "'");
-                        coda.failDead(task->id);
+                        coda.failDead(task->id,
+                                      "Nessun handler registrato per il tipo '" + task->kind + "'");
                     } else {
                         if (m_onEvento)
                             m_onEvento("avviato", *task);
-                        const EsitoTask esito = it->second(*task);
+                        std::string errore;
+                        const EsitoTask esito = it->second(*task, errore);
                         if (esito == EsitoTask::Completato) {
                             if (!coda.complete(task->id))
                                 Logger::error("WorkerPool: complete fallito: " + coda.lastError());
@@ -73,7 +75,7 @@ namespace Core {
                             // Backoff progressivo per tentativi, poi resa.
                             const std::size_t n = static_cast<std::size_t>(task->tentativi);
                             if (n >= sizeof(kBackoffSecondi) / sizeof(kBackoffSecondi[0])) {
-                                if (!coda.failDead(task->id))
+                                if (!coda.failDead(task->id, errore))
                                     Logger::error("WorkerPool: failDead fallito: " +
                                                   coda.lastError());
                                 else if (m_onEvento)
@@ -101,7 +103,7 @@ namespace Core {
                                     m_onEvento("riprova", *task);
                             }
                         } else {
-                            if (!coda.failDead(task->id))
+                            if (!coda.failDead(task->id, errore))
                                 Logger::error("WorkerPool: failDead fallito: " + coda.lastError());
                             else if (m_onEvento)
                                 m_onEvento("fallito", *task);

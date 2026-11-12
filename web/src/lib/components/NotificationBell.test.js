@@ -61,45 +61,98 @@ describe('NotificationBell', () => {
     expect(globalThis.__sse).toBeUndefined();
   });
 
-  it('mostra il badge e apre il pannello con la lista', async () => {
-    render(NotificationBell, { enabled: true, sorgente: 'ui' });
-    await waitFor(() => expect(screen.getByText('1')).toBeTruthy());
+  it('mostra il badge e apre il pannello raggruppato per serie', async () => {
+    const { container } = render(NotificationBell, { enabled: true, sorgente: 'ui' });
+    await waitFor(() => expect(container.querySelector('.notif-badge')?.textContent).toBe('1'));
     await fireEvent.click(screen.getByLabelText('Notifiche'));
-    expect(screen.getByText('One Piece — Ep. 3')).toBeTruthy();
+    expect(screen.getByText('One Piece')).toBeTruthy();
+    expect(screen.getByText('Ep. 3')).toBeTruthy();
     expect(globalThis.__sse).toBeTruthy();
   });
 
-  it('click su una notifica la segna letta e azzera il badge', async () => {
-    render(NotificationBell, { enabled: true, sorgente: 'ui' });
+  it('click su una notifica la segna letta e apre la serie in Gestione', async () => {
+    const aperture = [];
+    const onOpen = (e) => aperture.push(e.detail);
+    window.addEventListener('anidl:open-series', onOpen);
+    const { container } = render(NotificationBell, { enabled: true, sorgente: 'ui' });
     await fireEvent.click(screen.getByLabelText('Notifiche'));
-    const item = await screen.findByText('One Piece — Ep. 3');
+    const item = await screen.findByRole('button', {
+      name: 'Apri One Piece, episodio 3',
+    });
     await fireEvent.click(item);
     await waitFor(() => expect(readMock).toHaveBeenCalledWith(7));
-    await waitFor(() => expect(screen.queryByText('1')).toBeNull());
+    await waitFor(() => expect(aperture).toEqual([{ serie: 'One Piece' }]));
+    // La notifica resta nello storico, ma non è più non letta.
+    expect(container.querySelector('.notif-badge')).toBeNull();
+    await fireEvent.click(screen.getByLabelText('Notifiche'));
+    expect(screen.getByText('One Piece')).toBeTruthy();
+    window.removeEventListener('anidl:open-series', onOpen);
   });
 
   it('un evento SSE notification aggiorna lista e badge', async () => {
-    render(NotificationBell, { enabled: true, sorgente: 'ui' });
+    const { container } = render(NotificationBell, { enabled: true, sorgente: 'ui' });
     await fireEvent.click(screen.getByLabelText('Notifiche'));
-    await screen.findByText('One Piece — Ep. 3');
+    await screen.findByText('One Piece');
     globalThis.__sse.emit({ type: 'notification', id: 8, serie: 'Naruto', episodio: 1 });
-    expect(await screen.findByText('Naruto — Ep. 1')).toBeTruthy();
-    expect(screen.getByText('2')).toBeTruthy();
+    expect(await screen.findByText('Naruto')).toBeTruthy();
+    expect(await screen.findByText('Ep. 1')).toBeTruthy();
+    expect(container.querySelector('.notif-badge')?.textContent).toBe('2');
   });
 
   it('abilitata a runtime: si connette senza rimontare', async () => {
-    const { rerender } = render(NotificationBell, { enabled: false, sorgente: 'ui' });
+    const { rerender, container } = render(NotificationBell, { enabled: false, sorgente: 'ui' });
     expect(globalThis.__sse).toBeUndefined();
     await rerender({ enabled: true, sorgente: 'ui' });
     await waitFor(() => expect(globalThis.__sse).toBeTruthy());
-    await waitFor(() => expect(screen.getByText('1')).toBeTruthy());
+    await waitFor(() => expect(container.querySelector('.notif-badge')?.textContent).toBe('1'));
   });
 
   it('eventi SSE diversi da notification vengono ignorati', async () => {
-    render(NotificationBell, { enabled: true, sorgente: 'ui' });
+    const { container } = render(NotificationBell, { enabled: true, sorgente: 'ui' });
     await waitFor(() => expect(globalThis.__sse).toBeTruthy());
     globalThis.__sse.emit({ type: 'progress', series: 'X', episode: 1 });
-    expect(screen.getByText('1')).toBeTruthy();
-    expect(screen.queryByText('X — Ep. 1')).toBeNull();
+    expect(container.querySelector('.notif-badge')?.textContent).toBe('1');
+    expect(screen.queryByText('X')).toBeNull();
+  });
+
+  it('se il demone ha già inviato la notifica OS, il client non la duplica', async () => {
+    const invoke = vi.fn().mockResolvedValue();
+    window.__TAURI_INTERNALS__ = { invoke };
+    try {
+      const { container } = render(NotificationBell, {
+        enabled: true, sorgente: 'entrambi', osNotifyBackend: true,
+      });
+      await waitFor(() => expect(globalThis.__sse).toBeTruthy());
+      globalThis.__sse.emit({
+        type: 'notification', id: 9, serie: 'Bleach', episodio: 2, os: true,
+      });
+      await waitFor(() =>
+        expect(container.querySelector('.notif-badge')?.textContent).toBe('2'));
+      expect(invoke).not.toHaveBeenCalled();
+    } finally {
+      delete window.__TAURI_INTERNALS__;
+    }
+  });
+
+  it('se il demone fallisce la notifica OS, il client Tauri fa fallback', async () => {
+    const invoke = vi.fn().mockResolvedValue();
+    window.__TAURI_INTERNALS__ = { invoke };
+    try {
+      const { container } = render(NotificationBell, {
+        enabled: true, sorgente: 'entrambi', osNotifyBackend: true,
+      });
+      await waitFor(() => expect(globalThis.__sse).toBeTruthy());
+      globalThis.__sse.emit({
+        type: 'notification', id: 10, serie: 'Bleach', episodio: 3, os: false,
+      });
+      await waitFor(() =>
+        expect(container.querySelector('.notif-badge')?.textContent).toBe('2'));
+      await waitFor(() => expect(invoke).toHaveBeenCalledWith('notify_episode', {
+        title: 'Nuovo episodio pronto',
+        body: 'Bleach — Ep. 3',
+      }));
+    } finally {
+      delete window.__TAURI_INTERNALS__;
+    }
   });
 });

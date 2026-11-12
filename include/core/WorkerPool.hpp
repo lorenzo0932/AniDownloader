@@ -25,7 +25,9 @@ namespace Core {
     // per la contesa Occupato), "fallito" (definitivo).
     using TaskEventoCb = std::function<void(const std::string& tipo, const QueueTask& task)>;
 
-    using TaskHandler = std::function<EsitoTask(const QueueTask& task)>;
+    // `errore` è un canale di uscita: l'handler lo valorizza quando il task
+    // fallisce in modo definitivo, così WorkerPool può persistere il motivo.
+    using TaskHandler = std::function<EsitoTask(const QueueTask& task, std::string& errore)>;
 
     class WorkerPool {
       public:

@@ -29,6 +29,9 @@ vi.mock('../api.js', () => ({
       mounts: (...args) => browseMountsMock(...args),
       places: (...args) => browsePlacesMock(...args),
     },
+    notifications: {
+      test: () => Promise.resolve({ success: true, method: 'notify-send' }),
+    },
     queue: {
       list: () => Promise.resolve({ items: [], counts: {} }),
     },
@@ -74,6 +77,7 @@ describe('ConfigPage — tab', () => {
     localStorage.clear();
     storageInfoMock.mockResolvedValue(STORAGE);
     storageCleanupMock.mockResolvedValue({ success: true, removedFiles: 0, freedBytes: 0 });
+    configSetMock.mockResolvedValue({ success: true });
     browseListMock.mockResolvedValue({ path: '/tmp', entries: [] });
     browseMountsMock.mockResolvedValue({ mounts: [] });
     browsePlacesMock.mockResolvedValue({ places: [] });
@@ -95,8 +99,10 @@ describe('ConfigPage — tab', () => {
 
     expect(screen.getByText('Aspetto')).toBeTruthy();
     expect(screen.getByText('Comportamento e Avvisi')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Salva Modifiche' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Annulla' })).toBeTruthy();
+    // Autosave: niente Salva/Annulla espliciti.
+    expect(screen.queryByRole('button', { name: 'Salva Modifiche' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Annulla' })).toBeNull();
+    expect(screen.getByText('Tutto salvato')).toBeTruthy();
   });
 
   it('Automazione: default scheduling ON/15, notifiche OFF', async () => {
@@ -112,8 +118,7 @@ describe('ConfigPage — tab', () => {
     expect(screen.getByLabelText('Controllo periodico nuovi episodi').checked).toBe(true);
     expect(screen.getByLabelText('Ogni quanti minuti').value).toBe('15');
     expect(screen.getByLabelText('Notifiche nuovi episodi').checked).toBe(false);
-    // Il footer Salva resta disponibile nei tab di preferenza.
-    expect(screen.getByRole('button', { name: 'Salva Modifiche' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Salva Modifiche' })).toBeNull();
   });
 
   it('Download: burst ON di default e due gruppi nel pannello', async () => {
@@ -144,11 +149,15 @@ describe('ConfigPage — tab', () => {
     // Intervallo disabilitato quando la schedulazione è spenta.
     expect(screen.getByLabelText('Ogni quanti minuti').disabled).toBe(true);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Salva Modifiche' }));
-    await waitFor(() => expect(configSetMock).toHaveBeenCalled());
-    const inviato = configSetMock.mock.calls[0][0];
-    expect(inviato.scheduling).toEqual({ abilitato: false, intervalloMinuti: 60 });
+    // Autosave: modifica l'intervallo e attende il debounce (800 ms).
+    await fireEvent.input(screen.getByLabelText('Ogni quanti minuti'), {
+      target: { value: '30' },
+    });
+    await waitFor(() => expect(configSetMock).toHaveBeenCalled(), { timeout: 3000 });
+    const inviato = configSetMock.mock.calls.at(-1)[0];
+    expect(inviato.scheduling).toEqual({ abilitato: false, intervalloMinuti: 30 });
     expect(inviato.notifiche).toEqual({ abilitate: true, sorgente: 'backend' });
+    expect(await screen.findByText('Salvato')).toBeTruthy();
   });
 
   it('merge profondo: backend senza sezioni non perde i default', async () => {
@@ -200,11 +209,46 @@ describe('ConfigPage — tab', () => {
     await fireEvent.click(tab('Automazione'));
     await fireEvent.click(tab('Generali'));
 
-    // Form sempre montato: i valori non salvati sono ancora lì.
+    // Form sempre montato: i valori restano lì durante il debounce.
     expect(screen.getByLabelText('Mostra conferma prima di interrompere un download').checked).toBe(false);
     await fireEvent.click(tab('Download'));
     expect(screen.getByLabelText('File Database Serie (JSON):').value).toBe('/tmp/serie.json');
-    expect(configSetMock).not.toHaveBeenCalled();
+
+    // Poi l'autosave porta al backend entrambe le modifiche.
+    await waitFor(() => expect(configSetMock).toHaveBeenCalled(), { timeout: 3000 });
+    const inviato = configSetMock.mock.calls.at(-1)[0];
+    expect(inviato.show_stop_warning).toBe(false);
+    expect(inviato.json_file_path).toBe('/tmp/serie.json');
+  });
+
+  it('Ripristina torna all’ultimo salvataggio e annulla il debounce', async () => {
+    configGetMock.mockResolvedValue({ config: {} });
+    render(ConfigPage);
+    await screen.findByRole('tab', { name: 'Generali' });
+
+    const stop = screen.getByLabelText('Mostra conferma prima di interrompere un download');
+    expect(stop.checked).toBe(true);
+    await fireEvent.click(stop);
+    expect(stop.checked).toBe(false);
+
+    const ripristina = await screen.findByRole('button', { name: 'Ripristina' });
+    await fireEvent.click(ripristina);
+    expect(stop.checked).toBe(true);
+    expect(screen.getByText('Tutto salvato')).toBeTruthy();
+  });
+
+  it('errore di autosave: mostra il messaggio e permette di riprovare', async () => {
+    configGetMock.mockResolvedValue({ config: {} });
+    configSetMock.mockRejectedValueOnce(new Error('Disco pieno'));
+    render(ConfigPage);
+    await screen.findByRole('tab', { name: 'Generali' });
+
+    await fireEvent.click(screen.getByLabelText('Mostra conferma prima di interrompere un download'));
+    await waitFor(() => expect(screen.getByText('Disco pieno')).toBeTruthy(), { timeout: 3000 });
+    expect(screen.getByRole('button', { name: 'Riprova' })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Riprova' }));
+    await waitFor(() => expect(configSetMock).toHaveBeenCalledTimes(2), { timeout: 3000 });
   });
 
   it('nessun campo output_dir: resta solo il picker del file JSON', async () => {

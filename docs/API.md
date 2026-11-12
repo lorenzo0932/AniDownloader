@@ -33,9 +33,14 @@ Stato dell'applicazione.
     "version": "<versione>",
     "port": 8989,
     "downloadRunning": false,
-    "sseClients": 0
+    "sseClients": 0,
+    "osNotifyBackend": true
 }
 ```
+
+`osNotifyBackend` è true quando il demone può inviare le notifiche di sistema
+(stesso owner del client su Linux con `notify-send`/`gdbus` disponibili). In
+tal caso il frontend non le duplica; su macOS/Windows resta al client Tauri.
 
 Questa risposta non ha il campo `success`: è l'unico endpoint informativo
 storico che restituisce l'oggetto nudo. `version` è la versione compilata
@@ -52,12 +57,18 @@ Stato dello scheduler interno (ADR-004).
     "inPausa": false,
     "checkInCoda": 0,
     "ultimoGiro": 1720000000,
+    "prossimoGiro": 1720000900,
+    "intervalloMinuti": 15,
+    "ultimoEsito": "ok",
+    "ultimoMessaggio": "giro completato: 2/2 riusciti",
     "pipeline": {"inEsecuzione": false, "interattivoInAttesa": false}
 }
 ```
 
 `pipeline.inEsecuzione` è true mentre gira un check o un run manuale;
 `pipeline.interattivoInAttesa` è true quando un run manuale aspetta il turno.
+`ultimoEsito` è `ok`, `errore` o vuoto (nessun giro ancora); `prossimoGiro`
+è calcolato da `ultimoGiro + intervalloMinuti`.
 
 ### `PUT /api/scheduler/pausa` (dal 3.0)
 
@@ -103,6 +114,19 @@ Segna come lette. Con `{"id": N}` solo quella; con body vuoto `{}` tutte.
 {"success": true, "unread": 0}
 ```
 
+### `POST /api/notifications/test` (dal 3.0)
+
+Invia una notifica di sistema di prova dal demone (non persiste nulla e non
+dipende da `notifiche.abilitate`). Body opzionale `{"title": "...", "body": "..."}`.
+
+```json
+{"success": true, "method": "notify-send", "error": ""}
+```
+
+Risponde `503` se nessun notifier è disponibile (es. runtime Flatpak senza
+`notify-send`/`gdbus`). Su macOS/Windows il backend non è supportato e resta
+il client Tauri.
+
 ---
 
 ### `GET /api/queue` (dal 3.0)
@@ -122,13 +146,15 @@ coda attiva (attesa + attivo + fallito); i completati si chiedono con
     "items": [
         {"id": 4, "kind": "check", "serie": "", "episodio": 0, "stato": "attesa",
          "tentativi": 0, "prossima_esecuzione": 0, "priorita": 0,
-         "creato_il": "2026-11-08T10:00:00Z"}
+         "creato_il": "2026-11-08T10:00:00Z", "errore": ""}
     ]
 }
 ```
 
 `prossima_esecuzione` è epoch Unix: `0` = eseguibile subito; un valore futuro
-è il backoff del retry.
+è il backoff del retry. `errore` contiene il motivo leggibile dell'ultimo
+fallimento definitivo (vuoto per i task completati o per i fallimenti
+precedenti alla migrazione v7).
 
 ### `POST /api/queue/retry` (dal 3.0)
 

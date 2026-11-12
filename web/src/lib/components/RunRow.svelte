@@ -22,18 +22,39 @@
     in_corso: 'In corso',
     completato: 'Completato',
     completato_con_errori: 'Con errori',
+    in_sospeso: 'In sospeso',
     interrotto: 'Interrotto',
   };
 
   let origine = $derived(
     run.origine === 'manuale' || run.origine === 'interactive' ? 'manuale' : 'automatico'
   );
-  let titolo = $derived(`Avvio ${origine}`);
-  let stato = $derived(STATI[run.stato] || run.stato || '');
+  let titolo = $derived(origine === 'automatico' ? 'Controllo automatico' : 'Avvio manuale');
+  // Difesa da run chiusi "completato" con job ancora in retry/errore (dato
+  // storico o backend precedente): la UI non deve mostrare un falso verde.
+  let statoEffettivo = $derived(
+    run.stato === 'completato' && (run.non_riusciti ?? 0) > 0
+      ? 'completato_con_errori'
+      : run.stato === 'completato' && (run.in_corso ?? 0) > 0
+        ? 'in_sospeso'
+        : run.stato
+  );
+  let stato = $derived(STATI[statoEffettivo] || statoEffettivo || '');
   let durata = $derived(formattaDurata(run));
   let percent = $derived(Math.max(0, Math.min(100, Number(run.percent) || 0)));
+  let vuoto = $derived((run.totale ?? 0) === 0);
+  // I check automatici non mostrano "Nessun episodio · 26 saltati": quel
+  // dato è rumore. Dicono invece che non c'erano novità e quante serie sono
+  // già state controllate.
+  let checkVuoto = $derived(origine === 'automatico' && vuoto && (run.non_riusciti ?? 0) === 0);
   let hasCounts = $derived(
-    (run.totale ?? 0) > 0 || (run.non_riusciti ?? 0) > 0 || (run.saltati ?? 0) > 0
+    (run.totale ?? 0) > 0 || (run.non_riusciti ?? 0) > 0 ||
+    (!checkVuoto && (run.saltati ?? 0) > 0)
+  );
+  let iconaStato = $derived(
+    statoEffettivo === 'in_corso' || statoEffettivo === 'in_sospeso' ? '◷'
+      : statoEffettivo === 'completato_con_errori' || statoEffettivo === 'interrotto' ? '!'
+        : '✓'
   );
 
   function formattaDurata(r) {
@@ -71,29 +92,40 @@
           aria-expanded={expanded ? 'true' : 'false'}
           aria-controls={`run-jobs-${run.id}`}>
     <span class="run-top">
+      <span class="run-icon stato-{statoEffettivo}" aria-hidden="true">{iconaStato}</span>
       <span class="run-badge origine-{origine}">{origine}</span>
       <span class="run-title">{titolo}</span>
-      <span class="run-stato stato-{run.stato}">{stato}</span>
+      <span class="run-stato stato-{statoEffettivo}">{stato}</span>
       <span class="chevron" aria-hidden="true" class:aperto={expanded}>▾</span>
     </span>
     <span class="run-meta">
       <span>{tempoRelativo(run.avviato_il)}</span>
       <span class="run-sep" aria-hidden="true">·</span>
-      <span>{(run.totale ?? 0) === 0 ? 'Nessun episodio' : `${run.totale} episodi`}</span>
-      {#if hasCounts}
-        <span class="run-sep" aria-hidden="true">·</span>
-        <span class="run-counts">
-          {#if (run.totale ?? 0) > 0}
-            <span class="ok">✓ {run.completati ?? 0}</span>
-            <span class="corso">◷ {run.in_corso ?? 0}</span>
-          {/if}
-          {#if (run.non_riusciti ?? 0) > 0}
-            <span class="ko">! {run.non_riusciti}</span>
-          {/if}
-          {#if (run.saltati ?? 0) > 0}
-            <span class="skip">{run.saltati} {run.saltati === 1 ? 'saltato' : 'saltati'}</span>
-          {/if}
-        </span>
+      {#if checkVuoto}
+        <span>Nessuna novità</span>
+        {#if (run.saltati ?? 0) > 0}
+          <span class="run-sep" aria-hidden="true">·</span>
+          <span>{run.saltati} serie già aggiornate</span>
+        {/if}
+      {:else}
+        <span>{vuoto
+          ? (run.stato === 'in_corso' ? 'Analisi in corso' : 'Nessun episodio')
+          : `${run.totale} episodi`}</span>
+        {#if hasCounts}
+          <span class="run-sep" aria-hidden="true">·</span>
+          <span class="run-counts">
+            {#if (run.totale ?? 0) > 0}
+              <span class="ok">✓ {run.completati ?? 0}</span>
+              <span class="corso">◷ {run.in_corso ?? 0}</span>
+            {/if}
+            {#if (run.non_riusciti ?? 0) > 0}
+              <span class="ko">! {run.non_riusciti}</span>
+            {/if}
+            {#if (run.saltati ?? 0) > 0}
+              <span class="skip">{run.saltati} {run.saltati === 1 ? 'saltato' : 'saltati'}</span>
+            {/if}
+          </span>
+        {/if}
       {/if}
       {#if durata}
         <span class="run-sep" aria-hidden="true">·</span>
@@ -162,6 +194,16 @@
     outline: 2px solid var(--accent); outline-offset: -2px;
   }
   .run-top { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  .run-icon {
+    width: 24px; height: 24px; flex: 0 0 auto; border-radius: 50%;
+    display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    background: var(--bg-tertiary); color: var(--text-muted);
+  }
+  .run-icon.stato-in_corso { color: var(--accent-light); }
+  .run-icon.stato-completato { color: var(--success); }
+  .run-icon.stato-completato_con_errori,
+  .run-icon.stato-interrotto { color: var(--danger); }
+  .run-icon.stato-in_sospeso { color: var(--warning); }
   .run-badge {
     font-size: 11px; padding: 0.1rem 0.45rem; border-radius: 999px;
     background: var(--bg-tertiary); color: var(--text-secondary);
@@ -198,6 +240,7 @@
   .run-stato.stato-completato { color: var(--success); }
   .run-stato.stato-completato_con_errori,
   .run-stato.stato-interrotto { background: var(--danger-bg); color: var(--danger); }
+  .run-stato.stato-in_sospeso { background: var(--warning-bg); color: var(--warning-text); }
   .chevron { color: var(--text-muted); font-size: 12px; }
   .chevron.aperto { transform: rotate(180deg); }
 

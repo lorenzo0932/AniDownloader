@@ -18,13 +18,28 @@ namespace Core {
             m_lastError = db.lastError();
             return false;
         }
-        auto ins = db.prepare("INSERT INTO notifications(serie, episodio) VALUES (?, ?);");
+        // Deduplica per (serie, episodio): un episodio già notificato non
+        // genera un secondo badge/notifica OS. idOut = 0 segnala "già
+        // presente"; false resta riservato agli errori di storage.
+        auto ins = db.prepare("INSERT INTO notifications(serie, episodio) "
+                              "SELECT ?, ? WHERE NOT EXISTS ("
+                              "SELECT 1 FROM notifications WHERE serie = ? AND episodio = ?);");
         if (!ins.valid() || !ins.bindText(1, serie) || !ins.bindInt(2, episodio) ||
-            (ins.step(), ins.hasError())) {
+            !ins.bindText(3, serie) || !ins.bindInt(4, episodio) || (ins.step(), ins.hasError())) {
             m_lastError = ins.lastError();
             return false;
         }
+        auto changes = db.prepare("SELECT changes();");
+        if (!changes.valid() || !changes.step() || changes.hasError()) {
+            m_lastError = changes.lastError();
+            return false;
+        }
+        const auto inserite = changes.columnInt(0);
         if (idOut != nullptr) {
+            if (inserite == 0) {
+                *idOut = 0;
+                return true;
+            }
             auto id = db.prepare("SELECT last_insert_rowid();");
             if (!id.valid() || !id.step() || id.hasError()) {
                 m_lastError = id.lastError();

@@ -19,16 +19,18 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
   };
 }
 
-const { logsMock, queueListMock, queueRetryMock } = vi.hoisted(() => ({
+const { logsMock, queueListMock, queueRetryMock, schedulerMock } = vi.hoisted(() => ({
   logsMock: vi.fn(),
   queueListMock: vi.fn(),
   queueRetryMock: vi.fn(),
+  schedulerMock: vi.fn(),
 }));
 
 vi.mock('../api.js', () => ({
   api: {
     logs: logsMock,
     queue: { list: queueListMock, retry: queueRetryMock },
+    scheduler: { status: schedulerMock },
     sse: () => ({ onmessage: null, close() {} }),
   },
 }));
@@ -53,6 +55,11 @@ beforeEach(() => {
     counts: { attesa: 0, attivo: 0, fatto: 0, fallito: 0 },
   });
   queueRetryMock.mockResolvedValue({ success: true });
+  schedulerMock.mockResolvedValue({
+    attivo: true, inPausa: false, checkInCoda: 0,
+    ultimoGiro: 0, prossimoGiro: 0, intervalloMinuti: 15,
+    ultimoEsito: '', ultimoMessaggio: '',
+  });
 });
 
 describe('LogsPage', () => {
@@ -128,14 +135,16 @@ describe('LogsPage', () => {
     expect(await screen.findByText('Nessun log disponibile.')).toBeTruthy();
   });
 
-  it('tab Diagnostica mostra la coda e nasconde il viewer', async () => {
+  it('tab Controlli mostra il riepilogo e nasconde il viewer', async () => {
     render(LogsPage);
     await screen.findByText('Download execution completed');
 
-    await fireEvent.click(screen.getByRole('tab', { name: 'Diagnostica' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Controlli' }));
     expect(screen.queryByRole('log')).toBeNull();
-    expect(screen.getByText(/Lo stato di download e conversioni vive/)).toBeTruthy();
-    expect(await screen.findByText('Coda vuota.')).toBeTruthy();
+    expect(screen.getByText(/I controlli senza novità non richiedono azione/)).toBeTruthy();
+    expect(await screen.findByText(
+      'Nessun controllo in coda. I controlli completati non richiedono azione.'
+    )).toBeTruthy();
     expect(queueListMock).toHaveBeenCalled();
 
     const prima = logsMock.mock.calls.length;
@@ -158,9 +167,10 @@ describe('LogsPage', () => {
     render(LogsPage);
     await screen.findByText('Download execution completed');
 
-    const select = screen.getByRole('combobox', { name: 'Righe da mostrare' });
-    expect(select.value).toBe('500');
-    await fireEvent.change(select, { target: { value: '100' } });
+    const combo = screen.getByRole('combobox', { name: 'Righe da mostrare' });
+    expect(combo.textContent).toContain('500 righe');
+    await fireEvent.click(combo);
+    await fireEvent.click(screen.getByRole('option', { name: '100 righe' }));
     await waitFor(() => expect(logsMock).toHaveBeenLastCalledWith(100));
   });
 
@@ -208,7 +218,7 @@ describe('LogsPage', () => {
     expect(testo).not.toContain('Refresh');
     expect(testo).not.toContain('lines');
     expect(screen.getByRole('tab', { name: 'Log' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Diagnostica' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Controlli' })).toBeTruthy();
   });
 
   it('massimo 1500 righe renderizzate con hint di troncamento', async () => {
@@ -251,14 +261,14 @@ describe('LogsPage', () => {
     }
   });
 
-  it('in Diagnostica il polling del log è fermo', async () => {
+  it('in Controlli il polling del log è fermo', async () => {
     vi.useFakeTimers();
     try {
       render(LogsPage);
       await vi.advanceTimersByTimeAsync(0);
       expect(logsMock).toHaveBeenCalledTimes(1);
 
-      await fireEvent.click(screen.getByRole('tab', { name: 'Diagnostica' }));
+      await fireEvent.click(screen.getByRole('tab', { name: 'Controlli' }));
       await vi.advanceTimersByTimeAsync(0);
       const chiamate = logsMock.mock.calls.length;
       await vi.advanceTimersByTimeAsync(4000);

@@ -55,6 +55,29 @@ describe('RunRow', () => {
     expect(screen.getByText('2 saltati')).toBeTruthy();
   });
 
+  it('run chiuso con job in retry: mostra In sospeso, non un falso Completato', () => {
+    render(RunRow, {
+      run: run({
+        stato: 'completato', totale: 2, completati: 0, non_riusciti: 0,
+        in_corso: 2, percent: 0,
+      }),
+      jobs: [],
+    });
+    expect(screen.getByText('In sospeso')).toBeTruthy();
+    expect(screen.queryByText('Completato')).toBeNull();
+  });
+
+  it('run chiuso con non riusciti: mostra Con errori', () => {
+    render(RunRow, {
+      run: run({
+        stato: 'completato', totale: 2, completati: 0, non_riusciti: 2,
+        in_corso: 0, percent: 0,
+      }),
+      jobs: [],
+    });
+    expect(screen.getByText('Con errori')).toBeTruthy();
+  });
+
   it('progressbar determinata con aria-valuenow e aria-valuetext', () => {
     render(RunRow, { run: run(), jobs: [] });
     const barra = screen.getByRole('progressbar');

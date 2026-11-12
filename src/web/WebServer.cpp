@@ -174,9 +174,7 @@ namespace Web {
         // StatusPage lo ignora, la campanella in App.svelte lo consuma.
         m_scheduler.onEpisodioPronto(
             [this](const std::string& serie, int episodio, std::int64_t id) {
-                nlohmann::json ev = {
-                    {"type", "notification"}, {"id", id}, {"serie", serie}, {"episodio", episodio}};
-                broadcastSseEvent(ev.dump());
+                emitNotification(serie, episodio, id);
             });
         // Progresso dei check automatici: la Home lo legge da /api/overview
         // (il DownloadState resta la proiezione del solo run manuale).
@@ -271,6 +269,32 @@ namespace Web {
                 queue.pop();
             queue.push(serialized);
         }
+    }
+
+    void WebServer::emitNotification(const std::string& serie, int episodio, std::int64_t id) {
+        bool osInviata = false;
+        // Config fresca: l'autosave della UI può aver cambiato sorgente da
+        // pochi millisecondi. Non usare la copia in memoria del manager.
+        const auto cfg = loadConfigJson();
+        const auto notif = cfg.value("notifiche", nlohmann::json::object());
+        if (notif.value("abilitate", false)) {
+            const std::string sorgente = notif.value("sorgente", "entrambi");
+            const bool vuoleSistema = sorgente == "backend" || sorgente == "entrambi";
+            if (vuoleSistema && Core::OsNotifier::available()) {
+                const auto esito = Core::OsNotifier::send(
+                    "Nuovo episodio pronto", serie + " — Ep. " + std::to_string(episodio));
+                osInviata = esito.ok;
+                if (!esito.ok)
+                    Core::Logger::warn("Notifica di sistema non inviata (" + esito.method +
+                                       "): " + esito.error);
+            }
+        }
+        nlohmann::json ev = {{"type", "notification"},
+                             {"id", id},
+                             {"serie", serie},
+                             {"episodio", episodio},
+                             {"os", osInviata}};
+        broadcastSseEvent(ev.dump());
     }
 
     void WebServer::clearLiveTasks() {
@@ -382,7 +406,11 @@ namespace Web {
             sendJson(res, {{"version", ANIDOWNLOADER_VERSION},
                            {"sseClients", static_cast<uint64_t>(m_sseCounter.load())},
                            {"downloadRunning", m_downloadRunning.load()},
-                           {"port", m_port}});
+                           {"port", m_port},
+                           // Su Linux il demone invia lui le notifiche OS
+                           // (anche ad app chiusa); il client Tauri le invia
+                           // solo se questo è false.
+                           {"osNotifyBackend", Core::OsNotifier::available()}});
         });
 
         // ---- SCHEDULER (B6): stato + pausa, eventi via SSE ----
@@ -393,6 +421,10 @@ namespace Web {
                                {"inPausa", s.inPausa},
                                {"checkInCoda", s.checkInCoda},
                                {"ultimoGiro", s.ultimoGiro},
+                               {"prossimoGiro", s.prossimoGiro},
+                               {"intervalloMinuti", s.intervalloMinuti},
+                               {"ultimoEsito", s.ultimoEsito},
+                               {"ultimoMessaggio", s.ultimoMessaggio},
                                {"pipeline",
                                 {{"inEsecuzione", m_pipelineGate.inEsecuzione()},
                                  {"interattivoInAttesa", m_pipelineGate.interattivoInAttesa()}}}}));
@@ -491,7 +523,8 @@ namespace Web {
                                  {"tentativi", v.tentativi},
                                  {"prossima_esecuzione", v.prossimaEsecuzione},
                                  {"priorita", v.priorita},
-                                 {"creato_il", v.creatoIl}});
+                                 {"creato_il", v.creatoIl},
+                                 {"errore", v.errore}});
             }
             const auto counts = coda.counts();
             auto conta = [&counts](const char* chiave) {
@@ -844,6 +877,38 @@ namespace Web {
                     return;
                 }
                 sendJson(res, successJson({{"unread", (std::max)(0, store.unreadCount())}}));
+            });
+
+        // Test esplicito della notifica di sistema: non persiste nulla e non
+        // dipende dal toggle "abilitate" (serve proprio a diagnosticarlo).
+        m_svr.Post(
+            "/api/notifications/test", [](const httplib::Request& req, httplib::Response& res) {
+                std::string title = "AniDownloader";
+                std::string body = "Notifica di prova: tutto funziona.";
+                try {
+                    if (!req.body.empty()) {
+                        const auto data = nlohmann::json::parse(req.body);
+                        title = data.value("title", title);
+                        body = data.value("body", body);
+                    }
+                } catch (const std::exception&) {
+                    res.status = 400;
+                    res.set_content(R"({"success":false,"error":"Invalid test data"})",
+                                    "application/json");
+                    return;
+                }
+                if (!Core::OsNotifier::available()) {
+                    res.status = 503;
+                    res.set_content(
+                        R"({"success":false,"error":"Nessun notifier di sistema disponibile"})",
+                        "application/json");
+                    return;
+                }
+                const auto esito = Core::OsNotifier::send(title, body);
+                nlohmann::json out = {
+                    {"success", esito.ok}, {"method", esito.method}, {"error", esito.error}};
+                res.status = esito.ok ? 200 : 503;
+                res.set_content(out.dump(), "application/json");
             });
     }
 
@@ -1794,13 +1859,8 @@ namespace Web {
                     // badge si aggiorna in diretta via SSE.
                     Core::NotificationStore notifiche(m_dbPath);
                     std::int64_t id = 0;
-                    if (notifiche.add(name, ep, &id)) {
-                        nlohmann::json ev = {{"type", "notification"},
-                                             {"id", id},
-                                             {"serie", name},
-                                             {"episodio", ep}};
-                        broadcastSseEvent(ev.dump());
-                    }
+                    if (notifiche.add(name, ep, &id) && id > 0)
+                        emitNotification(name, ep, id);
                 });
 
             std::mutex mapMutex;

@@ -3,6 +3,7 @@
   import { pageEnter } from '../motion.js';
   import { api } from '../api.js';
   import RunRow from './RunRow.svelte';
+  import RunGroup from './RunGroup.svelte';
   import JobRow from './JobRow.svelte';
 
   const TABS = [['recenti', 'Recenti'], ['problemi', 'Problemi'], ['storico', 'Storico']];
@@ -36,6 +37,84 @@
 
   // Scarta le risposte di richieste superate (cambio tab/vista/origine).
   let sequenza = 0;
+  let gruppiAperti = $state({});
+
+  function chiaveGiorno(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return 'sconosciuto';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function etichettaGiorno(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return 'Senza data';
+    const oggi = new Date();
+    const inizioOggi = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate());
+    const inizioGiorno = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const giorni = Math.round((inizioOggi - inizioGiorno) / 86400000);
+    if (giorni === 0) return 'Oggi';
+    if (giorni === 1) return 'Ieri';
+    return d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
+
+  // Un check automatico senza episodi non merita una riga: è il rumore che
+  // rendeva illeggibile la lista. I run manuali vuoti restano visibili,
+  // perché sono un'azione esplicita dell'utente.
+  function isCheckVuoto(run) {
+    return run.origine === 'automatico'
+      && (run.totale ?? 0) === 0
+      && (run.non_riusciti ?? 0) === 0
+      && run.stato === 'completato';
+  }
+
+  let gruppi = $derived.by(() => {
+    if (vista !== 'avvii') return [];
+    const perGiorno = new Map();
+    const ordine = [];
+    for (const run of items) {
+      const key = chiaveGiorno(run.avviato_il);
+      let gruppo = perGiorno.get(key);
+      if (!gruppo) {
+        gruppo = {
+          key,
+          label: etichettaGiorno(run.avviato_il),
+          items: [],
+          checks: [],
+          episodi: 0,
+          problemi: 0,
+        };
+        perGiorno.set(key, gruppo);
+        ordine.push(gruppo);
+      }
+      if (isCheckVuoto(run)) {
+        gruppo.checks.push(run);
+      } else {
+        gruppo.items.push(run);
+        gruppo.episodi += run.completati ?? 0;
+        gruppo.problemi += run.non_riusciti ?? 0;
+      }
+    }
+    return ordine;
+  });
+
+  let riepilogo = $derived.by(() => {
+    let episodi = 0;
+    let controlli = 0;
+    let problemi = 0;
+    for (const run of items) {
+      if (isCheckVuoto(run)) {
+        controlli += 1;
+      } else {
+        episodi += run.completati ?? 0;
+        problemi += run.non_riusciti ?? 0;
+      }
+    }
+    return { episodi, controlli, problemi };
+  });
+
+  function toggleGruppo(key) {
+    gruppiAperti = { ...gruppiAperti, [key]: !gruppiAperti[key] };
+  }
 
   function finestraTab() {
     if (tab === 'storico') return 'storico';
@@ -107,6 +186,7 @@
     hasMore = false;
     aperti = {};
     runAperti = {};
+    gruppiAperti = {};
     runJobs = {};
     runLoading = {};
     runError = {};
@@ -267,6 +347,7 @@
 </script>
 
 <div class="attivita" in:pageEnter|global>
+  <div class="attivita-main">
   <header class="head">
     <h1>Attività</h1>
     <button class="btn-refresh" onclick={() => load()} disabled={loading}
@@ -308,6 +389,25 @@
     {/each}
   </div>
 
+  {#if vista === 'avvii' && items.length > 0}
+    <div class="summary-chips" aria-label="Riepilogo attività">
+      <span class="summary-chip" title="Avvii caricati sul totale della finestra">
+        <strong>{items.length}</strong> di <strong>{total}</strong> avvii
+      </span>
+      <span class="summary-chip">
+        <strong>{riepilogo.episodi}</strong> {riepilogo.episodi === 1 ? 'episodio' : 'episodi'} completati
+      </span>
+      <span class="summary-chip">
+        <strong>{riepilogo.controlli}</strong> {riepilogo.controlli === 1 ? 'controllo' : 'controlli'} senza novità
+      </span>
+      {#if riepilogo.problemi > 0}
+        <span class="summary-chip ko">
+          <strong>{riepilogo.problemi}</strong> non riusciti
+        </span>
+      {/if}
+    </div>
+  {/if}
+
   <div id="panel-attivita" role="tabpanel" aria-labelledby={`tab-${tab}`}>
     <p class="finestra">{testoFinestra}</p>
 
@@ -326,23 +426,60 @@
       {:else if items.length === 0}
         <p class="empty">{testoVuoto}</p>
       {:else if vista === 'avvii'}
-        <ul class="run-list">
-          {#each items as run, i (run.id)}
-            <li class="run-item" style="--i:{Math.min(i, 8)}">
-              <RunRow
-                {run}
-                expanded={!!runAperti[run.id]}
-                loading={!!runLoading[run.id]}
-                jobs={runJobs[run.id] || []}
-                error={runError[run.id] || ''}
-                onToggle={() => toggleRun(run.id)}
-                onReload={() => caricaRun(run.id, true)}
-                onRetryFailed={() => riprovaRun(run)}
-                onRetryJob={riprova}
+        {#each gruppi as gruppo (gruppo.key)}
+          <section class="day-group" aria-label={gruppo.label}>
+            <header class="day-head">
+              <h3>{gruppo.label}</h3>
+              <span class="day-meta">
+                {#if gruppo.items.length > 0}
+                  {gruppo.items.length} {gruppo.items.length === 1 ? 'avvio' : 'avvii'}
+                {/if}
+                {#if gruppo.episodi > 0}
+                  <span class="sep" aria-hidden="true">·</span>
+                  {gruppo.episodi} {gruppo.episodi === 1 ? 'episodio' : 'episodi'}
+                {/if}
+                {#if gruppo.problemi > 0}
+                  <span class="sep" aria-hidden="true">·</span>
+                  <span class="ko">{gruppo.problemi} non riusciti</span>
+                {/if}
+                {#if gruppo.checks.length > 0}
+                  {#if gruppo.items.length > 0 || gruppo.episodi > 0}
+                    <span class="sep" aria-hidden="true">·</span>
+                  {/if}
+                  {gruppo.checks.length} {gruppo.checks.length === 1 ? 'controllo' : 'controlli'}
+                {/if}
+              </span>
+            </header>
+
+            {#if gruppo.items.length > 0}
+              <ul class="run-list">
+                {#each gruppo.items as run, i (run.id)}
+                  <li class="run-item" style="--i:{Math.min(i, 8)}">
+                    <RunRow
+                      {run}
+                      expanded={!!runAperti[run.id]}
+                      loading={!!runLoading[run.id]}
+                      jobs={runJobs[run.id] || []}
+                      error={runError[run.id] || ''}
+                      onToggle={() => toggleRun(run.id)}
+                      onReload={() => caricaRun(run.id, true)}
+                      onRetryFailed={() => riprovaRun(run)}
+                      onRetryJob={riprova}
+                    />
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+
+            {#if gruppo.checks.length > 0}
+              <RunGroup
+                runs={gruppo.checks}
+                expanded={!!gruppiAperti[gruppo.key]}
+                onToggle={() => toggleGruppo(gruppo.key)}
               />
-            </li>
-          {/each}
-        </ul>
+            {/if}
+          </section>
+        {/each}
       {:else}
         <ul class="job-list">
           {#each items as job, i (job.id)}
@@ -363,10 +500,59 @@
       {/if}
     {/if}
   </div>
+  </div>
+
+  <aside class="attivita-aside" aria-label="Riepilogo attività">
+    <div class="aside-card">
+      <h2>Riepilogo</h2>
+      <div class="aside-stats">
+        <div class="aside-stat">
+          <strong>{counts.in_corso ?? 0}</strong>
+          <span>In corso</span>
+        </div>
+        <div class="aside-stat">
+          <strong>{counts.problemi ?? 0}</strong>
+          <span>Con problemi</span>
+        </div>
+        <div class="aside-stat">
+          <strong>{counts.recenti ?? 0}</strong>
+          <span>Recenti</span>
+        </div>
+      </div>
+      {#if counts.problemi > 0}
+        <button type="button" class="aside-link" onclick={() => scegliTab('problemi')}>
+          Vedi i problemi
+        </button>
+      {/if}
+      <p class="aside-hint">
+        I controlli automatici senza novità sono raggruppati per giorno: non serve aprirli uno per uno.
+      </p>
+    </div>
+
+    <div class="aside-card">
+      <h3>Legenda</h3>
+      <ul class="legend">
+        <li><span class="legend-icon in-corso" aria-hidden="true">◷</span> In corso</li>
+        <li><span class="legend-icon ok" aria-hidden="true">✓</span> Completato</li>
+        <li><span class="legend-icon ko" aria-hidden="true">!</span> Con errori</li>
+        <li><span class="legend-icon check" aria-hidden="true">↻</span> Controllo senza novità</li>
+      </ul>
+    </div>
+  </aside>
 </div>
 
 <style>
-  .attivita { padding: 1.5rem; max-width: 900px; margin: 0 auto; }
+  .attivita {
+    padding: var(--content-gutter, 1.5rem);
+    max-width: var(--content-wide, 1680px);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .attivita-main { min-width: 0; }
+  .attivita-aside { display: none; min-width: 0; }
   .head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
   .head h1 { font-size: 1.4rem; }
   .btn-refresh {
@@ -422,6 +608,33 @@
     outline: 2px solid var(--accent); outline-offset: 2px;
   }
 
+  .summary-chips {
+    display: flex; flex-wrap: wrap; gap: 0.4rem;
+    margin: 0 0 0.75rem;
+  }
+  .summary-chip {
+    display: inline-flex; align-items: baseline; gap: 0.3rem;
+    padding: 0.3rem 0.65rem; border-radius: 999px;
+    background: var(--bg-secondary); border: 1px solid var(--border-color);
+    color: var(--text-muted); font-size: 12px;
+  }
+  .summary-chip strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .summary-chip.ko strong { color: var(--danger); }
+
+  .day-group { margin-bottom: 1rem; }
+  .day-group:last-child { margin-bottom: 0; }
+  .day-head {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.2rem 0.5rem;
+    margin: 0 0 0.4rem; padding: 0 0.15rem;
+  }
+  .day-head h3 {
+    font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--accent-light);
+  }
+  .day-meta { color: var(--text-muted); font-size: 11px; }
+  .day-meta .sep { color: var(--text-muted-more); }
+  .day-meta .ko { color: var(--danger); }
+
   .finestra { color: var(--text-muted); font-size: 12px; margin: 0 0 0.75rem; }
   .err { color: var(--danger); margin: 0.75rem 0; }
   .empty { color: var(--text-muted); margin-top: 1rem; }
@@ -449,6 +662,44 @@
     background: var(--bg-tertiary); color: var(--text-primary);
   }
   .btn-altri:disabled { color: var(--text-muted); cursor: default; }
+
+  .aside-card {
+    background: var(--bg-secondary); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 1rem; margin-bottom: 0.75rem;
+  }
+  .aside-card h2, .aside-card h3 {
+    font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--accent-light); margin-bottom: 0.75rem;
+  }
+  .aside-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+  .aside-stat { display: flex; flex-direction: column; gap: 0.15rem; }
+  .aside-stat strong {
+    font-size: 1.35rem; line-height: 1; color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  .aside-stat span { font-size: 11px; color: var(--text-muted); }
+  .aside-link {
+    margin-top: 0.9rem; background: none; border: 1px solid var(--border-color);
+    border-radius: 7px; color: var(--accent-light); font-size: 12px;
+    padding: 0.4rem 0.6rem; cursor: pointer; font-family: inherit;
+  }
+  .aside-link:hover { background: var(--bg-hover); }
+  .aside-hint { margin-top: 0.8rem; color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+  .legend { list-style: none; display: flex; flex-direction: column; gap: 0.45rem; }
+  .legend li { display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); font-size: 12px; }
+  .legend-icon {
+    width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--bg-tertiary); font-size: 11px; font-weight: 700;
+  }
+  .legend-icon.in-corso { color: var(--accent-light); }
+  .legend-icon.ok { color: var(--success); }
+  .legend-icon.ko { color: var(--danger); }
+  .legend-icon.check { color: var(--text-muted); }
+
+  @media (min-width: 1500px) {
+    .attivita { grid-template-columns: minmax(0, 1fr) 300px; }
+    .attivita-aside { display: block; position: sticky; top: 1.5rem; }
+  }
 
   @media (max-width: 768px) {
     .attivita { padding: 1rem; }

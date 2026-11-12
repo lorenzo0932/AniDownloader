@@ -137,6 +137,13 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_run
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_start
     ON pipeline_runs(avviato_il DESC);
 )";
+
+        // v7: motivo dell'ultimo fallimento dei task della coda. Additiva e
+        // compatibile con i DB v6 (le righe storiche restano con stringa
+        // vuota: la UI le etichetta come "motivo non disponibile").
+        constexpr const char* kSchemaV7 = R"(
+ALTER TABLE tasks ADD COLUMN errore TEXT NOT NULL DEFAULT '';
+)";
     } // namespace
 
     struct Statement::Impl {
@@ -409,7 +416,8 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_runs_start
             return true;
         };
         if (!applica(1, kSchemaV1) || !applica(2, kSchemaV2) || !applica(3, kSchemaV3) ||
-            !applica(4, kSchemaV4) || !applica(5, kSchemaV5) || !applica(6, kSchemaV6))
+            !applica(4, kSchemaV4) || !applica(5, kSchemaV5) || !applica(6, kSchemaV6) ||
+            !applica(7, kSchemaV7))
             return false;
         // Backfill idempotente: i job senza run (pre-v6) confluiscono nel run
         // sintetico `legacy`. Riaperture successive non trovano righe da
