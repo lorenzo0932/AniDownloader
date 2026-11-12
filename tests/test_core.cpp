@@ -1693,12 +1693,13 @@ static void testQueueStore() {
     const auto idVista = qv.enqueue("check", "Serie Vista", 1, "{}", 0);
     const auto idFallito = qv.enqueue("check", "Serie Ko", 2, "{}", 0);
     CHECK(idVista > 0 && idFallito > 0);
-    CHECK(qv.failDead(idFallito));
+    CHECK(qv.failDead(idFallito, "timeout di rete"));
     CHECK(qv.nonTerminalCount() == 1); // solo idVista in attesa
     auto viste = qv.list();
     CHECK(viste.size() == 2);
     CHECK(viste[0].id == idVista && viste[0].stato == "attesa");
     CHECK(viste[1].id == idFallito && viste[1].stato == "fallito");
+    CHECK(viste[1].errore == "timeout di rete");
     auto conti = qv.counts();
     CHECK(conti["attesa"] == 1 && conti["fallito"] == 1);
     CHECK(qv.retryNow(idFallito));
@@ -1731,6 +1732,10 @@ static void testNotificationStore() {
         CHECK(store.add("Serie A", 3, &id1));
         CHECK(store.add("Serie B", 7, &id2));
         CHECK(id1 > 0 && id2 > id1);
+        // Stesso episodio: nessuna seconda riga, id 0 come segnale.
+        std::int64_t idDuplicato = -1;
+        CHECK(store.add("Serie A", 3, &idDuplicato));
+        CHECK(idDuplicato == 0);
         CHECK(store.unreadCount() == 2);
 
         // Più recenti prima; la colonna creato_il è valorizzata dal default.
@@ -2084,6 +2089,9 @@ static void testPipelineRunsMigration() {
         CHECK(db.execute("DROP INDEX IF EXISTS idx_pipeline_jobs_run;"));
         CHECK(db.execute("DROP TABLE pipeline_runs;"));
         CHECK(db.execute("ALTER TABLE pipeline_jobs DROP COLUMN run_id;"));
+        // v7 è additiva su tasks: per simulare davvero un DB v5 va rimossa
+        // anche la colonna, altrimenti ALTER TABLE ... ADD COLUMN fallisce.
+        CHECK(db.execute("ALTER TABLE tasks DROP COLUMN errore;"));
         CHECK(db.execute("DELETE FROM migrations WHERE version >= 6;"));
         CHECK(db.execute("INSERT INTO pipeline_jobs(job_key, serie, episodio, origine, fase, "
                          "payload, creato_il, aggiornato_il) VALUES "
@@ -2549,7 +2557,8 @@ static void testWorkerPool() {
         const auto id = coda.enqueue("lavoro", "", 0, "{}", 0);
         CHECK(id > 0);
         Core::WorkerPool pool(db, 1);
-        pool.onKind("lavoro", [](const Core::QueueTask&) { return Core::EsitoTask::Riprova; });
+        pool.onKind("lavoro",
+                    [](const Core::QueueTask&, std::string&) { return Core::EsitoTask::Riprova; });
         pool.start();
         bool riprogrammato = false;
         for (int i = 0; i < 300 && !riprogrammato; ++i) {
@@ -2591,7 +2600,7 @@ static void testWorkerPool() {
         const auto id = coda.enqueue("occupato", "", 0, "{}", 0);
         std::atomic<int> giri{0};
         Core::WorkerPool pool(db, 1);
-        pool.onKind("occupato", [&](const Core::QueueTask&) {
+        pool.onKind("occupato", [&](const Core::QueueTask&, std::string&) {
             if (giri.fetch_add(1) == 0)
                 return Core::EsitoTask::Occupato;
             return Core::EsitoTask::Completato;
@@ -2632,7 +2641,9 @@ static void testWorkerPool() {
         std::vector<std::string> eventi;
         std::mutex mutexEventi;
         Core::WorkerPool pool(db, 1);
-        pool.onKind("lavoro", [](const Core::QueueTask&) { return Core::EsitoTask::Completato; });
+        pool.onKind("lavoro", [](const Core::QueueTask&, std::string&) {
+            return Core::EsitoTask::Completato;
+        });
         pool.onEvento([&](const std::string& tipo, const Core::QueueTask&) {
             std::lock_guard<std::mutex> l(mutexEventi);
             eventi.push_back(tipo);
@@ -2656,7 +2667,7 @@ static void testWorkerPool() {
             coda.enqueue("lavoro", "", 0, "{}", 0);
         std::atomic<int> eseguiti{0};
         Core::WorkerPool pool(db, 2);
-        pool.onKind("lavoro", [&](const Core::QueueTask& t) {
+        pool.onKind("lavoro", [&](const Core::QueueTask& t, std::string&) {
             (void)t;
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             ++eseguiti;
@@ -2675,7 +2686,7 @@ static void testWorkerPool() {
         Core::QueueStore coda(dir / "p.db");
         const auto id = coda.enqueue("lento", "", 0, "{}", 0);
         Core::WorkerPool pool(db, 1);
-        pool.onKind("lento", [](const Core::QueueTask&) {
+        pool.onKind("lento", [](const Core::QueueTask&, std::string&) {
             std::this_thread::sleep_for(std::chrono::seconds(2));
             return Core::EsitoTask::Completato;
         });

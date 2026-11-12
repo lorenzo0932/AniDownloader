@@ -604,6 +604,19 @@ if jq -e --argjson p "$PORT" '.port == $p' "$RPT/status.json" >/dev/null; then
 else
     fail "port attesa $PORT: $(cat "$RPT/status.json")"
 fi
+if jq -e '.osNotifyBackend | type == "boolean"' "$RPT/status.json" >/dev/null; then
+    pass "osNotifyBackend è booleano"
+else
+    fail "osNotifyBackend assente/non booleano: $(cat "$RPT/status.json")"
+fi
+
+curl -s -m 10 "$BASE/api/scheduler/status" > "$RPT/scheduler.json"
+if jq -e '.intervalloMinuti >= 5 and (.ultimoEsito | type == "string") and
+          (.prossimoGiro | type == "number")' "$RPT/scheduler.json" >/dev/null; then
+    pass "scheduler/status: intervallo, esito e prossimo giro"
+else
+    fail "scheduler/status incompleto: $(cat "$RPT/scheduler.json")"
+fi
 
 echo "[6/14] /api/series e ordinamento"
 curl -s -m 10 "$BASE/api/series" > "$RPT/series.json"

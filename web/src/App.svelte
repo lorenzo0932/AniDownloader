@@ -21,6 +21,9 @@
   let sidebarCollapsed = $state(false);
   let notifEnabled = $state(false);
   let notifSorgente = $state('entrambi');
+  let osNotifyBackend = $state(false);
+  // Serie da aprire in Gestione dopo un click su una notifica.
+  let focusSeries = $state('');
 
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
@@ -41,13 +44,17 @@
       route = 'attivita';
     }
 
-    // Load config for close warning
+    // Load config for close warning + ownership delle notifiche OS.
     (async () => {
       try {
         const cfg = await api.config.get();
         showCloseWarning = cfg.config?.show_close_warning !== false;
         notifEnabled = cfg.config?.notifiche?.abilitate === true;
         notifSorgente = cfg.config?.notifiche?.sorgente || 'entrambi';
+      } catch {}
+      try {
+        const st = await api.status();
+        osNotifyBackend = st?.osNotifyBackend === true;
       } catch {}
     })();
 
@@ -84,6 +91,13 @@
     };
     window.addEventListener('anidl:navigate', onNavigate);
 
+    // Click su una notifica: apri Gestione filtrata sulla serie.
+    const onOpenSeries = (e) => {
+      focusSeries = e.detail?.serie || '';
+      navigateTo('gestione');
+    };
+    window.addEventListener('anidl:open-series', onOpenSeries);
+
     window.addEventListener('popstate', () => {
       route = routeMap[window.location.pathname] || 'home';
     });
@@ -93,6 +107,7 @@
       window.removeEventListener('beforeunload', onBeforeUnload);
       window.removeEventListener('anidl:config-saved', onConfigSaved);
       window.removeEventListener('anidl:navigate', onNavigate);
+      window.removeEventListener('anidl:open-series', onOpenSeries);
     };
   });
 </script>
@@ -137,14 +152,15 @@
           {#if !sidebarCollapsed}<span>Logs</span>{/if}
         </button>
       </div>
-      <NotificationBell enabled={notifEnabled} sorgente={notifSorgente} />
+      <NotificationBell enabled={notifEnabled} sorgente={notifSorgente}
+                        {osNotifyBackend} />
     </nav>
     <main class="content">
       {#key route}
         {#if route === 'home'}
           <HomePage />
         {:else if route === 'gestione'}
-          <SeriesManagerPage />
+          <SeriesManagerPage focusSeries={focusSeries} />
         {:else if route === 'scopri'}
           <DiscoverPage />
         {:else if route === 'attivita'}
@@ -166,6 +182,16 @@
   }
 
   :global(:root), :global([data-theme="dark"]) {
+    /* I controlli nativi (select/option/checkbox) seguono il tema: senza
+       color-scheme WebKitGTK usa il tema GTK chiaro e il popup diventa
+       illeggibile dentro l'app Tauri. accent-color allinea check/radio. */
+    color-scheme: dark;
+    accent-color: var(--accent);
+    /* Larghezze condivise: le pagine dati usano wide, i form restano più
+       stretti per non avere righe di testo illeggibili su ultrawide. */
+    --content-max: 1440px;
+    --content-wide: 1680px;
+    --content-gutter: clamp(1rem, 1.6vw, 2.5rem);
     --bg-primary: #0f0f0f;
     --bg-secondary: #1a1a1a;
     --bg-tertiary: #252525;
@@ -200,6 +226,8 @@
   }
 
   :global([data-theme="light"]) {
+    color-scheme: light;
+    accent-color: var(--accent);
     --bg-primary: #f5f5f5;
     --bg-secondary: #ffffff;
     --bg-tertiary: #e8e8e8;
@@ -238,6 +266,26 @@
     background: var(--bg-primary);
     color: var(--text-primary);
     min-height: 100vh;
+  }
+
+  /* Base dei controlli nativi: i componenti possono specializzare bordo,
+     padding e raggio, ma fondo/testo restano leggibili in entrambi i temi.
+     Le option esplicite coprono i motori che le stilizzano (WebKitGTK). */
+  :global(select),
+  :global(input:not([type='checkbox']):not([type='radio'])),
+  :global(textarea) {
+    color-scheme: inherit;
+    font-family: inherit;
+  }
+  :global(select option) {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+  :global(select:disabled),
+  :global(input:disabled),
+  :global(textarea:disabled) {
+    color: var(--text-muted);
+    opacity: 0.75;
   }
 
   :global(::-webkit-scrollbar) {
@@ -331,7 +379,7 @@
 
   .content {
     margin-left: 240px;
-    padding: 2rem;
+    padding: var(--content-gutter);
     flex: 1;
     width: calc(100% - 240px);
     /* Flex-item con larghezza esplicita: senza min-width:0 il pavimento

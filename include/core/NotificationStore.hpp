@@ -24,7 +24,8 @@ namespace Core {
       public:
         explicit NotificationStore(std::filesystem::path dbPath);
 
-        // Inserisce; idOut (opzionale) riceve l'id generato.
+        // Inserisce; idOut (opzionale) riceve l'id generato, oppure 0 se
+        // l'episodio era già notificato. false = errore di storage.
         bool add(const std::string& serie, int episodio, std::int64_t* idOut = nullptr);
 
         // Più recenti prima. limit <= 0 usa kDefaultLimit.

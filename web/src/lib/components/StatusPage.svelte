@@ -376,7 +376,10 @@
 </div>
 
 <style>
-  .vetrina { display: flex; flex-direction: column; gap: 1rem; }
+  .vetrina {
+    display: flex; flex-direction: column; gap: 1rem;
+    max-width: var(--content-wide, 1680px); margin: 0 auto;
+  }
 
   .error {
     background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger);

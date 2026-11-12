@@ -8,6 +8,9 @@ function applyTheme(t) {
     : t;
   resolved = effective;
   document.documentElement.dataset.theme = effective;
+  // Indica al motore (WebKitGTK in Tauri) di usare controlli nativi scuri:
+  // senza questo i popup di <select>/<option> seguono il tema GTK chiaro.
+  document.documentElement.style.colorScheme = effective;
 }
 
 function getInitialTheme() {

@@ -69,6 +69,13 @@ describe('DashboardPage vista', () => {
     expect(container.querySelector('.series-table')).toBeNull();
   });
 
+  it('focusSeries da notifica: filtra subito la serie richiesta', async () => {
+    render(DashboardPage, { focusSeries: 'Naruto' });
+    await screen.findByText('Naruto');
+    expect(screen.getByPlaceholderText('Cerca per nome...').value).toBe('Naruto');
+    expect(screen.queryByText('One Piece')).toBeNull();
+  });
+
   it('default: vista persistita al mount', async () => {
     render(DashboardPage);
     await screen.findByText('One Piece');

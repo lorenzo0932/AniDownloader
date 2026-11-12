@@ -118,6 +118,42 @@ describe('AttivitaPage', () => {
       .toBe('false');
   });
 
+  it('raggruppa i check automatici vuoti in una card per giorno', async () => {
+    const oggi = (minutiFa) => new Date(Date.now() - minutiFa * 60 * 1000).toISOString();
+    const check = (id, minutiFa) => run({
+      id,
+      origine: 'automatico',
+      stato: 'completato',
+      totale: 0,
+      completati: 0,
+      non_riusciti: 0,
+      in_corso: 0,
+      percent: 0,
+      saltati: 26,
+      avviato_il: oggi(minutiFa),
+      concluso_il: oggi(minutiFa - 1),
+    });
+    runsListMock.mockResolvedValue({
+      items: [run({ id: 'manuale', stato: 'completato', totale: 2, completati: 2,
+                    non_riusciti: 0, in_corso: 0, percent: 100,
+                    concluso_il: oggi(2) }),
+              check('check-1', 30), check('check-2', 45)],
+      total: 3,
+      counts: { in_corso: 0, recenti: 3, problemi: 0 },
+    });
+    const { container } = render(AttivitaPage);
+    await screen.findByText('Avvio manuale');
+    expect(screen.getByText('Oggi')).toBeTruthy();
+    expect(screen.getByText('Controlli automatici')).toBeTruthy();
+    expect(screen.getByText('2 esecuzioni senza nuovi episodi')).toBeTruthy();
+    // I due check non sono due righe .run: resta solo il run manuale.
+    expect(container.querySelectorAll('.run')).toHaveLength(1);
+    expect(screen.getAllByText(/2 controlli/).length).toBeGreaterThan(0);
+
+    await fireEvent.click(container.querySelector('.check-group .group-main'));
+    expect(await screen.findAllByText('Nessun nuovo episodio')).toHaveLength(2);
+  });
+
   it('deep link ?tab=problemi: apre Avvii/Problemi', async () => {
     window.history.replaceState({}, '', '/attivita?tab=problemi');
     render(AttivitaPage);

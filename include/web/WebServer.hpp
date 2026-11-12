@@ -3,6 +3,7 @@
 #include "config/AppConfigManager.hpp"
 #include "core/ExecutionEngine.hpp"
 #include "core/NotificationStore.hpp"
+#include "core/OsNotifier.hpp"
 #include "core/PipelineGate.hpp"
 #include "core/Scheduler.hpp"
 #include "core/SeriesRepository.hpp"
@@ -88,6 +89,10 @@ namespace Web {
         uint64_t registerSseClient();
         void unregisterSseClient(uint64_t id);
         void broadcastSseEvent(const std::string& eventJson);
+
+        // Persistenza già avvenuta: inoltra l'evento SSE e, se la config lo
+        // prevede, invia la notifica di sistema dal demone (Linux).
+        void emitNotification(const std::string& serie, int episodio, std::int64_t id);
 
         void clearLiveTasks();
         void setLiveTask(const std::string& series, int episode, const std::string& phase,

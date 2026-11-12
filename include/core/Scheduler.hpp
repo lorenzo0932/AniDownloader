@@ -28,6 +28,11 @@ namespace Core {
         bool inPausa{false};
         std::int64_t checkInCoda{0};
         std::int64_t ultimoGiro{0};
+        std::int64_t prossimoGiro{0};
+        int intervalloMinuti{15};
+        // "ok" / "errore" / "" (nessun giro ancora) e nota leggibile.
+        std::string ultimoEsito;
+        std::string ultimoMessaggio;
     };
 
     class Scheduler {

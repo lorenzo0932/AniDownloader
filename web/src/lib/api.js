@@ -132,6 +132,11 @@ export const api = {
     },
     read: (id) => request('POST', '/api/notifications/read',
       id === undefined ? {} : { id }),
+    test: () => request('POST', '/api/notifications/test'),
+  },
+
+  scheduler: {
+    status: () => request('GET', '/api/scheduler/status'),
   },
 
   // Coda persistente (tabella `tasks`): vista e retry manuale.

@@ -138,7 +138,7 @@ namespace Core {
             return false;
         }
         auto upd = db.prepare("UPDATE tasks SET stato = 'attesa', tentativi = tentativi + 1, "
-                              "prossima_esecuzione = ? WHERE id = ?;");
+                              "errore = '', prossima_esecuzione = ? WHERE id = ?;");
         if (!upd.valid() || !upd.bindInt(1, oraEpoch() + attesaSec) || !upd.bindInt(2, id) ||
             (upd.step(), upd.hasError())) {
             m_lastError = upd.lastError();
@@ -164,14 +164,15 @@ namespace Core {
         return true;
     }
 
-    bool QueueStore::failDead(std::int64_t id) {
+    bool QueueStore::failDead(std::int64_t id, const std::string& errore) {
         Database db(m_dbPath);
         if (!db.isOpen()) {
             m_lastError = db.lastError();
             return false;
         }
-        auto upd = db.prepare("UPDATE tasks SET stato = 'fallito' WHERE id = ?;");
-        if (!upd.valid() || !upd.bindInt(1, id) || (upd.step(), upd.hasError())) {
+        auto upd = db.prepare("UPDATE tasks SET stato = 'fallito', errore = ? WHERE id = ?;");
+        if (!upd.valid() || !upd.bindText(1, errore) || !upd.bindInt(2, id) ||
+            (upd.step(), upd.hasError())) {
             m_lastError = upd.lastError();
             return false;
         }
@@ -225,7 +226,7 @@ namespace Core {
         }
         const int cap = (limit <= 0) ? 100 : (std::min)(limit, 500);
         const std::string colonne = "SELECT id, kind, serie, episodio, stato, tentativi, "
-                                    "prossima_esecuzione, priorita, creato_il FROM tasks ";
+                                    "prossima_esecuzione, priorita, creato_il, errore FROM tasks ";
         const std::string ordine =
             " ORDER BY CASE stato WHEN 'attivo' THEN 0 WHEN 'attesa' THEN 1 "
             "WHEN 'fallito' THEN 2 ELSE 3 END, priorita DESC, id DESC LIMIT ?;";
@@ -251,6 +252,7 @@ namespace Core {
             v.prossimaEsecuzione = sel.columnInt(6);
             v.priorita = static_cast<int>(sel.columnInt(7));
             v.creatoIl = sel.columnText(8);
+            v.errore = sel.columnText(9);
             out.push_back(std::move(v));
         }
         return out;
@@ -284,7 +286,8 @@ namespace Core {
             m_lastError = db.lastError();
             return false;
         }
-        auto upd = db.prepare("UPDATE tasks SET stato = 'attesa', prossima_esecuzione = 0 "
+        auto upd = db.prepare("UPDATE tasks SET stato = 'attesa', errore = '', "
+                              "prossima_esecuzione = 0 "
                               "WHERE id = ? AND stato IN ('attesa', 'fallito');");
         if (!upd.valid() || !upd.bindInt(1, id) || (upd.step(), upd.hasError())) {
             m_lastError = upd.lastError();

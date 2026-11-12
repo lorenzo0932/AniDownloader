@@ -55,7 +55,8 @@ namespace Core {
         // task (es. exec.lock tenuto da una CLI manuale).
         bool riprogramma(std::int64_t id, std::int64_t ritardoSec);
         // Terminale: niente più tentativi (il chiamante logga/notifica).
-        bool failDead(std::int64_t id);
+        // `errore` è il motivo leggibile mostrato in Diagnostica.
+        bool failDead(std::int64_t id, const std::string& errore = "");
 
         // Solo 'attesa': badge UI e storico. Per il gate "c'è già un giro in
         // volo?" serve nonTerminalCount(), che include anche 'attivo'.
@@ -77,6 +78,7 @@ namespace Core {
             std::int64_t prossimaEsecuzione{0};
             int priorita{0};
             std::string creatoIl;
+            std::string errore;
         };
         [[nodiscard]] std::vector<Voce> list(const std::string& stato = "", int limit = 100) const;
 

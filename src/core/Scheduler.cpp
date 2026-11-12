@@ -17,6 +17,36 @@ namespace Core {
 
     namespace {
         constexpr const char* kChiaveUltimoGiro = "scheduler_ultimo_giro";
+        constexpr const char* kChiaveUltimoEsito = "scheduler_ultimo_esito";
+        constexpr const char* kChiaveUltimoMessaggio = "scheduler_ultimo_messaggio";
+
+        std::string leggiStringaKv(const std::string& dbPath, const char* chiave) {
+            Database db(dbPath);
+            if (!db.isOpen())
+                return {};
+            auto sel = db.prepare("SELECT value FROM kv WHERE key = ?;");
+            if (!sel.valid() || !sel.bindText(1, chiave) || !sel.step() || sel.hasError())
+                return {};
+            return sel.columnText(0);
+        }
+
+        void scriviStringaKv(const std::string& dbPath, const char* chiave,
+                             const std::string& valore) {
+            Database db(dbPath);
+            if (!db.isOpen())
+                return;
+            auto upd = db.prepare("INSERT OR REPLACE INTO kv(key, value) VALUES (?, ?);");
+            if (!upd.valid() || !upd.bindText(1, chiave) || !upd.bindText(2, valore) ||
+                (upd.step(), upd.hasError()))
+                Logger::error(std::string("Scheduler: salvataggio ") + chiave +
+                              " fallito: " + upd.lastError());
+        }
+
+        void scriviStatoGiro(const std::string& dbPath, const std::string& esito,
+                             const std::string& nota) {
+            scriviStringaKv(dbPath, kChiaveUltimoEsito, esito);
+            scriviStringaKv(dbPath, kChiaveUltimoMessaggio, nota);
+        }
 
         std::int64_t oraEpoch() {
             return std::chrono::duration_cast<std::chrono::seconds>(
@@ -54,7 +84,7 @@ namespace Core {
         : m_config(config), m_jsonPath(jsonPath),
           m_dbPath(SeriesRepository::dbPathFor(jsonPath).string()),
           m_pool(m_dbPath, kWorkerThread) {
-        m_pool.onKind("check", [this](const QueueTask& task) {
+        m_pool.onKind("check", [this](const QueueTask& task, std::string& errore) {
             (void)task;
             std::atomic<bool> maiAbortito{false}; // 2-bis: il giro non si interrompe
             // Pipeline condivisa (fase 1): un solo esecutore nel demone.
@@ -76,7 +106,8 @@ namespace Core {
                     Logger::error("Scheduler: notifica non salvata: " + store.lastError());
                     return;
                 }
-                if (m_onEpisodioPronto)
+                // id 0 = episodio già notificato: niente secondo evento/OS.
+                if (id > 0 && m_onEpisodioPronto)
                     m_onEpisodioPronto(serie, episodio, id);
             };
             auto taskFinished = [this](const std::string& n, int ep) {
@@ -104,10 +135,13 @@ namespace Core {
                 if (esito.salto == CheckOutcome::Salto::Occupato)
                     return EsitoTask::Occupato;
                 Logger::error("Scheduler: giro fallito: " + esito.nota);
+                errore = esito.nota;
+                scriviStatoGiro(m_dbPath, "errore", esito.nota);
                 return EsitoTask::Fallito;
             }
             // Giro eseguito anche a reports vuoti (serie già aggiornate).
             Logger::info("Scheduler: " + esito.nota);
+            scriviStatoGiro(m_dbPath, "ok", esito.nota);
             return EsitoTask::Completato;
         });
         m_pool.onEvento([this](const std::string& tipo, const QueueTask& task) {
@@ -168,7 +202,15 @@ namespace Core {
             QueueStore coda(m_dbPath);
             s.checkInCoda = coda.pendingCount("check");
             s.ultimoGiro = leggiUltimoGiro(m_dbPath);
+            s.ultimoEsito = leggiStringaKv(m_dbPath, kChiaveUltimoEsito);
+            s.ultimoMessaggio = leggiStringaKv(m_dbPath, kChiaveUltimoMessaggio);
         }
+        const auto sched = m_config.get<nlohmann::json>(
+            "scheduling", {{"abilitato", true}, {"intervalloMinuti", kDefaultIntervalloMinuti}});
+        s.intervalloMinuti = std::clamp(sched.value("intervalloMinuti", kDefaultIntervalloMinuti),
+                                        kMinIntervalloMinuti, kMaxIntervalloMinuti);
+        if (s.ultimoGiro > 0)
+            s.prossimoGiro = s.ultimoGiro + static_cast<std::int64_t>(s.intervalloMinuti) * 60;
         return s;
     }
 

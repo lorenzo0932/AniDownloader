@@ -53,17 +53,16 @@
 <style>
   .empty { text-align: center; padding: 3rem; color: var(--text-muted); font-size: 0.9rem; }
 
-  /* Griglia fluida con tetto: le colonne si adattano a ogni schermo
-     (1fr dinamico, ratio 2:3 sempre rispettato), ma oltre ~1100px la
-     griglia smette di crescere e resta centrata — niente più card
-     gonfiate sui monitor larghi. */
+  /* Griglia fluida con tetto condiviso con le altre pagine dati: le colonne
+     si adattano a ogni schermo (1fr dinamico, ratio 2:3 sempre rispettato)
+     e su ultrawide crescono in numero, non in dimensione. */
   .series-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     /* In una pagina flex-column, margin-inline:auto disabilita lo stretch.
        Una larghezza esplicita vincola auto-fill allo spazio disponibile,
        invece di lasciare che la griglia si dimensioni sul contenuto. */
-    width: 100%; gap: 0.9rem; max-width: 1100px; margin-inline: auto;
-    min-width: 0;
+    width: 100%; gap: 0.9rem; max-width: var(--content-wide, 1680px);
+    margin-inline: auto; min-width: 0;
   }
   /* Wrapper flip: item di griglia neutro, la card riempie. :global per il
      contenuto degli snippet (compilato con lo scope del consumer). */
@@ -72,7 +71,7 @@
   /* Vista grande: stesse card, colonne da 220px (poster ~330px). */
   .grid-large {
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    max-width: 1400px;
+    max-width: var(--content-wide, 1680px);
   }
 
   .series-table {

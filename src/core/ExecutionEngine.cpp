@@ -38,8 +38,12 @@ namespace Core {
                     stato = "interrotto";
                 } else {
                     const auto riepilogo = m_store.runSummary(m_id);
+                    // Anche i job rimasti in retry_wait (es. conversione
+                    // fallita e riprogrammata) rendono il run "con errori":
+                    // chiuderlo come "completato" nasconde il problema.
                     const bool problemi =
-                        riepilogo && (riepilogo->nonRiusciti > 0 || riepilogo->interrotti > 0);
+                        riepilogo && (riepilogo->nonRiusciti > 0 || riepilogo->interrotti > 0 ||
+                                      riepilogo->inCorso > 0);
                     stato = problemi ? "completato_con_errori" : "completato";
                 }
                 if (!m_store.finishRun(m_id, stato))

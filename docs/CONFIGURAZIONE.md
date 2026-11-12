@@ -60,16 +60,26 @@ byte) e, senza serie configurate, ripiega su `~`. Un'eventuale chiave
 mette in pausa scheduler e worker lasciando i task in coda. La modifica
 dell'intervallo vale dal giro successivo: quello in corso non si interrompe.
 
-### Notifiche (impalcatura)
+### Notifiche
 
 `notifiche.abilitate` è il master ON/OFF. `sorgente` decide la consegna:
-`ui` = campanella e pannello in-app, `backend` = notifica di sistema,
-`entrambi` = entrambe. Le notifiche sono generate solo dal giro schedulato,
-dopo il commit dello stato serie; persistono nel DB, quindi il badge resta
-corretto dopo un riavvio. Lato desktop la notifica di sistema passa dal
-comando Tauri `notify_episode`; in browser si usa la Web Notification API
-(serve il permesso, altrimenti resta solo il badge). Con `abilitate: false`
-non si mostra nulla, ma i record restano nel DB.
+`ui` = solo campanella e pannello in-app, `backend` = solo notifica di sistema,
+`entrambi` = entrambe. La campanella resta sempre lo storico consultabile,
+anche quando è selezionato `backend`.
+
+Le notifiche nascono sia dal giro schedulato sia dai run manuali, dopo il
+commit dello stato serie; persistono nel DB, quindi il badge resta corretto
+dopo un riavvio. **Su Linux la notifica di sistema la invia il demone**
+(`notify-send` con fallback `gdbus`): funziona anche con l'app desktop chiusa
+se il demone headless è in esecuzione. Il client Tauri non la duplica:
+`/api/status` espone `osNotifyBackend`. Su macOS/Windows il demone non invia
+notifiche OS e resta il comando Tauri `notify_episode` (in browser, Web
+Notification API con permesso). Con `abilitate: false` non si mostra nulla,
+ma i record restano nel DB.
+
+Il click su una notifica in-app segna letta e apre la serie in **Gestione
+Serie**; non la rimuove. In Impostazioni è disponibile “Invia notifica di
+prova” per verificare il percorso di sistema.
 
 ---
 

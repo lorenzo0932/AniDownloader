@@ -8,6 +8,7 @@
   // Badge "In gestione" e guard anti-duplicati da identity opache del server.
   import { onMount } from 'svelte';
   import { api, isSeriesDuplicateError } from '../api.js';
+  import Dropdown from '../Dropdown.svelte';
   import { creaStatoGestite } from '../managedSeriesState.js';
   import AddSeriesForm from './AddSeriesForm.svelte';
   import DirectoryBrowser from './DirectoryBrowser.svelte';
@@ -40,6 +41,15 @@
   const ORDINI = [[0, 'Standard'], [1, 'Ultime aggiunte'], [2, 'Lista A-Z'], [3, 'Lista Z-A'], [4, 'Più vecchi'], [5, 'Più recenti'], [6, 'Più visti'], [7, 'Meglio valutati']];
   const ANNI = [];
   for (let y = new Date().getFullYear() + 1; y >= 1966; y--) ANNI.push(y);
+
+  // Opzioni per il combobox in-page: il <select> nativo in WebKitGTK apre
+  // un popup GTK che ignora il tema scuro dell'app.
+  const TIPI_OPTIONS = [{ value: '', label: 'Tutti' }, ...TIPI.map(([value, label]) => ({ value, label }))];
+  const STATI_OPTIONS = [{ value: '', label: 'Tutti' }, ...STATI.map(([value, label]) => ({ value, label }))];
+  const STAGIONI_OPTIONS = [{ value: '', label: 'Tutte' }, ...STAGIONI.map(([value, label]) => ({ value, label }))];
+  const ANNI_OPTIONS = [{ value: '', label: 'Tutti' }, ...ANNI.map((y) => ({ value: y, label: String(y) }))];
+  const LINGUE_OPTIONS = [{ value: '', label: 'Tutti' }, ...LINGUE.map(([value, label]) => ({ value, label }))];
+  const ORDINI_OPTIONS = ORDINI.map(([value, label]) => ({ value, label }));
 
   let keyword = $state('');
   let generiSel = $state([]);
@@ -340,39 +350,22 @@
     <input type="search" class="filter-keyword" placeholder="Cerca per titolo..." bind:value={keyword} aria-label="Cerca per titolo" />
     <div class="filter-row">
       <label>Tipo
-        <select bind:value={tipo}>
-          <option value="">Tutti</option>
-          {#each TIPI as [v, l]}<option value={v}>{l}</option>{/each}
-        </select>
+        <Dropdown bind:value={tipo} options={TIPI_OPTIONS} label="Tipo" id="filtro-tipo" />
       </label>
       <label>Stato
-        <select bind:value={stato}>
-          <option value="">Tutti</option>
-          {#each STATI as [v, l]}<option value={v}>{l}</option>{/each}
-        </select>
+        <Dropdown bind:value={stato} options={STATI_OPTIONS} label="Stato" id="filtro-stato" />
       </label>
       <label>Stagione
-        <select bind:value={stagione}>
-          <option value="">Tutte</option>
-          {#each STAGIONI as [v, l]}<option value={v}>{l}</option>{/each}
-        </select>
+        <Dropdown bind:value={stagione} options={STAGIONI_OPTIONS} label="Stagione" id="filtro-stagione" />
       </label>
       <label>Anno
-        <select bind:value={anno}>
-          <option value="">Tutti</option>
-          {#each ANNI as y}<option value={y}>{y}</option>{/each}
-        </select>
+        <Dropdown bind:value={anno} options={ANNI_OPTIONS} label="Anno" id="filtro-anno" />
       </label>
       <label>Audio
-        <select bind:value={lingua}>
-          <option value="">Tutti</option>
-          {#each LINGUE as [v, l]}<option value={v}>{l}</option>{/each}
-        </select>
+        <Dropdown bind:value={lingua} options={LINGUE_OPTIONS} label="Audio" id="filtro-audio" />
       </label>
       <label>Ordine
-        <select bind:value={ordine}>
-          {#each ORDINI as [v, l]}<option value={v}>{l}</option>{/each}
-        </select>
+        <Dropdown bind:value={ordine} options={ORDINI_OPTIONS} label="Ordine" id="filtro-ordine" />
       </label>
       <label class="check"><input type="checkbox" bind:checked={soloDoppiati} /> Doppiati</label>
     </div>
@@ -574,13 +567,23 @@
 />
 
 <style>
-  .discover-page { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+  .discover-page {
+    display: flex; flex-direction: column; gap: 1rem; min-width: 0;
+    max-width: var(--content-wide, 1680px); margin: 0 auto;
+  }
   .discover-page h2 { font-size: 1.4rem; }
   .discover-filters { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
   .filter-keyword { padding: 0.6rem 0.8rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); font-size: 1rem; }
   .filter-row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; }
   .filter-row label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; color: var(--text-secondary); }
-  .filter-row select, .studio-label input { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); }
+  .studio-label input { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); }
+  /* Il combobox in-page riempie la colonna del filtro. */
+  .filter-row :global(.dropdown) { width: 100%; }
+  .filter-row :global(.dropdown-trigger) {
+    width: 100%;
+    padding: 0.45rem 0.6rem;
+    background: var(--bg-tertiary);
+  }
   .check { flex-direction: row !important; align-items: center; gap: 0.35rem !important; font-size: 0.85rem !important; }
   .filter-genres summary { cursor: pointer; color: var(--text-secondary); font-size: 0.9rem; }
   .genres-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.25rem 0.75rem; margin-top: 0.5rem; }

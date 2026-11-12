@@ -8,8 +8,9 @@
   import StoragePanel from './StoragePanel.svelte';
 
   // Tab: le preferenze vivono in un solo form sempre montato (pannelli
-  // nascosti via `hidden`) così le modifiche non salvate sopravvivono al
-  // cambio tab. Sistema è manutenzione: fuori dal form, senza Salva.
+  // nascosti via `hidden`). Il salvataggio è automatico con debounce: non
+  // esiste più un pulsante Salva, quindi cambiare tab non perde nulla.
+  // Sistema è manutenzione: fuori dal form, azioni immediate.
   const TABS = [
     { id: 'generali', label: 'Generali' },
     { id: 'download', label: 'Download' },
@@ -19,11 +20,99 @@
 
   let config = $state({});
   let error = $state('');
-  let saved = $state(false);
   let busy = $state(true);
   let showBrowser = $state(false);
   let selectedTheme = $state(getTheme());
   let tab = $state('generali');
+
+  // Autosave: `lastSaved` è il JSON dell'ultimo salvataggio riuscito.
+  // `saveState` guida la barra di stato (idle/dirty/saving/saved/error).
+  let loaded = $state(false);
+  let lastSaved = $state('');
+  let saveState = $state('idle');
+  let saveError = $state('');
+  let saveInFlight = false;
+  let savePending = false;
+  let testNotifica = $state('idle');
+  let testMessaggio = $state('');
+  const SAVE_DEBOUNCE_MS = 800;
+
+  let dirty = $derived(loaded && JSON.stringify(config) !== lastSaved);
+
+  function snapshot() {
+    return JSON.stringify(config);
+  }
+
+  async function flushSave() {
+    if (!loaded) return;
+    if (saveInFlight) {
+      savePending = true;
+      return;
+    }
+    const payload = snapshot();
+    if (payload === lastSaved) return;
+    saveInFlight = true;
+    saveState = 'saving';
+    saveError = '';
+    try {
+      await api.config.set(JSON.parse(payload));
+      lastSaved = payload;
+      saveState = 'saved';
+      // La shell aggiorna subito il toggle notifiche senza ricaricare.
+      window.dispatchEvent(new CustomEvent('anidl:config-saved', { detail: JSON.parse(payload) }));
+    } catch (e) {
+      saveState = 'error';
+      saveError = e.message || 'Salvataggio non riuscito';
+    } finally {
+      saveInFlight = false;
+      if (saveState !== 'error' && (savePending || snapshot() !== lastSaved)) {
+        savePending = false;
+        await flushSave();
+        return;
+      }
+      savePending = false;
+    }
+  }
+
+  // Ogni modifica riprogramma il debounce. Il cleanup dell'effetto cancella
+  // il timer precedente: una raffica di input produce un solo PUT.
+  $effect(() => {
+    const payload = JSON.stringify(config);
+    if (!loaded) return;
+    if (payload === lastSaved) return;
+    saveState = 'dirty';
+    const timer = setTimeout(() => void flushSave(), SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  });
+
+  function ripristina() {
+    if (!lastSaved) return;
+    config = JSON.parse(lastSaved);
+    saveState = 'idle';
+    saveError = '';
+  }
+
+  async function provaNotifica() {
+    if (testNotifica === 'loading') return;
+    testNotifica = 'loading';
+    testMessaggio = '';
+    try {
+      const esito = await api.notifications.test();
+      testNotifica = 'ok';
+      testMessaggio = esito?.method
+        ? `Notifica inviata (${esito.method}).`
+        : 'Notifica inviata.';
+    } catch (e) {
+      testNotifica = 'errore';
+      testMessaggio = e.message || 'Invio non riuscito.';
+    }
+    setTimeout(() => {
+      if (testNotifica !== 'loading') {
+        testNotifica = 'idle';
+        testMessaggio = '';
+      }
+    }, 4500);
+  }
 
   const THEME_OPTIONS = [
     { value: 'system', label: 'Sistema (default)' },
@@ -45,14 +134,15 @@
   };
 
   const SORGENTE_OPTIONS = [
-    { value: 'ui', label: 'Solo interfaccia' },
-    { value: 'backend', label: 'Solo sistema' },
-    { value: 'entrambi', label: 'Entrambi' },
+    { value: 'ui', label: 'Solo app (campanella)' },
+    { value: 'backend', label: 'Solo sistema (notifiche PC)' },
+    { value: 'entrambi', label: 'App + sistema' },
   ];
 
   async function load() {
     busy = true;
     error = '';
+    loaded = false;
     try {
       const data = await api.config.get();
       const backend = data.config || {};
@@ -61,25 +151,16 @@
       // (config vecchia) senza che la UI perda i suoi default.
       config.scheduling = { ...DEFAULTS.scheduling, ...(backend.scheduling || {}) };
       config.notifiche = { ...DEFAULTS.notifiche, ...(backend.notifiche || {}) };
+      // La baseline va presa DOPO i merge: altrimenti il primo render
+      // sembrerebbe dirty e farebbe un PUT inutile.
+      lastSaved = JSON.stringify(config);
+      saveState = 'idle';
+      saveError = '';
+      loaded = true;
     } catch (e) {
       error = e.message;
     } finally {
       busy = false;
-    }
-  }
-
-  async function save() {
-    error = '';
-    saved = false;
-    try {
-      await api.config.set(config);
-      // Notifica la shell: il toggle notifiche deve avere effetto subito,
-      // senza ricaricare la pagina.
-      window.dispatchEvent(new CustomEvent('anidl:config-saved', { detail: config }));
-      saved = true;
-      setTimeout(() => saved = false, 3000);
-    } catch (e) {
-      error = e.message;
     }
   }
 
@@ -147,7 +228,7 @@
 
     <div class="form-card">
       <form aria-label="Preferenze" hidden={tab === 'sistema'}
-            onsubmit={(e) => { e.preventDefault(); save(); }}>
+            onsubmit={(e) => e.preventDefault()}>
         <DirectoryBrowser
           show={showBrowser}
           currentPath={config.json_file_path || '~/Video'}
@@ -161,9 +242,10 @@
           <div class="group-box">
             <div class="group-title">Aspetto</div>
             <label for="theme-select">Tema:</label>
-            <Dropdown bind:value={selectedTheme} options={THEME_OPTIONS} onchange={handleThemeChange} />
+            <Dropdown bind:value={selectedTheme} options={THEME_OPTIONS}
+                      onchange={handleThemeChange} label="Tema" id="theme-select" />
             <p class="field-hint">Scegli tra tema chiaro, scuro o automatico in base alle preferenze del browser.</p>
-            <p class="field-note">Il tema si applica subito; le altre preferenze si salvano con Salva modifiche.</p>
+            <p class="field-note">Il tema si applica subito; tutte le preferenze si salvano automaticamente.</p>
           </div>
 
           <div class="group-box">
@@ -272,8 +354,10 @@
             <input id="sched_intervallo" type="number" min="5" max="1440" step="5"
               bind:value={config.scheduling.intervalloMinuti} disabled={!config.scheduling.abilitato} />
             <p class="field-hint">Da 5 minuti a 24 ore. La modifica vale dal prossimo giro, quello in corso non si interrompe.</p>
+          </div>
 
-            <hr class="field-sep" />
+          <div class="group-box">
+            <div class="group-title">Notifiche</div>
 
             <div class="checkbox-row">
               <input id="notifiche_abilitate" type="checkbox" bind:checked={config.notifiche.abilitate} />
@@ -281,17 +365,47 @@
             </div>
 
             <label for="notifiche_sorgente">Mostra tramite</label>
-            <Dropdown bind:value={config.notifiche.sorgente} options={SORGENTE_OPTIONS} onchange={() => {}} />
-            <p class="field-hint">Memorizzata ora, attiva dal prossimo aggiornamento dell'app.</p>
+            <Dropdown bind:value={config.notifiche.sorgente} options={SORGENTE_OPTIONS}
+                      onchange={() => {}} label="Mostra tramite" id="notifiche-sorgente" />
+            <p class="field-hint">
+              “Sistema” invia la notifica del PC anche con l'app chiusa, se il demone è in esecuzione.
+              La campanella in-app resta sempre disponibile come storico.
+            </p>
+
+            <button type="button" class="btn-test" onclick={provaNotifica}
+                    disabled={testNotifica === 'loading'}>
+              {testNotifica === 'loading' ? 'Invio…' : 'Invia notifica di prova'}
+            </button>
+            {#if testMessaggio}
+              <p class="test-esito" class:ok={testNotifica === 'ok'}
+                 class:errore={testNotifica === 'errore'} role="status">
+                {testMessaggio}
+              </p>
+            {/if}
           </div>
         </div>
 
         {#if tab !== 'sistema'}
-          <div class="form-footer">
-            <button type="button" class="btn-cancel" onclick={() => load()}>Annulla</button>
-            <button type="submit" class="btn-primary">Salva Modifiche</button>
-            {#if saved}
-              <span class="saved-msg">Salvato!</span>
+          <div class="autosave-bar" aria-live="polite">
+            <span class="autosave-state" class:errore={saveState === 'error'}>
+              {#if saveState === 'saving'}
+                <span class="save-dot saving" aria-hidden="true"></span> Salvataggio…
+              {:else if saveState === 'error'}
+                <span class="save-dot error" aria-hidden="true"></span> {saveError}
+              {:else if dirty}
+                <span class="save-dot pending" aria-hidden="true"></span> Modifiche in attesa…
+              {:else if saveState === 'saved'}
+                <span class="save-check" aria-hidden="true">✓</span> Salvato
+              {:else}
+                <span class="save-check muted" aria-hidden="true">✓</span> Tutto salvato
+              {/if}
+            </span>
+            {#if dirty || saveState === 'error'}
+              <button type="button" class="btn-cancel" onclick={ripristina}
+                      disabled={saveState === 'saving'}>Ripristina</button>
+            {/if}
+            {#if saveState === 'error'}
+              <button type="button" class="btn-primary" onclick={() => void flushSave()}>Riprova</button>
             {/if}
           </div>
         {/if}
@@ -319,7 +433,7 @@
     width: 24px; height: 24px; border: 2px solid var(--border-color); border-top-color: var(--accent);
     border-radius: 50%; animation: motion-spin var(--motion-spinner) linear infinite;
   }
-  .settings-shell { max-width: 760px; margin: 0 auto; }
+  .settings-shell { max-width: 1100px; margin: 0 auto; }
 
   .tabs {
     display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 1rem;
@@ -387,10 +501,29 @@
     border-radius: 8px; padding: 0.75rem; margin: 0.75rem 0; font-size: 0.78rem; color: var(--warning-text); line-height: 1.5;
   }
   .warn-icon { width: 20px; height: 20px; flex-shrink: 0; margin-top: 2px; color: var(--warning-text); }
-  .form-footer {
-    display: flex; align-items: center; gap: 0.75rem;
-    padding-top: 1.5rem; justify-content: flex-end;
+  .autosave-bar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem;
+    padding-top: 1.25rem; margin-top: 0.5rem;
+    border-top: 1px solid var(--border-color);
+    justify-content: flex-end;
+    position: sticky; bottom: 0;
+    background: var(--bg-secondary);
+    padding-bottom: 0.25rem;
   }
+  .autosave-state {
+    margin-right: auto; display: inline-flex; align-items: center; gap: 0.4rem;
+    font-size: 0.8rem; color: var(--text-muted);
+  }
+  .autosave-state.errore { color: var(--danger); }
+  .save-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    background: var(--warning);
+  }
+  .save-dot.saving { animation: motion-pulse 1s ease-in-out infinite; }
+  .save-dot.error { background: var(--danger); }
+  .save-dot.pending { background: var(--warning); }
+  .save-check { color: var(--success); font-weight: 700; }
+  .save-check.muted { color: var(--text-muted); }
   .btn-primary {
     padding: 0.6rem 1.5rem; background: var(--accent); border: none; border-radius: 8px;
     color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
@@ -400,17 +533,42 @@
     padding: 0.6rem 1.25rem; background: none; border: 1px solid var(--border-color); border-radius: 8px;
     color: var(--text-secondary); font-size: 0.85rem; cursor: pointer;
   }
-  .btn-cancel:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-  .saved-msg { color: var(--success); font-size: 0.85rem; animation: motion-fade var(--motion-enter) var(--motion-ease-out); }
-
+  .btn-cancel:hover:not(:disabled) { background: var(--bg-tertiary); color: var(--text-primary); }
+  .btn-cancel:disabled { opacity: 0.5; cursor: default; }
+  .btn-test {
+    margin-top: 0.25rem; padding: 0.5rem 0.8rem;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    border-radius: 8px; color: var(--text-secondary); font-size: 0.8rem;
+    cursor: pointer; font-family: inherit;
+  }
+  .btn-test:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+  .btn-test:disabled { opacity: 0.6; cursor: wait; }
+  .test-esito { margin: 0.5rem 0 0; font-size: 0.78rem; color: var(--text-muted); }
+  .test-esito.ok { color: var(--success); }
+  .test-esito.errore { color: var(--danger); }
   /* Solo il tab Download usa due colonne su schermi larghi. */
   .download-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
   @media (min-width: 700px) {
     .download-grid { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
   }
 
+  /* Ultrawide: Generali e Automazione sfruttano la larghezza senza
+     allungare le righe di testo oltre misura. */
+  @media (min-width: 1200px) {
+    #settings-panel-generali:not([hidden]),
+    #settings-panel-automazione:not([hidden]) {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.5rem;
+      align-items: start;
+    }
+    #settings-panel-generali .group-box,
+    #settings-panel-automazione .group-box { margin-bottom: 0; }
+  }
+
   @media (max-width: 768px) {
     .form-card { padding: 1rem; }
-    .form-footer { flex-wrap: wrap; gap: 0.5rem; }
+    .autosave-bar { position: static; justify-content: flex-start; }
+    .autosave-state { flex-basis: 100%; }
   }
 </style>
