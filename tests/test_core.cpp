@@ -8,6 +8,7 @@
 #include "core/ExecutionEngine.hpp"
 #include "core/FileUtils.hpp"
 #include "core/InstanceLock.hpp"
+#include "core/NameUtils.hpp"
 #include "core/NotificationStore.hpp"
 #include "core/PipelineCoordinator.hpp"
 #include "core/PipelineGate.hpp"
@@ -211,6 +212,72 @@ static void testScraperUtils() {
     CHECK(ScraperUtils::computeNextNeeded("/nonexistent/dir", 0, {}) == 1);
 
     std::filesystem::remove_all(dir);
+}
+
+static void testNameUtilsAndRepositoryNormalization() {
+    using Core::NameUtils::decodeHtmlEntities;
+    using Core::NameUtils::decodePercentEncoding;
+    using Core::NameUtils::isNtfsSafe;
+    using Core::NameUtils::toNtfsSafeName;
+
+    CHECK(decodeHtmlEntities("A &amp; B &#039;x&#039; &#x27;y&#x27;") == "A & B 'x' 'y'");
+    CHECK(decodePercentEncoding("A%20B%27C") == "A B'C");
+    CHECK(decodePercentEncoding("100%") == "100%");
+    CHECK(toNtfsSafeName("Re:Zero") == "Re - Zero");
+    CHECK(toNtfsSafeName("Fate/stay night") == "Fate - stay night");
+    CHECK(toNtfsSafeName("A?B*C\"D<E>F|G") == "A B C D E F G");
+    CHECK(toNtfsSafeName("  Trail.  ") == "Trail");
+    CHECK(toNtfsSafeName("CON") == "_CON");
+    CHECK(toNtfsSafeName("100%25") == "100%");
+    CHECK(toNtfsSafeName("A%20B") == "A B");
+    CHECK(toNtfsSafeName("A%27B") == "A'B");
+    CHECK(toNtfsSafeName("&#039;Quoted&#039;") == "'Quoted'");
+    CHECK(toNtfsSafeName("...") == "Serie");
+    CHECK(isNtfsSafe("Nia Liston - The Merciless Maiden"));
+    CHECK(!isNtfsSafe("Nia Liston: The Merciless Maiden"));
+
+    std::string lunga(300, 'x');
+    CHECK(Core::NameUtils::toNtfsSafeName(lunga).size() == 240);
+
+    // Repository: normalizza i nomi già salvati e risolve le collisioni.
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "anidl_test_name_normalize";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    CHECK(!ec);
+    const fs::path jsonPath = dir / "series.json";
+    {
+        Core::Series a;
+        a.name = "Nia Liston: The Merciless Maiden";
+        a.service = "animeW_scraper";
+        a.path = "/media/a";
+        a.seriesPageUrl = "https://example.invalid/a";
+        Core::Series b;
+        b.name = "Nia Liston - The Merciless Maiden";
+        b.service = "animeW_scraper";
+        b.path = "/media/b";
+        b.seriesPageUrl = "https://example.invalid/b";
+        nlohmann::json arr = std::vector<Core::Series>{a, b};
+        std::ofstream f(jsonPath);
+        f << arr.dump(2);
+    }
+    {
+        Core::SeriesRepository repo(jsonPath);
+        const auto map = repo.normalizeSeriesNames();
+        CHECK(map.size() == 2);
+        const auto data = repo.snapshotSeriesData();
+        CHECK(data.size() == 2);
+        if (data.size() == 2) {
+            CHECK(data[0].name == "Nia Liston - The Merciless Maiden");
+            CHECK(data[1].name == "Nia Liston - The Merciless Maiden (2)");
+            CHECK(isNtfsSafe(data[0].name));
+            CHECK(isNtfsSafe(data[1].name));
+        }
+        // Idempotente: la seconda chiamata non cambia nulla.
+        CHECK(repo.normalizeSeriesNames().empty());
+    }
+    fs::remove_all(dir, ec);
 }
 
 static void testSeriesRepository() {
@@ -2960,6 +3027,7 @@ int main(int argc, char** argv) {
     testCompareVersions();
     testSeriesJsonRoundtrip();
     testScraperUtils();
+    testNameUtilsAndRepositoryNormalization();
     testSeriesRepository();
     testSeriesIdentity();
     testRepositoryAtomic();

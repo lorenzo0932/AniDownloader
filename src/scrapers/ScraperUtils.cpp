@@ -1,5 +1,6 @@
 #include "scrapers/ScraperUtils.hpp"
 #include "core/Logger.hpp"
+#include "core/NameUtils.hpp"
 #include <algorithm>
 #include <cpr/cpr.h>
 #include <cstdlib>
@@ -212,7 +213,10 @@ namespace Core {
         auto end = title.find_last_not_of(" \t\n\r");
         if (start == std::string::npos)
             return "";
-        return title.substr(start, end - start + 1);
+        // Il <title> può contenere entità HTML o percent-encoding e deve
+        // diventare subito un nome di cartella valido su NTFS: l'utente lo
+        // copia in Esplora file per creare la cartella della serie.
+        return Core::NameUtils::toNtfsSafeName(title.substr(start, end - start + 1));
     }
 
     std::string ScraperUtils::fetchSeriesNameFromUrl(const std::string& url) {

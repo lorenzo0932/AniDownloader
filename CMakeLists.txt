@@ -153,6 +153,7 @@ set(HEADERS
     include/core/Database.hpp
     include/core/DbImporter.hpp
     include/core/CheckRunner.hpp
+    include/core/NameUtils.hpp
     include/core/NotificationStore.hpp
     include/core/OsNotifier.hpp
     include/core/PipelineCoordinator.hpp
@@ -198,6 +199,7 @@ set(SOURCES
     src/core/Database.cpp
     src/core/DbImporter.cpp
     src/core/ExecutionEngine.cpp
+    src/core/NameUtils.cpp
     src/core/NotificationStore.cpp
     src/core/OsNotifier.cpp
     src/core/PipelineCoordinator.cpp
@@ -256,6 +258,7 @@ add_executable(test_core
     src/core/Database.cpp
     src/core/DbImporter.cpp
     src/core/ExecutionEngine.cpp
+    src/core/NameUtils.cpp
     src/core/NotificationStore.cpp
     src/core/OsNotifier.cpp
     src/core/PipelineCoordinator.cpp
@@ -301,6 +304,7 @@ add_executable(test_media
     src/core/FileUtils.cpp
     src/scrapers/ScraperUtils.cpp
     src/core/Logger.cpp
+    src/core/NameUtils.cpp
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
     src/core/Series.cpp
@@ -323,6 +327,7 @@ add_executable(test_workdir
     src/core/FileUtils.cpp
     src/scrapers/ScraperUtils.cpp
     src/core/Logger.cpp
+    src/core/NameUtils.cpp
     src/config/AppConfigManager.cpp
     src/config/PathHelper.cpp
     src/core/Series.cpp
@@ -342,6 +347,7 @@ add_executable(test_scraper
     src/scrapers/AnimeUScraper.cpp
     src/scrapers/ScraperUtils.cpp
     src/core/Logger.cpp
+    src/core/NameUtils.cpp
     src/core/Series.cpp
 )
 target_include_directories(test_scraper PRIVATE include)

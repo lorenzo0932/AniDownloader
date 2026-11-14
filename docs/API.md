@@ -423,6 +423,14 @@ Aggiunge una nuova serie.
 }
 ```
 
+`name` viene normalizzato lato server come nome di cartella Windows/NTFS:
+entità HTML e percent-encoding vengono decodificati, i caratteri vietati
+(`< > : " / \ | ? *`) sostituiti, i trailing dot/spazi rimossi e i nomi
+riservati (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`) prefissati. In
+caso di collisione case-insensitive viene aggiunto ` (2)`, ` (3)`, ecc.
+La stessa normalizzazione è applicata al PUT e ai nomi già salvati al primo
+avvio dopo l'aggiornamento.
+
 `fetch_metadata` (opzionale, default `true`): con URL AnimeWorld scarica
 una tantum `folder.jpg` (locandina HD) e `tvshow.nfo` (trama, generi, anno,
 stato) nella cartella serie — solo se non esistono già, mai sovrascritture.
@@ -488,6 +496,10 @@ Risposta:
 ```json
 {"success": true, "name": "One Piece"}
 ```
+
+Il nome è già un nome di cartella valido su Windows/NTFS: entità HTML e
+percent-encoding vengono decodificati e i caratteri non validi sostituiti.
+È pensato per essere copiato direttamente in Esplora file.
 
 ---
 
