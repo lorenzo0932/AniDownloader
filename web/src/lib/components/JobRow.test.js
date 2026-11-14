@@ -54,6 +54,21 @@ describe('JobRow', () => {
     expect(container.querySelector('.job-poster-empty').textContent.trim()).toBe('N');
   });
 
+  it('il pulsante ↗ apre la serie in Gestione senza espandere la riga', async () => {
+    const eventi = [];
+    const onOpen = (e) => eventi.push(e.detail);
+    window.addEventListener('anidl:open-series', onOpen);
+    try {
+      render(JobRow, { job: job() });
+      await fireEvent.click(
+        screen.getByRole('button', { name: 'Apri Serie X in Gestione' })
+      );
+      expect(eventi).toEqual([{ serie: 'Serie X' }]);
+    } finally {
+      window.removeEventListener('anidl:open-series', onOpen);
+    }
+  });
+
   it('prop poster sovrascrive la locandina calcolata', () => {
     const { container } = render(JobRow, { job: job(), poster: '/custom.webp' });
     expect(container.querySelector('img.job-poster').getAttribute('src')).toBe('/custom.webp');
