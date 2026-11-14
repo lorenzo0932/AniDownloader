@@ -7,6 +7,12 @@
 
   let { job, expanded = false, onToggle, onRetry, poster = '' } = $props();
 
+  let posterError = $state(false);
+  $effect(() => {
+    job.path;
+    posterError = false;
+  });
+
   // Lo stepper compare solo mentre il job è davvero in lavorazione.
   const FASI_ATTIVE = new Set([
     'downloading', 'converting', 'downloaded_waiting_conversion',
@@ -19,6 +25,7 @@
   let src = $derived(poster || posterUrl(job.path, 96));
   let srcset = $derived(poster ? '' : posterSrcSet(job.path));
   let origine = $derived(job.origine === 'interactive' ? 'manuale' : 'automatico');
+  let iniziale = $derived((job.serie || '?').trim().charAt(0).toUpperCase() || '?');
 
   function tempoRelativo(iso) {
     if (!iso) return '';
@@ -45,11 +52,12 @@
   <button class="job-main" onclick={() => onToggle?.(job)}
           aria-expanded={expanded ? 'true' : 'false'}
           aria-label={`Dettagli di ${titolo}`}>
-    {#if src}
-      <img class="job-poster" {src} srcset={srcset || undefined} sizes="36px"
-           alt="" loading="lazy" decoding="async" width="36" height="50" />
+    {#if src && !posterError}
+      <img class="job-poster" {src} srcset={srcset || undefined} sizes="40px"
+           alt="" loading="lazy" decoding="async" width="40" height="56"
+           onerror={() => (posterError = true)} />
     {:else}
-      <span class="job-poster job-poster-empty" aria-hidden="true"></span>
+      <span class="job-poster job-poster-empty" aria-hidden="true">{iniziale}</span>
     {/if}
     <span class="job-title">{titolo}</span>
     <StateChip fase={job.fase} prossimaEsecuzione={job.prossima_esecuzione} />
@@ -103,20 +111,24 @@
   .job-main {
     width: 100%; display: flex; align-items: center; gap: 0.75rem;
     background: none; border: none; color: var(--text-primary);
-    padding: 0.65rem 0.8rem; text-align: left; cursor: pointer;
+    padding: 0.6rem 0.75rem; text-align: left; cursor: pointer;
     font-size: 0.9rem;
   }
   .job-main:hover { background: var(--bg-hover); }
   .job-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .job-poster {
-    width: 36px; height: 50px; object-fit: cover; border-radius: 6px;
+    width: 40px; height: 56px; object-fit: cover; border-radius: 6px;
     flex: 0 0 auto; background: var(--poster-frame-bg, var(--bg-tertiary));
     border: 1px solid var(--border-color);
   }
-  .job-poster-empty { display: block; }
+  .job-poster-empty {
+    display: grid; place-items: center;
+    background: var(--accent-bg); color: var(--accent-light);
+    font-size: 15px; font-weight: 700;
+  }
   .job-title {
     flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: nowrap; font-size: 0.92rem; font-weight: 500;
   }
   .job-tempo { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
   .job-stepper { padding: 0 0.8rem 0.55rem; }

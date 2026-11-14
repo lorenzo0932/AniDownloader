@@ -49,6 +49,11 @@
     background: var(--bg-tertiary); color: var(--text-secondary);
   }
   .stato-failed { background: var(--danger-bg); color: var(--danger); }
-  .stato-completed { background: var(--bg-tertiary); color: var(--success); }
+  /* Completato è lo stato normale: testo discreto, non una pill ripetuta
+     su ogni riga. Gli stati che richiedono attenzione restano pill. */
+  .stato-completed {
+    background: transparent; color: var(--success); padding: 0;
+    font-weight: 600;
+  }
   .stato-interrupted { background: var(--bg-tertiary); color: var(--text-muted); }
 </style>
