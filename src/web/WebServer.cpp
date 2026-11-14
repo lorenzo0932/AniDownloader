@@ -611,9 +611,19 @@ namespace Web {
             query.limit = limit;
             query.offset = (std::max)(0, interoDa(req, "offset", 0));
             Core::PipelineJobStore store(m_dbPath);
+            // Path serie per la locandina della vista Episodi: senza questo
+            // campo il client non può costruire l'URL del poster e mostra un
+            // placeholder vuoto. Stessa mappa usata da /api/runs/:id.
+            std::map<std::string, std::string> percorsi;
+            for (const auto& s : m_seriesRepository.snapshotSeriesData())
+                percorsi[s.name] = s.path;
             nlohmann::json items = nlohmann::json::array();
-            for (const auto& j : store.list(query))
-                items.push_back(jobToJson(j));
+            for (const auto& j : store.list(query)) {
+                auto item = jobToJson(j);
+                const auto it = percorsi.find(j.serie);
+                item["path"] = it == percorsi.end() ? "" : it->second;
+                items.push_back(std::move(item));
+            }
             const auto counts = store.counts();
             auto conta = [&counts](const char* chiave) {
                 const auto it = counts.find(chiave);

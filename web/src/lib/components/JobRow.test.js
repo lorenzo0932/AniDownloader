@@ -3,8 +3,10 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import JobRow from './JobRow.svelte';
 
 vi.mock('../api.js', () => ({
-  posterUrl: (path, w = 480) => '/poster?w=' + w + '&path=' + encodeURIComponent(path),
-  posterSrcSet: (path) => '/poster?w=96&path=' + encodeURIComponent(path) + ' 96w',
+  posterUrl: (path, w = 480) =>
+    path ? '/poster?w=' + w + '&path=' + encodeURIComponent(path) : '',
+  posterSrcSet: (path) =>
+    path ? '/poster?w=96&path=' + encodeURIComponent(path) + ' 96w' : '',
 }));
 
 const job = (over = {}) => ({
@@ -33,15 +35,23 @@ describe('JobRow', () => {
     expect(container.querySelector('.stepper')).toBeNull();
   });
 
-  it('locandina 36x50 lazy e async', () => {
+  it('locandina 40x56 lazy e async', () => {
     const { container } = render(JobRow, { job: job() });
     const img = container.querySelector('img.job-poster');
     expect(img).not.toBeNull();
     expect(img.getAttribute('loading')).toBe('lazy');
     expect(img.getAttribute('decoding')).toBe('async');
-    expect(img.getAttribute('width')).toBe('36');
-    expect(img.getAttribute('height')).toBe('50');
+    expect(img.getAttribute('width')).toBe('40');
+    expect(img.getAttribute('height')).toBe('56');
     expect(img.getAttribute('src')).toContain('/poster?w=96');
+  });
+
+  it('senza path usa un avatar con l’iniziale, non un rettangolo vuoto', () => {
+    const { container } = render(JobRow, {
+      job: job({ path: '', serie: 'Naruto' }),
+    });
+    expect(container.querySelector('img.job-poster')).toBeNull();
+    expect(container.querySelector('.job-poster-empty').textContent.trim()).toBe('N');
   });
 
   it('prop poster sovrascrive la locandina calcolata', () => {

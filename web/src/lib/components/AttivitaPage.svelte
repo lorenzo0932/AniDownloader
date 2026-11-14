@@ -99,6 +99,18 @@
     return ordine;
   });
 
+  let episodiStats = $derived.by(() => {
+    let completati = 0;
+    let problemi = 0;
+    let inCorso = 0;
+    for (const job of items) {
+      if (job.fase === 'completed') completati += 1;
+      else if (job.fase === 'failed' || job.fase === 'interrupted') problemi += 1;
+      else inCorso += 1;
+    }
+    return { completati, problemi, inCorso };
+  });
+
   function toggleGruppo(key) {
     gruppiAperti = { ...gruppiAperti, [key]: !gruppiAperti[key] };
   }
@@ -396,6 +408,14 @@
           <span class="ko"><strong>{counts.problemi}</strong> con problemi</span>
         {/if}
       </p>
+    {:else}
+      <p class="period-summary">
+        <strong>{items.length}</strong> {items.length === 1 ? 'episodio' : 'episodi'}
+        {#if episodiStats.problemi > 0}
+          <span class="summary-sep" aria-hidden="true">·</span>
+          <span class="ko"><strong>{episodiStats.problemi}</strong> con problemi</span>
+        {/if}
+      </p>
     {/if}
   </div>
 
@@ -501,26 +521,32 @@
         <div class="aside-stat">
           <span class="aside-dot in-corso" aria-hidden="true"></span>
           <span class="aside-label">In corso</span>
-          <strong>{counts.in_corso ?? 0}</strong>
+          <strong>{vista === 'avvii' ? (counts.in_corso ?? 0) : episodiStats.inCorso}</strong>
         </div>
         <div class="aside-stat">
           <span class="aside-dot ko" aria-hidden="true"></span>
           <span class="aside-label">Con problemi</span>
-          <strong class:ko={(counts.problemi ?? 0) > 0}>{counts.problemi ?? 0}</strong>
+          <strong class:ko={(vista === 'avvii' ? (counts.problemi ?? 0) : episodiStats.problemi) > 0}>
+            {vista === 'avvii' ? (counts.problemi ?? 0) : episodiStats.problemi}
+          </strong>
         </div>
         <div class="aside-stat">
           <span class="aside-dot" aria-hidden="true"></span>
-          <span class="aside-label">Recenti</span>
-          <strong>{counts.recenti ?? 0}</strong>
+          <span class="aside-label">{vista === 'avvii' ? 'Recenti' : 'Completati'}</span>
+          <strong>{vista === 'avvii' ? (counts.recenti ?? 0) : episodiStats.completati}</strong>
         </div>
       </div>
-      {#if counts.problemi > 0}
+      {#if (vista === 'avvii' ? (counts.problemi ?? 0) : episodiStats.problemi) > 0}
         <button type="button" class="aside-link" onclick={() => scegliTab('problemi')}>
           Vedi i problemi
         </button>
       {/if}
       <p class="aside-hint">
-        I controlli senza novità sono raggruppati per giorno: non serve aprirli uno per uno.
+        {#if vista === 'avvii'}
+          I controlli senza novità sono raggruppati per giorno: non serve aprirli uno per uno.
+        {:else}
+          Gli episodi completati restano consultabili; i problemi sono evidenziati.
+        {/if}
       </p>
     </div>
   </aside>
@@ -689,10 +715,6 @@
     .attivita { grid-template-columns: minmax(0, 1fr) 260px; gap: 1.25rem; }
     .attivita-aside { display: block; position: sticky; top: 1.5rem; }
     .period-summary { display: none; }
-    /* In Episodi il riepilogo degli avvii non è pertinente: lista a tutta
-       larghezza, senza rail laterale. */
-    .attivita.episodi { grid-template-columns: minmax(0, 1fr); }
-    .attivita.episodi .attivita-aside { display: none; }
   }
 
   @media (max-width: 768px) {
