@@ -232,11 +232,15 @@ I `counts` restano globali (tutte le fasi, tutti i run).
          "job_key": "animeW_scraper:/play/x#1", "serie": "Serie X",
          "episodio": 1, "origine": "interactive", "fase": "queued_download",
          "tentativi": 0, "prossima_esecuzione": 0, "priorita": 100, "errore": "",
+         "path": "/media/Serie X",
          "creato_il": "2026-11-08T10:00:00.000Z",
          "aggiornato_il": "2026-11-08T10:00:00.000Z"}
     ]
 }
 ```
+
+`path` è la cartella della serie, usata dal client per la locandina della
+vista Episodi; è vuoto se la serie non è più in gestione.
 
 ### `POST /api/pipeline/retry` (dal 3.0)
 
