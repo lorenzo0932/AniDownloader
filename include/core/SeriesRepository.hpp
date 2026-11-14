@@ -8,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Core {
@@ -52,6 +53,12 @@ namespace Core {
         AddEsito addSeries(const Series& serie);
         UpdateEsito updateSeries(std::size_t indice, const Series& serie);
         RemoveEsito removeSeries(std::size_t indice);
+
+        // Normalizza i nomi già salvati per NTFS (entità/percent, caratteri
+        // vietati, nomi riservati) e risolve eventuali collisioni con un
+        // suffisso " (2)". Ritorna la mappa old→new dei soli nomi cambiati.
+        // Idempotente: a nomi già validi non fa scritture.
+        std::vector<std::pair<std::string, std::string>> normalizeSeriesNames();
 
         // Aggiorna lastDownloadedEpisode/lastDownloadedAt per le serie in maxEpisodes
         // (una sola scrittura, dopo che tutti i download sono terminati).

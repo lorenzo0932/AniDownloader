@@ -1,11 +1,14 @@
 #include "core/SeriesRepository.hpp"
 #include "core/DbImporter.hpp"
 #include "core/Logger.hpp"
+#include "core/NameUtils.hpp"
 #include "core/SeriesIdentity.hpp"
+#include <cctype>
 #include <cstddef>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace Core {
 
@@ -36,6 +39,34 @@ namespace Core {
                     throw std::runtime_error("copy fallito: " + ec.message());
                 std::filesystem::remove(tmpPath, ec);
             }
+        }
+
+        std::string lowerAscii(std::string value) {
+            for (char& c : value)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return value;
+        }
+
+        // Nome unico (case-insensitive, come NTFS/Windows) rispetto a current,
+        // ignorando l'indice in aggiornamento. `skip == current.size()` = nessuno.
+        std::string uniqueSeriesName(const std::string& raw, const std::vector<Series>& current,
+                                     std::size_t skip) {
+            const std::string base = NameUtils::toNtfsSafeName(raw);
+            std::string candidate = base;
+            int suffix = 1;
+            const auto taken = [&](const std::string& name) {
+                const std::string key = lowerAscii(name);
+                for (std::size_t i = 0; i < current.size(); ++i) {
+                    if (i != skip && lowerAscii(current[i].name) == key)
+                        return true;
+                }
+                return false;
+            };
+            while (taken(candidate)) {
+                ++suffix;
+                candidate = NameUtils::toNtfsSafeName(base + " (" + std::to_string(suffix) + ")");
+            }
+            return candidate;
         }
 
         // Il JSON esport contiene ancora dati? Serve per l'import di recupero:
@@ -457,7 +488,8 @@ namespace Core {
         std::lock_guard<std::mutex> lock(m_mutex);
         AddEsito out;
         try {
-            out.identity = seriesIdentity(serie.service, serie.seriesPageUrl);
+            Series sanitized = serie;
+            out.identity = seriesIdentity(sanitized.service, sanitized.seriesPageUrl);
             auto current = loadLocked();
             for (size_t i = 0; i < current.size(); ++i) {
                 if (!out.identity.empty() &&
@@ -467,7 +499,8 @@ namespace Core {
                     return out;
                 }
             }
-            current.push_back(serie);
+            sanitized.name = uniqueSeriesName(sanitized.name, current, current.size());
+            current.push_back(std::move(sanitized));
             if (std::string err = saveLocked(current); !err.empty()) {
                 out.esito = MutazioneEsito::ErroreStorage;
                 out.errore = err;
@@ -488,7 +521,8 @@ namespace Core {
         std::lock_guard<std::mutex> lock(m_mutex);
         UpdateEsito out;
         try {
-            out.identity = seriesIdentity(serie.service, serie.seriesPageUrl);
+            Series sanitized = serie;
+            out.identity = seriesIdentity(sanitized.service, sanitized.seriesPageUrl);
             auto current = loadLocked();
             if (indice >= current.size()) {
                 out.esito = MutazioneEsito::NonTrovato;
@@ -503,7 +537,8 @@ namespace Core {
                     return out;
                 }
             }
-            current[indice] = serie;
+            sanitized.name = uniqueSeriesName(sanitized.name, current, indice);
+            current[indice] = std::move(sanitized);
             if (std::string err = saveLocked(current); !err.empty()) {
                 out.esito = MutazioneEsito::ErroreStorage;
                 out.errore = err;
@@ -539,6 +574,47 @@ namespace Core {
             out.esito = MutazioneEsito::ErroreStorage;
             out.errore = e.what();
             return out;
+        }
+    }
+
+    std::vector<std::pair<std::string, std::string>> SeriesRepository::normalizeSeriesNames() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<std::pair<std::string, std::string>> renamed;
+        try {
+            auto current = loadLocked();
+            if (current.empty())
+                return renamed;
+
+            std::vector<Series> normalizzate = current;
+            std::unordered_set<std::string> usati;
+            bool cambiato = false;
+            for (std::size_t i = 0; i < current.size(); ++i) {
+                const std::string base = NameUtils::toNtfsSafeName(current[i].name);
+                std::string candidate = base;
+                int suffix = 1;
+                while (usati.count(lowerAscii(candidate)) != 0) {
+                    ++suffix;
+                    candidate =
+                        NameUtils::toNtfsSafeName(base + " (" + std::to_string(suffix) + ")");
+                }
+                usati.insert(lowerAscii(candidate));
+                if (candidate != current[i].name) {
+                    renamed.emplace_back(current[i].name, candidate);
+                    normalizzate[i].name = candidate;
+                    cambiato = true;
+                }
+            }
+            if (!cambiato)
+                return renamed;
+            if (std::string err = saveLocked(normalizzate); !err.empty()) {
+                Logger::error("Normalizzazione nomi serie fallita: " + err);
+                return {};
+            }
+            Logger::info("Nomi serie normalizzati per NTFS: " + std::to_string(renamed.size()));
+            return renamed;
+        } catch (const std::exception& e) {
+            Logger::error("Normalizzazione nomi serie: " + std::string(e.what()));
+            return {};
         }
     }
 

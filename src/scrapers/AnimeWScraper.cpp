@@ -1,5 +1,6 @@
 #include "scrapers/AnimeWScraper.hpp"
 #include "core/Logger.hpp"
+#include "core/NameUtils.hpp"
 #include "scrapers/ScraperUtils.hpp"
 #include <array>
 #include <cpr/cpr.h>
@@ -252,22 +253,10 @@ namespace Core {
     }
 
     // ---- SCOPRI ----
-    // Decodifica minima entità HTML nei titoli/trame (il sito usa UTF-8 diretto,
-    // ma qualche alt/title contiene &amp; &quot; &#039;).
-    static std::string decodeEntities(std::string s) {
-        constexpr std::array<std::pair<const char*, const char*>, 7> table{{{"&amp;", "&"},
-                                                                            {"&quot;", "\""},
-                                                                            {"&#039;", "'"},
-                                                                            {"&apos;", "'"},
-                                                                            {"&lt;", "<"},
-                                                                            {"&gt;", ">"},
-                                                                            {"&nbsp;", " "}}};
-        for (const auto& [ent, ch] : table) {
-            size_t pos = 0;
-            while ((pos = s.find(ent, pos)) != std::string::npos)
-                s.replace(pos, strlen(ent), ch);
-        }
-        return s;
+    // Entità HTML nei titoli/trame: la decodifica completa (named + numeriche)
+    // vive in NameUtils, condivisa con fetch-name e con il resto dell'app.
+    static std::string decodeEntities(const std::string& s) {
+        return Core::NameUtils::decodeHtmlEntities(s);
     }
 
     AnimeWScraper::DiscoverPage AnimeWScraper::parseDiscoverPage(const std::string& html) {
@@ -306,7 +295,8 @@ namespace Core {
             if (titolo.empty())
                 continue;
             DiscoverItem item;
-            item.titolo = decodeEntities(titolo);
+            // Anche in Scopri il titolo è un nome di cartella candidato.
+            item.titolo = Core::NameUtils::toNtfsSafeName(titolo);
             item.pageUrl = p.pageUrl;
             item.posterUrl = p.posterUrl;
             item.tooltipId = p.tooltipId;

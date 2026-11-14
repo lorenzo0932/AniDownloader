@@ -68,6 +68,7 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
                 </button>
               </div>
+              <p class="field-hint">Compatibile Windows/NTFS: i caratteri non validi vengono sostituiti automaticamente.</p>
             </div>
 
             <div class="field-group">
@@ -178,6 +179,7 @@
 
   .field-group { }
   .field-label { display: block; font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.25rem; }
+  .field-hint { margin: 0.35rem 0 0; color: var(--text-muted); font-size: 0.7rem; line-height: 1.4; }
   .field-group input[type="text"], .field-group input[type="number"] {
     width: 100%; padding: 0.55rem 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color);
     border-radius: 6px; color: var(--text-primary); font-size: 0.85rem;

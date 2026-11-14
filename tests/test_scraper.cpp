@@ -124,6 +124,14 @@ static void testExtractSeriesTitle() {
     CHECK(ScraperUtils::extractSeriesTitle("<title>Naruto Episodio 12</title>") == "Naruto");
     CHECK(ScraperUtils::extractSeriesTitle("<title>One Piece Episode 5</title>") == "One Piece");
 
+    // Entità/percent e caratteri non validi NTFS: il nome va già bene per
+    // creare la cartella (l'utente lo copia in Esplora file).
+    CHECK(
+        ScraperUtils::extractSeriesTitle("<title>Re:Zero kara Hajimeru Isekai Seikatsu</title>") ==
+        "Re - Zero kara Hajimeru Isekai Seikatsu");
+    CHECK(ScraperUtils::extractSeriesTitle("<title>Foo&amp;Bar &#039;x&#039; 100%25</title>") ==
+          "Foo&Bar 'x' 100%");
+
     // Nessun <title> o vuoto -> stringa vuota
     CHECK(ScraperUtils::extractSeriesTitle("<html><body></body></html>").empty());
     CHECK(ScraperUtils::extractSeriesTitle("").empty());

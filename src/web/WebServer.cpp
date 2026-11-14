@@ -1,5 +1,6 @@
 #include "web/WebServer.hpp"
 #include "config/PathHelper.hpp"
+#include "core/Database.hpp"
 #include "core/FileUtils.hpp"
 #include "core/InstanceLock.hpp"
 #include "core/LogUtils.hpp"
@@ -184,6 +185,35 @@ namespace Web {
                 setLiveTask(n, ep, Core::phaseName(p.phase), p.percent, p.detail);
             });
         m_scheduler.onTaskFinished([this](const std::string& n, int ep) { eraseLiveTask(n, ep); });
+
+        // Nomi già salvati: li rendo subito compatibili NTFS (prima che la UI
+        // o lo scheduler li usino). Se un nome cambia, allineo anche lo
+        // storico di job e notifiche per non mostrare due nomi diversi.
+        const auto rinominati = m_seriesRepository.normalizeSeriesNames();
+        if (!rinominati.empty() && !m_dbPath.empty()) {
+            Core::Database db(m_dbPath);
+            if (!db.isOpen()) {
+                Core::Logger::warn("Normalizzazione nomi: DB non apribile: " + db.lastError());
+            } else {
+                Core::Transaction tx(db);
+                auto updJobs = db.prepare("UPDATE pipeline_jobs SET serie = ? WHERE serie = ?;");
+                auto updNotif = db.prepare("UPDATE notifications SET serie = ? WHERE serie = ?;");
+                bool ok = tx.active() && updJobs.valid() && updNotif.valid();
+                for (const auto& [oldName, newName] : rinominati) {
+                    if (!ok)
+                        break;
+                    ok = updJobs.bindText(1, newName) && updJobs.bindText(2, oldName) &&
+                         (updJobs.step(), !updJobs.hasError()) && updJobs.reset() &&
+                         updNotif.bindText(1, newName) && updNotif.bindText(2, oldName) &&
+                         (updNotif.step(), !updNotif.hasError()) && updNotif.reset();
+                }
+                if (ok)
+                    ok = tx.commit();
+                if (!ok)
+                    Core::Logger::warn("Normalizzazione nomi: storico non aggiornato: " +
+                                       db.lastError());
+            }
+        }
     }
 
     WebServer::~WebServer() { stop(); }
