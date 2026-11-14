@@ -46,10 +46,18 @@
       minute: '2-digit',
     });
   }
+
+  function apriSerie() {
+    if (!job.serie) return;
+    window.dispatchEvent(
+      new CustomEvent('anidl:open-series', { detail: { serie: job.serie } })
+    );
+  }
 </script>
 
 <li class="job" class:job-failed={job.fase === 'failed'} data-job-id={job.id}>
-  <button class="job-main" onclick={() => onToggle?.(job)}
+  <div class="job-main">
+  <button class="job-expand" onclick={() => onToggle?.(job)}
           aria-expanded={expanded ? 'true' : 'false'}
           aria-label={`Dettagli di ${titolo}`}>
     {#if src && !posterError}
@@ -63,6 +71,17 @@
     <StateChip fase={job.fase} prossimaEsecuzione={job.prossima_esecuzione} />
     <span class="job-tempo">{tempoRelativo(job.aggiornato_il)}</span>
   </button>
+  {#if job.serie}
+    <button type="button" class="job-series-link" onclick={apriSerie}
+            aria-label={`Apri ${job.serie} in Gestione`}
+            title="Apri la serie in Gestione">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           aria-hidden="true">
+        <path d="M7 17 17 7M7 7h10v10"/>
+      </svg>
+    </button>
+  {/if}
+  </div>
 
   {#if attiva}
     <div class="job-stepper">
@@ -108,14 +127,25 @@
     border-radius: 10px; overflow: hidden;
   }
   .job-failed { border-color: var(--danger-border); }
-  .job-main {
-    width: 100%; display: flex; align-items: center; gap: 0.75rem;
+  .job-main { display: flex; align-items: stretch; width: 100%; }
+  .job-expand {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.75rem;
     background: none; border: none; color: var(--text-primary);
     padding: 0.6rem 0.75rem; text-align: left; cursor: pointer;
     font-size: 0.9rem;
   }
-  .job-main:hover { background: var(--bg-hover); }
-  .job-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .job-expand:hover { background: var(--bg-hover); }
+  .job-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* L'azione secondaria è separata da quella principale (espandi): niente
+     button annidati, target esplicito e tooltip. */
+  .job-series-link {
+    flex: 0 0 auto; width: 38px; display: grid; place-items: center;
+    background: none; border: none; border-left: 1px solid var(--border-color);
+    color: var(--text-muted); cursor: pointer;
+  }
+  .job-series-link:hover { background: var(--bg-hover); color: var(--accent-light); }
+  .job-series-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .job-series-link svg { width: 16px; height: 16px; }
   .job-poster {
     width: 40px; height: 56px; object-fit: cover; border-radius: 6px;
     flex: 0 0 auto; background: var(--poster-frame-bg, var(--bg-tertiary));
